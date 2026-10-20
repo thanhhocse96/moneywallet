@@ -1,4 +1,4 @@
-# BÁO CÁO TỔNG HỢP: DỰ ÁN MONEYVVIBE
+# BÁO CÁO TỔNG HỢP: DỰ ÁN MONEYVIBE
 ## Hiện đại hóa MoneyWallet → app quản lý chi tiêu thế hệ mới
 
 > Ngày lập: 2026-10-19 · Trạng thái: **planning hoàn tất, chưa viết code sản phẩm mới**
@@ -11,14 +11,14 @@
 
 | Hạng mục | Nội dung |
 |---|---|
-| Tên app | **MoneyVVibe** (chính tả "VV" chờ xác nhận — cố ý hay typo của "Vibe"?) |
+| Tên app | **MoneyVibe** (chính tả "VV" chờ xác nhận — cố ý hay typo của "Vibe"?) |
 | Baseline | `herrerad85/tallybook` v1.13.0 — fork active duy nhất (push gần như hằng ngày, có trên F-Droid) |
 | Điểm xuất phát | tallybook hơn repo gốc 308 commits / 300+ files; DB v3→v10, 24→27 bảng |
 | Stack đích | Kotlin, Room, coroutines/Flow, targetSdk 35/36, Material 3 minimal, native Android |
 | License | GPL v3 (giữ nguyên; đã loại iText để gỡ ràng buộc AGPL) |
 | Cross-platform | P1–P3 đặt trong KMP `commonMain` để sau này dùng lại; Flutter chỉ nếu cần iOS ngay từ đầu |
 
-**Mục tiêu cuối:** app quản lý chi tiêu hiện đại, có hệ hashtag/tag kèm merge, custom icon 3 tầng, thương hiệu MoneyVVibe.
+**Mục tiêu cuối:** app quản lý chi tiêu hiện đại, có hệ hashtag/tag kèm merge, custom icon 3 tầng, thương hiệu MoneyVibe.
 
 ---
 
@@ -38,7 +38,7 @@
 1. `applicationId` đổi thành của riêng bạn (Java package `com.oriondev.moneywallet` tallybook giữ nguyên — không cần rename).
 2. Build release pass, cài máy thật Android 14/15 chạy được.
 3. Restore thử backup `.mwbx` cũ (đã verify tương thích đầy đủ, cả bản mã hóa AES).
-4. Rebrand: tên MoneyVVibe + logo (mục 6).
+4. Rebrand: tên MoneyVibe + logo (mục 6).
 5. **Giữ remote `tallybook`** để định kỳ `git fetch` kéo fix mới (họ push hằng ngày).
 
 ### Lưu ý đã biết trước
@@ -116,10 +116,10 @@ Guardrails: cap 200 custom icon/user; **cấm Base64 ảnh vào TEXT**.
 
 ---
 
-## 6. Branding — MoneyVVibe
+## 6. Branding — MoneyVibe
 
 - **Logo đã chốt concept:** flat vector — ví xanh 2 mặt (trước `#3B71AC` kiểu Facebook đậm hơn chút, sau `#101F4D` navy), thẻ xanh lá (`#57A047`/`#1E6B3B`), đồng xu vàng `#E9B751` khắc `$` kẹp trong miệng ví, nền kem `#F9ECD7`.
-- File vector: `moneyvvibe-logo.svg` — 5 group riêng (`background`, `wallet-back`, `cards`, `coin`, `wallet-front`), mở trực tiếp bằng Illustrator. Chữ `$` nên Create Outlines.
+- File vector: `moneyvibe-logo.svg` — 5 group riêng (`background`, `wallet-back`, `cards`, `coin`, `wallet-front`), mở trực tiếp bằng Illustrator. Chữ `$` nên Create Outlines.
 - Việc còn lại sau chốt: xuất PNG các density (mdpi→xxxhdpi) / adaptive icon; splash screen.
 
 ---
@@ -156,7 +156,7 @@ Lưu ý: nhiều bug đã được tallybook fix (debt date, #303, #290, #211, #
 ## 10. Câu hỏi mở (chờ bạn quyết)
 
 1. Merge tallybook: **trường hợp A** (reset --hard) hay **B** (merge/rebase)?
-2. Tên "MoneyVVibe" — "VV" cố ý hay typo?
+2. Tên "MoneyVibe" — "VV" cố ý hay typo?
 3. Logo flat chốt chưa? (rồi xuất bộ PNG/adaptive icon)
 4. Hashtag: forward-only + history scan opt-in, hay quét toàn bộ lịch sử?
 5. Icon pack: chốt bao nhiêu icon, ai duyệt danh sách?
