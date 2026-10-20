@@ -1,0 +1,1337 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark" />
+    <link rel="icon" href="data:," />
+    <title>Money Lover · Modern Redesign — Preview</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <style>
+      :root { color-scheme: dark; }
+      html, body { background: #0B0F1A; }
+      body { font-family: "Plus Jakarta Sans", Inter, system-ui, sans-serif; }
+      .glow { position: absolute; border-radius: 9999px; filter: blur(110px); pointer-events: none; }
+      .phone {
+        position: relative;
+        box-sizing: border-box;
+        width: min(390px, 100%);
+        aspect-ratio: 390 / 844;
+        max-height: 844px;
+        border: 10px solid #1a1f2e;
+        border-radius: 3rem;
+        overflow: hidden;
+        background: #F4F6FB;
+        box-shadow: 0 30px 60px -18px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.07), 0 0 44px -18px rgba(124, 58, 237, 0.35);
+      }
+      .phone iframe { width: 100%; height: 100%; border: 0; display: block; background: #F4F6FB; }
+      .island {
+        position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+        width: 108px; height: 26px; background: #0B0F1A; border-radius: 999px;
+        z-index: 10; pointer-events: none;
+      }
+      .island::after {
+        content: ""; position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
+        width: 8px; height: 8px; border-radius: 999px; background: #232a3d;
+      }
+      .lang-toggle{display:inline-flex;gap:4px;padding:4px;border-radius:999px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.05)}
+      .lang-toggle button{border:0;border-radius:999px;padding:8px 18px;font:inherit;font-size:13px;font-weight:700;letter-spacing:.02em;color:#cbd5e1;background:transparent;cursor:pointer;transition:background .18s,color .18s}
+      .lang-toggle button[aria-pressed="true"]{background:#fff;color:#0B0F1A}
+    </style>
+  </head>
+  <body class="min-h-screen text-white antialiased overflow-x-hidden">
+
+    <!-- studio glows -->
+    <div class="fixed inset-0 overflow-hidden" aria-hidden="true">
+      <div class="glow bg-indigo-600/25" style="width:560px;height:560px;top:-180px;left:-120px"></div>
+      <div class="glow bg-violet-600/20" style="width:520px;height:520px;top:10%;right:-160px"></div>
+      <div class="glow bg-indigo-500/10" style="width:640px;height:640px;bottom:-260px;left:38%"></div>
+    </div>
+
+    <div class="relative mx-auto max-w-[1800px] px-5 sm:px-8">
+      <header class="text-center pt-14 pb-12">
+        <h1 class="text-3xl sm:text-[42px] leading-tight font-extrabold tracking-tight">Money Lover · Modern Redesign</h1>
+        <p class="mt-3 text-slate-400 text-[15px] sm:text-base max-w-2xl mx-auto">Concept giao diện hiện đại — 4 màn hình dựng bằng Tailwind CSS, xem thử trong khung điện thoại</p>
+        <p class="mt-3 text-slate-500 text-sm">Cùng một bố cục và số liệu, hai ngôn ngữ thị giác — gạt để so sánh.</p>
+        <div class="mt-6 flex justify-center">
+          <div class="lang-toggle" role="group" aria-label="Chọn ngôn ngữ thiết kế">
+            <button type="button" id="toggle-vibrant" aria-pressed="true">Rực rỡ</button>
+            <button type="button" id="toggle-minimal" aria-pressed="false">Tối giản</button>
+          </div>
+        </div>
+      </header>
+
+      <main class="grid grid-cols-1 sm:grid-cols-2 min-[1780px]:grid-cols-4 gap-x-6 gap-y-14 justify-items-center pb-16">
+
+        <figure class="flex flex-col items-center">
+          <div class="phone">
+            <div class="island"></div>
+            <iframe data-screen="transactions" title="Màn hình Transactions — bản redesign"></iframe>
+          </div>
+          <figcaption class="mt-5 text-center max-w-[390px] px-2">
+            <h2 class="font-bold text-lg">Transactions</h2>
+            <p class="text-sm text-slate-400 mt-1 leading-relaxed">Header tháng gọn dính trên cùng, 3 island gom theo tuần kèm tổng thu/chi, các dòng ngăn bằng hairline, bottom nav thay menu hamburger.</p>
+          </figcaption>
+        </figure>
+
+        <figure class="flex flex-col items-center">
+          <div class="phone">
+            <div class="island"></div>
+            <iframe data-screen="new" title="Màn hình New transaction — bản redesign"></iframe>
+          </div>
+          <figcaption class="mt-5 text-center max-w-[390px] px-2">
+            <h2 class="font-bold text-lg">New transaction</h2>
+            <p class="text-sm text-slate-400 mt-1 leading-relaxed">Số tiền làm trung tâm, chọn loại Expense/Income/Transfer, chip Recent + danh sách category dạng chữ theo nhóm, nút Save nổi.</p>
+          </figcaption>
+        </figure>
+
+        <figure class="flex flex-col items-center">
+          <div class="phone">
+            <div class="island"></div>
+            <iframe data-screen="budgets" title="Màn hình Budgets — bản redesign"></iframe>
+          </div>
+          <figcaption class="mt-5 text-center max-w-[390px] px-2">
+            <h2 class="font-bold text-lg">Budgets</h2>
+            <p class="text-sm text-slate-400 mt-1 leading-relaxed">Thẻ budget với thanh tiến trình, cảnh báo khi gần vượt, số tiền còn lại nổi bật.</p>
+          </figcaption>
+        </figure>
+
+        <figure class="flex flex-col items-center">
+          <div class="phone">
+            <div class="island"></div>
+            <iframe data-screen="overview" title="Màn hình Overview — bản redesign"></iframe>
+          </div>
+          <figcaption class="mt-5 text-center max-w-[390px] px-2">
+            <h2 class="font-bold text-lg">Overview</h2>
+            <p class="text-sm text-slate-400 mt-1 leading-relaxed">Donut chart SVG động, xếp hạng category kèm thanh %, thẻ insight chi tiêu.</p>
+          </figcaption>
+        </figure>
+
+      </main>
+
+      <footer class="text-center pb-12">
+        <p class="text-[13px] text-slate-500">Concept — số liệu lấy từ ảnh chụp màn hình (Sep/Aug 2026). Light mode, font Plus Jakarta Sans.</p>
+      </footer>
+    </div>
+
+    <!-- ============ SCREEN SOURCE: TRANSACTIONS ============ -->
+    <script type="text/plain" id="src-transactions">
+<div class="h-full flex flex-col bg-[#F4F6FB] text-[#0B1226]">
+  <!-- status bar -->
+  <div class="flex items-center justify-between px-7 pt-4 pb-1 text-[13px] font-bold flex-none">
+    <span>10:00</span>
+    <span class="flex items-center gap-1.5 text-[#0B1226]">
+      <svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor" aria-hidden="true"><rect x="0" y="7" width="3" height="4" rx="1"/><rect x="4.5" y="5" width="3" height="6" rx="1"/><rect x="9" y="2.5" width="3" height="8.5" rx="1"/><rect x="13.5" y="0" width="3" height="11" rx="1"/></svg>
+      <svg width="16" height="12" viewBox="0 0 24 18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M2.5 6.5a15 15 0 0 1 19 0"/><path d="M5.8 10.2a10.5 10.5 0 0 1 12.4 0"/><circle cx="12" cy="14.6" r="1.4" fill="currentColor" stroke="none"/></svg>
+      <svg width="25" height="12" viewBox="0 0 27 12" fill="none" aria-hidden="true"><rect x="0.8" y="0.8" width="21" height="10.4" rx="3" stroke="currentColor" opacity="0.4" stroke-width="1.2"/><rect x="2.6" y="2.6" width="14" height="6.8" rx="1.6" fill="currentColor"/><path d="M24.4 4v4a2.2 2.2 0 0 0 0-4z" fill="currentColor" opacity="0.6"/></svg>
+    </span>
+  </div>
+
+  <!-- sticky summary header -->
+  <div class="flex-none px-5 pt-1.5 pb-3">
+    <div class="flex items-center justify-between gap-2">
+      <div class="flex items-center">
+        <button class="w-8 h-8 -ml-1.5 flex items-center justify-center rounded-full text-[#64748B] hover:bg-white" aria-label="Previous month">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 5.5 8 12l6.5 6.5"/></svg>
+        </button>
+        <h1 class="text-[16.5px] font-extrabold tracking-tight whitespace-nowrap">September 2026</h1>
+        <button class="w-8 h-8 flex items-center justify-center rounded-full text-[#64748B] hover:bg-white" aria-label="Next month">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9.5 5.5 6.5 6.5-6.5 6.5"/></svg>
+        </button>
+      </div>
+      <div class="text-right flex-none">
+        <p class="text-[17px] leading-tight font-extrabold tracking-tight text-[#10B981]">+$2,587.14</p>
+        <p class="text-[10.5px] font-medium text-[#94A3B8] mt-0.5 whitespace-nowrap">In $4,768.72 · Out $2,181.58</p>
+      </div>
+    </div>
+
+    <!-- filter chips -->
+    <div class="mt-3 flex flex-wrap gap-2" data-chips>
+      <button data-chip class="chip-on rounded-full bg-white px-3.5 py-2 text-[13px] font-semibold text-[#64748B] shadow-[0_8px_30px_rgba(15,23,42,0.08)]">All</button>
+      <button data-chip class="rounded-full bg-white px-3.5 py-2 text-[13px] font-semibold text-[#64748B] shadow-[0_8px_30px_rgba(15,23,42,0.08)]">Expenses</button>
+      <button data-chip class="rounded-full bg-white px-3.5 py-2 text-[13px] font-semibold text-[#64748B] shadow-[0_8px_30px_rgba(15,23,42,0.08)]">Income</button>
+      <button data-chip class="rounded-full bg-white px-3.5 py-2 text-[13px] font-semibold text-[#64748B] shadow-[0_8px_30px_rgba(15,23,42,0.08)]">Transfers</button>
+    </div>
+  </div>
+
+  <!-- scroll area: one island per week -->
+  <div class="flex-1 overflow-y-auto no-scrollbar px-5 pb-6 space-y-4">
+
+    <!-- week: Sep 14–20 -->
+    <section class="rounded-[24px] bg-white shadow-[0_8px_30px_rgba(15,23,42,0.08)] px-4 pt-2 pb-2">
+      <div class="flex items-center justify-between px-1 pt-2 pb-1.5">
+        <h2 class="text-[13.5px] font-extrabold tracking-tight">Week Sep 14–20</h2>
+        <p class="text-[12px] font-bold whitespace-nowrap"><span class="text-[#10B981]">+$2,184.36</span><span class="text-[#F43F5E] ml-2">−$132.40</span></p>
+      </div>
+      <div class="flex items-center gap-3 px-1 py-2.5 border-t border-slate-100">
+        <div class="w-11 h-11 flex-none rounded-2xl flex items-center justify-center text-white text-[16px] font-bold" style="background:#0D9488">S</div>
+        <div class="flex-1 min-w-0">
+          <p class="text-[15px] font-semibold leading-snug">Salary</p>
+          <p class="text-xs text-[#64748B]">Paycheck</p>
+        </div>
+        <div class="text-right flex-none">
+          <p class="text-[15px] font-bold text-[#10B981]">+$2,184.36</p>
+          <p class="text-[11px] text-[#64748B] mt-0.5">Fri 18</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-3 px-1 py-2.5 border-t border-slate-100">
+        <div class="w-11 h-11 flex-none rounded-2xl flex items-center justify-center text-white text-[16px] font-bold" style="background:#EC407A">E</div>
+        <div class="flex-1 min-w-0">
+          <p class="text-[15px] font-semibold leading-snug">Electricity</p>
+          <p class="text-xs text-[#64748B]">Electric bill</p>
+        </div>
+        <div class="text-right flex-none">
+          <p class="text-[15px] font-bold text-[#F43F5E]">−$132.40</p>
+          <p class="text-[11px] text-[#64748B] mt-0.5">Fri 18</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- week: Sep 7–13 -->
+    <section class="rounded-[24px] bg-white shadow-[0_8px_30px_rgba(15,23,42,0.08)] px-4 pt-2 pb-2">
+      <div class="flex items-center justify-between px-1 pt-2 pb-1.5">
+        <h2 class="text-[13.5px] font-extrabold tracking-tight">Week Sep 7–13</h2>
+        <p class="text-[12px] font-bold whitespace-nowrap"><span class="text-[#10B981]">+$0.00</span><span class="text-[#F43F5E] ml-2">−$141.19</span></p>
+      </div>
+      <div class="flex items-center gap-3 px-1 py-2.5 border-t border-slate-100">
+        <div class="w-11 h-11 flex-none rounded-2xl flex items-center justify-center text-white text-[16px] font-bold" style="background:#F97316">I</div>
+        <div class="flex-1 min-w-0">
+          <p class="text-[15px] font-semibold leading-snug">Internet</p>
+          <p class="text-xs text-[#64748B]">Internet</p>
+        </div>
+        <div class="text-right flex-none">
+          <p class="text-[15px] font-bold text-[#F43F5E]">−$79.99</p>
+          <p class="text-[11px] text-[#64748B] mt-0.5">Sat 12</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-3 px-1 py-2.5 border-t border-slate-100">
+        <div class="w-11 h-11 flex-none rounded-2xl flex items-center justify-center text-white text-[14px] font-bold" style="background:#84CC16">WA</div>
+        <div class="flex-1 min-w-0">
+          <p class="text-[15px] font-semibold leading-snug">Water and trash</p>
+          <p class="text-xs text-[#64748B]">Water and trash</p>
+        </div>
+        <div class="text-right flex-none">
+          <p class="text-[15px] font-bold text-[#F43F5E]">−$61.20</p>
+          <p class="text-[11px] text-[#64748B] mt-0.5">Tue 8</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- week: Aug 31–Sep 6 -->
+    <section class="rounded-[24px] bg-white shadow-[0_8px_30px_rgba(15,23,42,0.08)] px-4 pt-2 pb-2">
+      <div class="flex items-center justify-between px-1 pt-2 pb-1.5">
+        <h2 class="text-[13.5px] font-extrabold tracking-tight">Week Aug 31–Sep 6</h2>
+        <p class="text-[12px] font-bold whitespace-nowrap"><span class="text-[#10B981]">+$2,584.36</span><span class="text-[#F43F5E] ml-2">−$1,907.99</span></p>
+      </div>
+      <div class="flex items-center gap-3 px-1 py-2.5 border-t border-slate-100">
+        <div class="w-11 h-11 flex-none rounded-2xl flex items-center justify-center text-white text-[16px] font-bold" style="background:#9333EA">S</div>
+        <div class="flex-1 min-w-0">
+          <p class="text-[15px] font-semibold leading-snug">Streaming</p>
+          <p class="text-xs text-[#64748B]">Streaming</p>
+        </div>
+        <div class="text-right flex-none">
+          <p class="text-[15px] font-bold text-[#F43F5E]">−$15.99</p>
+          <p class="text-[11px] text-[#64748B] mt-0.5">Sat 5</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-3 px-1 py-2.5 border-t border-slate-100">
+        <div class="w-11 h-11 flex-none rounded-2xl flex items-center justify-center text-white text-[16px] font-bold" style="background:#0D9488">S</div>
+        <div class="flex-1 min-w-0">
+          <p class="text-[15px] font-semibold leading-snug">Salary</p>
+          <p class="text-xs text-[#64748B]">Paycheck</p>
+        </div>
+        <div class="text-right flex-none">
+          <p class="text-[15px] font-bold text-[#10B981]">+$2,184.36</p>
+          <p class="text-[11px] text-[#64748B] mt-0.5">Fri 4</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-3 px-1 py-2.5 border-t border-slate-100">
+        <div class="w-11 h-11 flex-none rounded-2xl flex items-center justify-center text-white text-[16px] font-bold" style="background:#F97316">G</div>
+        <div class="flex-1 min-w-0">
+          <p class="text-[15px] font-semibold leading-snug">Gym</p>
+          <p class="text-xs text-[#64748B]">Gym</p>
+        </div>
+        <div class="text-right flex-none">
+          <p class="text-[15px] font-bold text-[#F43F5E]">−$42.00</p>
+          <p class="text-[11px] text-[#64748B] mt-0.5">Thu 3</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-3 px-1 py-2.5 border-t border-slate-100">
+        <div class="w-11 h-11 flex-none rounded-2xl flex items-center justify-center text-white" style="background:#22C55E">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h12.5L13 3.5M20 17H7.5L11 20.5"/></svg>
+        </div>
+        <div class="flex-1 min-w-0">
+          <p class="text-[15px] font-semibold leading-snug">Transfer</p>
+          <p class="text-xs text-[#64748B]">Move to savings</p>
+        </div>
+        <div class="text-right flex-none">
+          <p class="text-[15px] font-bold text-[#0B1226]">−$400.00</p>
+          <p class="text-[11px] text-[#64748B] mt-0.5">Wed 2</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-3 px-1 py-2.5 border-t border-slate-100">
+        <div class="w-11 h-11 flex-none rounded-2xl flex items-center justify-center text-white" style="background:#22C55E">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h12.5L13 3.5M20 17H7.5L11 20.5"/></svg>
+        </div>
+        <div class="flex-1 min-w-0">
+          <p class="text-[15px] font-semibold leading-snug">Transfer</p>
+        </div>
+        <div class="text-right flex-none">
+          <p class="text-[15px] font-bold text-[#10B981]">+$400.00</p>
+          <p class="text-[11px] text-[#64748B] mt-0.5">Wed 2</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-3 px-1 py-2.5 border-t border-slate-100">
+        <div class="w-11 h-11 flex-none rounded-2xl flex items-center justify-center text-white text-[16px] font-bold" style="background:#F97316">R</div>
+        <div class="flex-1 min-w-0">
+          <p class="text-[15px] font-semibold leading-snug">Rent</p>
+          <p class="text-xs text-[#64748B]">Rent</p>
+        </div>
+        <div class="text-right flex-none">
+          <p class="text-[15px] font-bold text-[#F43F5E]">−$1,450.00</p>
+          <p class="text-[11px] text-[#64748B] mt-0.5">Tue 1</p>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- bottom tab bar -->
+  <nav class="flex-none relative bg-white border-t border-slate-100 px-4 pt-2 pb-4">
+    <div class="flex items-end justify-between">
+      <button class="flex flex-col items-center gap-1 w-14 text-[#4F46E5]">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="4" cy="6" r="1.1" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1.1" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1.1" fill="currentColor" stroke="none"/></svg>
+        <span class="text-[10px] font-bold">Transactions</span>
+      </button>
+      <button class="flex flex-col items-center gap-1 w-14 text-[#94A3B8]">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 20v-6M11 20V6M17 20v-9"/><path d="M3.5 20h17"/></svg>
+        <span class="text-[10px] font-semibold">Stats</span>
+      </button>
+      <button class="w-14 flex justify-center" aria-label="Add transaction">
+        <span class="-mt-7 w-14 h-14 rounded-full bg-gradient-to-br from-[#4F46E5] to-[#7C3AED] text-white flex items-center justify-center shadow-[0_12px_24px_-6px_rgba(99,72,237,0.6)] ring-4 ring-[#F4F6FB]">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        </span>
+      </button>
+      <button class="flex flex-col items-center gap-1 w-14 text-[#94A3B8]">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5v9h9"/><path d="M20.2 15.5A9 9 0 1 1 12 3.5v9h9a9 9 0 0 1-.8 3z"/></svg>
+        <span class="text-[10px] font-semibold">Budgets</span>
+      </button>
+      <button class="flex flex-col items-center gap-1 w-14 text-[#94A3B8]">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>
+        <span class="text-[10px] font-semibold">More</span>
+      </button>
+    </div>
+    <div class="mx-auto mt-3 h-1 w-32 rounded-full bg-[#0B1226]/15"></div>
+  </nav>
+</div>
+    </script>
+
+    <!-- ============ SCREEN SOURCE: NEW TRANSACTION ============ -->
+    <script type="text/plain" id="src-new">
+<div class="h-full flex flex-col bg-[#F4F6FB] text-[#0B1226]">
+  <!-- status bar -->
+  <div class="flex items-center justify-between px-7 pt-4 pb-1 text-[13px] font-bold flex-none">
+    <span>10:00</span>
+    <span class="flex items-center gap-1.5 text-[#0B1226]">
+      <svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor" aria-hidden="true"><rect x="0" y="7" width="3" height="4" rx="1"/><rect x="4.5" y="5" width="3" height="6" rx="1"/><rect x="9" y="2.5" width="3" height="8.5" rx="1"/><rect x="13.5" y="0" width="3" height="11" rx="1"/></svg>
+      <svg width="16" height="12" viewBox="0 0 24 18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M2.5 6.5a15 15 0 0 1 19 0"/><path d="M5.8 10.2a10.5 10.5 0 0 1 12.4 0"/><circle cx="12" cy="14.6" r="1.4" fill="currentColor" stroke="none"/></svg>
+      <svg width="25" height="12" viewBox="0 0 27 12" fill="none" aria-hidden="true"><rect x="0.8" y="0.8" width="21" height="10.4" rx="3" stroke="currentColor" opacity="0.4" stroke-width="1.2"/><rect x="2.6" y="2.6" width="14" height="6.8" rx="1.6" fill="currentColor"/><path d="M24.4 4v4a2.2 2.2 0 0 0 0-4z" fill="currentColor" opacity="0.6"/></svg>
+    </span>
+  </div>
+
+  <!-- top bar -->
+  <div class="flex-none flex items-center gap-2 px-4 mt-1">
+    <button class="w-10 h-10 flex items-center justify-center rounded-full bg-white shadow-[0_8px_30px_rgba(15,23,42,0.08)]" aria-label="Close">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </button>
+    <h1 class="flex-1 text-center text-[17px] font-extrabold tracking-tight">New transaction</h1>
+    <span class="w-10"></span>
+  </div>
+
+  <!-- scroll area -->
+  <div class="flex-1 overflow-y-auto no-scrollbar px-5 pb-4">
+    <!-- segmented -->
+    <div class="mt-4 flex rounded-full bg-[#EDEFF5] p-1" data-chips data-on="seg-on">
+      <button data-chip class="seg-on rose flex-1 rounded-full py-2 text-[13.5px] font-bold text-[#64748B]">Expense</button>
+      <button data-chip class="flex-1 rounded-full py-2 text-[13.5px] font-bold text-[#64748B]">Income</button>
+      <button data-chip class="flex-1 rounded-full py-2 text-[13.5px] font-bold text-[#64748B]">Transfer</button>
+    </div>
+
+    <!-- amount hero -->
+    <div class="py-8 text-center">
+      <p class="text-[15px] font-semibold text-[#64748B]">Amount</p>
+      <p class="mt-1 text-[58px] leading-none font-extrabold tracking-tight">$ 6.75<span class="caret text-[#4F46E5]">|</span></p>
+      <p class="mt-2.5 text-xs font-medium text-[#94A3B8]">Tap to edit</p>
+    </div>
+
+    <!-- category picker: text-first -->
+    <p class="mt-1 text-[11px] font-bold uppercase tracking-[0.14em] text-[#94A3B8]">Recent</p>
+    <div class="mt-2.5 -mx-5 px-5 pb-1 flex gap-2 overflow-x-auto no-scrollbar" data-chips>
+      <button data-chip class="chip-on flex-none rounded-full bg-white px-3.5 py-2 text-[13px] font-semibold text-[#64748B] shadow-[0_8px_30px_rgba(15,23,42,0.08)]">Coffee</button>
+      <button data-chip class="flex-none rounded-full bg-white px-3.5 py-2 text-[13px] font-semibold text-[#64748B] shadow-[0_8px_30px_rgba(15,23,42,0.08)]">Food</button>
+      <button data-chip class="flex-none rounded-full bg-white px-3.5 py-2 text-[13px] font-semibold text-[#64748B] shadow-[0_8px_30px_rgba(15,23,42,0.08)]">Transport</button>
+      <button data-chip class="flex-none rounded-full bg-white px-3.5 py-2 text-[13px] font-semibold text-[#64748B] shadow-[0_8px_30px_rgba(15,23,42,0.08)]">Electricity</button>
+      <button data-chip class="flex-none rounded-full bg-white px-3.5 py-2 text-[13px] font-semibold text-[#64748B] shadow-[0_8px_30px_rgba(15,23,42,0.08)]">Internet</button>
+    </div>
+
+    <p class="mt-5 text-[11px] font-bold uppercase tracking-[0.14em] text-[#94A3B8]">All categories</p>
+    <div data-chips data-on="cat-row-on">
+      <p class="mt-2.5 mb-0.5 text-[11px] font-bold uppercase tracking-[0.14em] text-[#94A3B8]">Food &amp; drink</p>
+      <button data-chip class="cat-row cat-row-on flex w-full items-center gap-3 rounded-xl px-2 py-2 border-b border-slate-100 text-left">
+        <span class="w-9 h-9 flex-none rounded-xl flex items-center justify-center text-white text-[13px] font-bold" style="background:#795548">C</span>
+        <span class="flex-1 text-[14.5px] font-semibold">Coffee</span>
+        <svg class="cat-check flex-none text-[#4F46E5]" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>
+      </button>
+      <button data-chip class="cat-row flex w-full items-center gap-3 rounded-xl px-2 py-2 border-b border-slate-100 text-left">
+        <span class="w-9 h-9 flex-none rounded-xl flex items-center justify-center text-white text-[13px] font-bold" style="background:#F97316">F</span>
+        <span class="flex-1 text-[14.5px] font-semibold">Food</span>
+        <svg class="cat-check flex-none text-[#4F46E5]" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>
+      </button>
+      <button data-chip class="cat-row flex w-full items-center gap-3 rounded-xl px-2 py-2 border-b border-slate-100 text-left">
+        <span class="w-9 h-9 flex-none rounded-xl flex items-center justify-center text-white text-[13px] font-bold" style="background:#E11D48">R</span>
+        <span class="flex-1 text-[14.5px] font-semibold">Restaurant</span>
+        <svg class="cat-check flex-none text-[#4F46E5]" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>
+      </button>
+
+      <p class="mt-4 mb-0.5 text-[11px] font-bold uppercase tracking-[0.14em] text-[#94A3B8]">Bills &amp; utilities</p>
+      <button data-chip class="cat-row flex w-full items-center gap-3 rounded-xl px-2 py-2 border-b border-slate-100 text-left">
+        <span class="w-9 h-9 flex-none rounded-xl flex items-center justify-center text-white text-[13px] font-bold" style="background:#EC407A">E</span>
+        <span class="flex-1 text-[14.5px] font-semibold">Electricity</span>
+        <svg class="cat-check flex-none text-[#4F46E5]" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>
+      </button>
+      <button data-chip class="cat-row flex w-full items-center gap-3 rounded-xl px-2 py-2 border-b border-slate-100 text-left">
+        <span class="w-9 h-9 flex-none rounded-xl flex items-center justify-center text-white text-[13px] font-bold" style="background:#4F46E5">I</span>
+        <span class="flex-1 text-[14.5px] font-semibold">Internet</span>
+        <svg class="cat-check flex-none text-[#4F46E5]" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>
+      </button>
+      <button data-chip class="cat-row flex w-full items-center gap-3 rounded-xl px-2 py-2 border-b border-slate-100 text-left">
+        <span class="w-9 h-9 flex-none rounded-xl flex items-center justify-center text-white text-[10px] font-bold" style="background:#84CC16">WA</span>
+        <span class="flex-1 text-[14.5px] font-semibold">Water and trash</span>
+        <svg class="cat-check flex-none text-[#4F46E5]" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>
+      </button>
+      <button data-chip class="cat-row flex w-full items-center gap-3 rounded-xl px-2 py-2 border-b border-slate-100 text-left">
+        <span class="w-9 h-9 flex-none rounded-xl flex items-center justify-center text-white text-[13px] font-bold" style="background:#9333EA">S</span>
+        <span class="flex-1 text-[14.5px] font-semibold">Streaming</span>
+        <svg class="cat-check flex-none text-[#4F46E5]" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>
+      </button>
+      <button data-chip class="cat-row flex w-full items-center gap-3 rounded-xl px-2 py-2 border-b border-slate-100 text-left">
+        <span class="w-9 h-9 flex-none rounded-xl flex items-center justify-center text-white text-[13px] font-bold" style="background:#F59E0B">G</span>
+        <span class="flex-1 text-[14.5px] font-semibold">Gym</span>
+        <svg class="cat-check flex-none text-[#4F46E5]" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>
+      </button>
+      <button data-chip class="cat-row flex w-full items-center gap-3 rounded-xl px-2 py-2 border-b border-slate-100 text-left">
+        <span class="w-9 h-9 flex-none rounded-xl flex items-center justify-center text-white text-[13px] font-bold" style="background:#DC2626">R</span>
+        <span class="flex-1 text-[14.5px] font-semibold">Rent</span>
+        <svg class="cat-check flex-none text-[#4F46E5]" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>
+      </button>
+
+      <p class="mt-4 mb-0.5 text-[11px] font-bold uppercase tracking-[0.14em] text-[#94A3B8]">Transport</p>
+      <button data-chip class="cat-row flex w-full items-center gap-3 rounded-xl px-2 py-2 border-b border-slate-100 text-left">
+        <span class="w-9 h-9 flex-none rounded-xl flex items-center justify-center text-white text-[13px] font-bold" style="background:#0284C7">T</span>
+        <span class="flex-1 text-[14.5px] font-semibold">Transport</span>
+        <svg class="cat-check flex-none text-[#4F46E5]" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>
+      </button>
+      <button data-chip class="cat-row flex w-full items-center gap-3 rounded-xl px-2 py-2 border-b border-slate-100 text-left">
+        <span class="w-9 h-9 flex-none rounded-xl flex items-center justify-center text-white text-[13px] font-bold" style="background:#78716C">F</span>
+        <span class="flex-1 text-[14.5px] font-semibold">Fuel</span>
+        <svg class="cat-check flex-none text-[#4F46E5]" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>
+      </button>
+
+      <p class="mt-4 mb-0.5 text-[11px] font-bold uppercase tracking-[0.14em] text-[#94A3B8]">Income</p>
+      <button data-chip class="cat-row flex w-full items-center gap-3 rounded-xl px-2 py-2 border-b border-slate-100 text-left">
+        <span class="w-9 h-9 flex-none rounded-xl flex items-center justify-center text-white text-[13px] font-bold" style="background:#0D9488">S</span>
+        <span class="flex-1 text-[14.5px] font-semibold">Salary</span>
+        <svg class="cat-check flex-none text-[#4F46E5]" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>
+      </button>
+
+      <p class="mt-4 mb-0.5 text-[11px] font-bold uppercase tracking-[0.14em] text-[#94A3B8]">Other</p>
+      <button data-chip class="cat-row flex w-full items-center gap-3 rounded-xl px-2 py-2 border-b border-slate-100 text-left">
+        <span class="w-9 h-9 flex-none rounded-xl flex items-center justify-center text-white text-[13px] font-bold" style="background:#22C55E">T</span>
+        <span class="flex-1 text-[14.5px] font-semibold">Transfer</span>
+        <svg class="cat-check flex-none text-[#4F46E5]" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>
+      </button>
+      <button data-chip class="cat-row flex w-full items-center gap-3 rounded-xl px-2 py-2 border-b border-slate-100 text-left">
+        <span class="w-9 h-9 flex-none rounded-xl flex items-center justify-center text-white text-[13px] font-bold" style="background:#DB2777">S</span>
+        <span class="flex-1 text-[14.5px] font-semibold">Shopping</span>
+        <svg class="cat-check flex-none text-[#4F46E5]" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>
+      </button>
+      <button data-chip class="cat-row flex w-full items-center gap-3 rounded-xl px-2 py-2 border-b border-slate-100 text-left">
+        <span class="w-9 h-9 flex-none rounded-xl flex items-center justify-center text-white text-[13px] font-bold" style="background:#F43F5E">H</span>
+        <span class="flex-1 text-[14.5px] font-semibold">Health</span>
+        <svg class="cat-check flex-none text-[#4F46E5]" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>
+      </button>
+      <button data-chip class="cat-row flex w-full items-center gap-3 rounded-xl px-2 py-2 border-b border-slate-100 text-left">
+        <span class="w-9 h-9 flex-none rounded-xl flex items-center justify-center text-white text-[13px] font-bold" style="background:#B45309">P</span>
+        <span class="flex-1 text-[14.5px] font-semibold">Pets</span>
+        <svg class="cat-check flex-none text-[#4F46E5]" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>
+      </button>
+    </div>
+
+        <!-- fields -->
+    <div class="mt-4 rounded-[24px] bg-white shadow-[0_8px_30px_rgba(15,23,42,0.08)] px-5 py-2">
+      <div class="flex items-center justify-between py-3.5">
+        <span class="text-sm font-medium text-[#64748B]">Date</span>
+        <span class="flex items-center gap-1 text-sm font-bold">Fri, Sep 18 · 1:42 PM
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="text-[#94A3B8]"><path d="m9.5 5.5 6.5 6.5-6.5 6.5"/></svg>
+        </span>
+      </div>
+      <div class="border-t border-slate-100"></div>
+      <div class="flex items-center justify-between py-3.5">
+        <span class="text-sm font-medium text-[#64748B]">Wallet</span>
+        <span class="flex gap-2" data-chips>
+          <button data-chip class="chip-on rounded-full bg-[#EDEFF5] px-3.5 py-1.5 text-[13px] font-bold text-[#64748B]">Checking</button>
+          <button data-chip class="rounded-full bg-[#EDEFF5] px-3.5 py-1.5 text-[13px] font-bold text-[#64748B]">Savings</button>
+        </span>
+      </div>
+      <div class="border-t border-slate-100"></div>
+      <div class="flex items-center justify-between py-3.5">
+        <span class="text-sm font-medium text-[#64748B]">Note</span>
+        <span class="text-sm font-medium text-[#B6BECB]">Add a note…</span>
+      </div>
+    </div>
+
+    <!-- toggles -->
+    <div class="mt-4 rounded-[24px] bg-white shadow-[0_8px_30px_rgba(15,23,42,0.08)] px-5 py-2">
+      <div class="flex items-center justify-between py-3">
+        <span class="text-sm font-semibold">Confirmed</span>
+        <button class="switch" data-toggle role="switch" aria-checked="true" aria-label="Confirmed"><span class="knob"></span></button>
+      </div>
+      <div class="border-t border-slate-100"></div>
+      <div class="flex items-center justify-between py-3">
+        <span class="text-sm font-semibold">Show in total wallet</span>
+        <button class="switch" data-toggle role="switch" aria-checked="true" aria-label="Show in total wallet"><span class="knob"></span></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- sticky save -->
+  <div class="flex-none px-5 pt-2 pb-5 bg-[#F4F6FB]/90">
+    <button class="w-full rounded-full bg-gradient-to-r from-[#4F46E5] to-[#7C3AED] py-4 text-[15px] font-bold text-white shadow-[0_14px_28px_-8px_rgba(99,72,237,0.65)]">Save transaction</button>
+    <div class="mx-auto mt-3.5 h-1 w-32 rounded-full bg-[#0B1226]/15"></div>
+  </div>
+</div>
+    </script>
+
+    <!-- ============ SCREEN SOURCE: BUDGETS ============ -->
+    <script type="text/plain" id="src-budgets">
+<div class="h-full flex flex-col bg-[#F4F6FB] text-[#0B1226]">
+  <!-- status bar -->
+  <div class="flex items-center justify-between px-7 pt-4 pb-1 text-[13px] font-bold flex-none">
+    <span>10:00</span>
+    <span class="flex items-center gap-1.5 text-[#0B1226]">
+      <svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor" aria-hidden="true"><rect x="0" y="7" width="3" height="4" rx="1"/><rect x="4.5" y="5" width="3" height="6" rx="1"/><rect x="9" y="2.5" width="3" height="8.5" rx="1"/><rect x="13.5" y="0" width="3" height="11" rx="1"/></svg>
+      <svg width="16" height="12" viewBox="0 0 24 18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M2.5 6.5a15 15 0 0 1 19 0"/><path d="M5.8 10.2a10.5 10.5 0 0 1 12.4 0"/><circle cx="12" cy="14.6" r="1.4" fill="currentColor" stroke="none"/></svg>
+      <svg width="25" height="12" viewBox="0 0 27 12" fill="none" aria-hidden="true"><rect x="0.8" y="0.8" width="21" height="10.4" rx="3" stroke="currentColor" opacity="0.4" stroke-width="1.2"/><rect x="2.6" y="2.6" width="14" height="6.8" rx="1.6" fill="currentColor"/><path d="M24.4 4v4a2.2 2.2 0 0 0 0-4z" fill="currentColor" opacity="0.6"/></svg>
+    </span>
+  </div>
+
+  <!-- scroll area -->
+  <div class="flex-1 overflow-y-auto no-scrollbar px-5 pb-6">
+    <!-- header -->
+    <div class="flex items-center justify-between mt-2">
+      <h1 class="text-[24px] font-extrabold tracking-tight">Budgets</h1>
+      <span class="rounded-full bg-white px-3.5 py-2 text-xs font-bold shadow-[0_8px_30px_rgba(15,23,42,0.08)]">September 2026</span>
+    </div>
+
+    <!-- summary card -->
+    <section class="mt-4 rounded-[24px] bg-white shadow-[0_8px_30px_rgba(15,23,42,0.08)] p-5">
+      <div class="flex items-baseline justify-between">
+        <p class="text-[15px] font-extrabold">4 budgets · $325 total</p>
+        <p class="text-[13px] font-bold text-[#4F46E5]">77% used</p>
+      </div>
+      <div class="mt-3 h-2.5 rounded-full bg-[#EDEFF5] overflow-hidden">
+        <div class="bar-fill h-full rounded-full bg-gradient-to-r from-[#4F46E5] to-[#7C3AED]" data-bar="77" style="width:0%"></div>
+      </div>
+      <p class="mt-2.5 text-xs font-medium text-[#64748B]">Spent $251.59 of $325.00 · <span class="text-[#0B1226] font-semibold">$73.41 left</span> until Sep 30</p>
+    </section>
+
+    <!-- budget: Electricity -->
+    <section class="mt-4 rounded-[24px] bg-white shadow-[0_8px_30px_rgba(15,23,42,0.08)] p-5">
+      <div class="flex items-center gap-3">
+        <div class="w-12 h-12 flex-none rounded-2xl flex items-center justify-center text-white text-[17px] font-bold" style="background:#EC407A">E</div>
+        <div class="flex-1 min-w-0">
+          <p class="flex items-center gap-2 text-[15px] font-bold leading-snug">Electricity
+            <span class="rounded-full bg-amber-100 px-2 py-0.5 text-[10.5px] font-bold text-amber-700">Almost over</span>
+          </p>
+          <p class="text-xs text-[#64748B] mt-0.5">Ends Sep 30</p>
+        </div>
+        <div class="text-right flex-none">
+          <p class="text-[19px] font-extrabold tracking-tight">$17.60</p>
+          <p class="text-[11px] font-medium text-[#64748B]">left</p>
+        </div>
+      </div>
+      <div class="mt-3.5 h-2.5 rounded-full bg-[#EDEFF5] overflow-hidden">
+        <div class="bar-fill h-full rounded-full bg-gradient-to-r from-[#F59E0B] to-[#F43F5E]" data-bar="88" style="width:0%"></div>
+      </div>
+      <div class="mt-2.5 flex items-center justify-between text-xs font-medium text-[#64748B]">
+        <span>Spent $132.40 of $150.00</span>
+        <span class="font-bold text-[#F43F5E]">88%</span>
+      </div>
+    </section>
+
+    <!-- budget: Water and trash -->
+    <section class="mt-4 rounded-[24px] bg-white shadow-[0_8px_30px_rgba(15,23,42,0.08)] p-5">
+      <div class="flex items-center gap-3">
+        <div class="w-12 h-12 flex-none rounded-2xl flex items-center justify-center text-white text-[15px] font-bold" style="background:#84CC16">WA</div>
+        <div class="flex-1 min-w-0">
+          <p class="text-[15px] font-bold leading-snug">Water and trash</p>
+          <p class="text-xs text-[#64748B] mt-0.5">Ends Sep 30</p>
+        </div>
+        <div class="text-right flex-none">
+          <p class="text-[19px] font-extrabold tracking-tight">$28.80</p>
+          <p class="text-[11px] font-medium text-[#64748B]">left</p>
+        </div>
+      </div>
+      <div class="mt-3.5 h-2.5 rounded-full bg-[#EDEFF5] overflow-hidden">
+        <div class="bar-fill h-full rounded-full bg-gradient-to-r from-[#4F46E5] to-[#7C3AED]" data-bar="68" style="width:0%"></div>
+      </div>
+      <div class="mt-2.5 flex items-center justify-between text-xs font-medium text-[#64748B]">
+        <span>Spent $61.20 of $90.00</span>
+        <span class="font-bold text-[#64748B]">68%</span>
+      </div>
+    </section>
+
+    <!-- budget: Gym -->
+    <section class="mt-4 rounded-[24px] bg-white shadow-[0_8px_30px_rgba(15,23,42,0.08)] p-5">
+      <div class="flex items-center gap-3">
+        <div class="w-12 h-12 flex-none rounded-2xl flex items-center justify-center text-white text-[17px] font-bold" style="background:#F97316">G</div>
+        <div class="flex-1 min-w-0">
+          <p class="text-[15px] font-bold leading-snug">Gym</p>
+          <p class="text-xs text-[#64748B] mt-0.5">Ends Sep 30</p>
+        </div>
+        <div class="text-right flex-none">
+          <p class="text-[19px] font-extrabold tracking-tight">$18.00</p>
+          <p class="text-[11px] font-medium text-[#64748B]">left</p>
+        </div>
+      </div>
+      <div class="mt-3.5 h-2.5 rounded-full bg-[#EDEFF5] overflow-hidden">
+        <div class="bar-fill h-full rounded-full bg-gradient-to-r from-[#4F46E5] to-[#7C3AED]" data-bar="70" style="width:0%"></div>
+      </div>
+      <div class="mt-2.5 flex items-center justify-between text-xs font-medium text-[#64748B]">
+        <span>Spent $42.00 of $60.00</span>
+        <span class="font-bold text-[#64748B]">70%</span>
+      </div>
+    </section>
+
+    <!-- budget: Streaming -->
+    <section class="mt-4 rounded-[24px] bg-white shadow-[0_8px_30px_rgba(15,23,42,0.08)] p-5">
+      <div class="flex items-center gap-3">
+        <div class="w-12 h-12 flex-none rounded-2xl flex items-center justify-center text-white text-[17px] font-bold" style="background:#9333EA">S</div>
+        <div class="flex-1 min-w-0">
+          <p class="text-[15px] font-bold leading-snug">Streaming</p>
+          <p class="text-xs text-[#64748B] mt-0.5">Ends Sep 30</p>
+        </div>
+        <div class="text-right flex-none">
+          <p class="text-[19px] font-extrabold tracking-tight">$9.01</p>
+          <p class="text-[11px] font-medium text-[#64748B]">left</p>
+        </div>
+      </div>
+      <div class="mt-3.5 h-2.5 rounded-full bg-[#EDEFF5] overflow-hidden">
+        <div class="bar-fill h-full rounded-full bg-gradient-to-r from-[#4F46E5] to-[#7C3AED]" data-bar="64" style="width:0%"></div>
+      </div>
+      <div class="mt-2.5 flex items-center justify-between text-xs font-medium text-[#64748B]">
+        <span>Spent $15.99 of $25.00</span>
+        <span class="font-bold text-[#64748B]">64%</span>
+      </div>
+    </section>
+  </div>
+
+  <!-- bottom tab bar -->
+  <nav class="flex-none relative bg-white border-t border-slate-100 px-4 pt-2 pb-4">
+    <div class="flex items-end justify-between">
+      <button class="flex flex-col items-center gap-1 w-14 text-[#94A3B8]">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="4" cy="6" r="1.1" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1.1" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1.1" fill="currentColor" stroke="none"/></svg>
+        <span class="text-[10px] font-semibold">Transactions</span>
+      </button>
+      <button class="flex flex-col items-center gap-1 w-14 text-[#94A3B8]">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 20v-6M11 20V6M17 20v-9"/><path d="M3.5 20h17"/></svg>
+        <span class="text-[10px] font-semibold">Stats</span>
+      </button>
+      <button class="w-14 flex justify-center" aria-label="Add budget">
+        <span class="-mt-7 w-14 h-14 rounded-full bg-gradient-to-br from-[#4F46E5] to-[#7C3AED] text-white flex items-center justify-center shadow-[0_12px_24px_-6px_rgba(99,72,237,0.6)] ring-4 ring-[#F4F6FB]">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        </span>
+      </button>
+      <button class="flex flex-col items-center gap-1 w-14 text-[#4F46E5]">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5v9h9"/><path d="M20.2 15.5A9 9 0 1 1 12 3.5v9h9a9 9 0 0 1-.8 3z"/></svg>
+        <span class="text-[10px] font-bold">Budgets</span>
+      </button>
+      <button class="flex flex-col items-center gap-1 w-14 text-[#94A3B8]">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>
+        <span class="text-[10px] font-semibold">More</span>
+      </button>
+    </div>
+    <div class="mx-auto mt-3 h-1 w-32 rounded-full bg-[#0B1226]/15"></div>
+  </nav>
+</div>
+    </script>
+
+    <!-- ============ SCREEN SOURCE: OVERVIEW ============ -->
+    <script type="text/plain" id="src-overview">
+<div class="h-full flex flex-col bg-[#F4F6FB] text-[#0B1226]">
+  <!-- status bar -->
+  <div class="flex items-center justify-between px-7 pt-4 pb-1 text-[13px] font-bold flex-none">
+    <span>10:00</span>
+    <span class="flex items-center gap-1.5 text-[#0B1226]">
+      <svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor" aria-hidden="true"><rect x="0" y="7" width="3" height="4" rx="1"/><rect x="4.5" y="5" width="3" height="6" rx="1"/><rect x="9" y="2.5" width="3" height="8.5" rx="1"/><rect x="13.5" y="0" width="3" height="11" rx="1"/></svg>
+      <svg width="16" height="12" viewBox="0 0 24 18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M2.5 6.5a15 15 0 0 1 19 0"/><path d="M5.8 10.2a10.5 10.5 0 0 1 12.4 0"/><circle cx="12" cy="14.6" r="1.4" fill="currentColor" stroke="none"/></svg>
+      <svg width="25" height="12" viewBox="0 0 27 12" fill="none" aria-hidden="true"><rect x="0.8" y="0.8" width="21" height="10.4" rx="3" stroke="currentColor" opacity="0.4" stroke-width="1.2"/><rect x="2.6" y="2.6" width="14" height="6.8" rx="1.6" fill="currentColor"/><path d="M24.4 4v4a2.2 2.2 0 0 0 0-4z" fill="currentColor" opacity="0.6"/></svg>
+    </span>
+  </div>
+
+  <!-- scroll area -->
+  <div class="flex-1 overflow-y-auto no-scrollbar px-5 pb-6">
+    <!-- header -->
+    <h1 class="mt-2 text-[24px] font-extrabold tracking-tight">Overview</h1>
+    <div class="mt-1.5 flex items-center gap-1">
+      <button class="w-8 h-8 flex items-center justify-center rounded-full text-[#64748B] hover:bg-white" aria-label="Previous month">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 5.5 8 12l6.5 6.5"/></svg>
+      </button>
+      <p class="text-[15px] font-bold">August 2026</p>
+      <button class="w-8 h-8 flex items-center justify-center rounded-full text-[#64748B] hover:bg-white" aria-label="Next month">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9.5 5.5 6.5 6.5-6.5 6.5"/></svg>
+      </button>
+    </div>
+
+    <!-- segmented -->
+    <div class="mt-3 flex rounded-full bg-[#EDEFF5] p-1" data-chips data-on="seg-on">
+      <button data-chip class="seg-on flex-1 rounded-full py-2 text-[13.5px] font-bold text-[#64748B]">Expenses</button>
+      <button data-chip class="flex-1 rounded-full py-2 text-[13.5px] font-bold text-[#64748B]">Income</button>
+      <button data-chip class="flex-1 rounded-full py-2 text-[13.5px] font-bold text-[#64748B]">Summary</button>
+    </div>
+
+    <!-- donut card -->
+    <section class="mt-4 rounded-[24px] bg-white shadow-[0_8px_30px_rgba(15,23,42,0.08)] p-5">
+      <div class="relative mx-auto w-[224px] h-[224px]">
+        <svg viewBox="0 0 200 200" class="w-full h-full">
+          <g transform="rotate(-90 100 100)">
+            <circle cx="100" cy="100" r="80" fill="none" stroke="#EDEFF5" stroke-width="25"/>
+            <circle class="donut-seg" data-pct="31" cx="100" cy="100" r="80" fill="none" stroke="#92400E" stroke-width="25"/>
+            <circle class="donut-seg" data-pct="27" cx="100" cy="100" r="80" fill="none" stroke="#16A34A" stroke-width="25"/>
+            <circle class="donut-seg" data-pct="21" cx="100" cy="100" r="80" fill="none" stroke="#EA580C" stroke-width="25"/>
+            <circle class="donut-seg" data-pct="10" cx="100" cy="100" r="80" fill="none" stroke="#0D9488" stroke-width="25"/>
+            <circle class="donut-seg" data-pct="5" cx="100" cy="100" r="80" fill="none" stroke="#EC4899" stroke-width="25"/>
+            <circle class="donut-seg" data-pct="1" cx="100" cy="100" r="80" fill="none" stroke="#64748B" stroke-width="25"/>
+            <circle class="donut-seg" data-pct="1" cx="100" cy="100" r="80" fill="none" stroke="#4F46E5" stroke-width="25"/>
+            <circle class="donut-seg" data-pct="1" cx="100" cy="100" r="80" fill="none" stroke="#78716C" stroke-width="25"/>
+            <circle class="donut-seg" data-pct="1" cx="100" cy="100" r="80" fill="none" stroke="#22C55E" stroke-width="25"/>
+            <circle class="donut-seg" data-pct="1" cx="100" cy="100" r="80" fill="none" stroke="#8B5CF6" stroke-width="25"/>
+          </g>
+        </svg>
+        <div class="absolute inset-0 flex flex-col items-center justify-center">
+          <p class="text-[23px] font-extrabold tracking-tight">$5,880.61</p>
+          <p class="text-[11.5px] font-medium text-[#64748B] mt-0.5">Total expenses</p>
+        </div>
+      </div>
+      <div class="mt-3 flex flex-wrap justify-center gap-x-4 gap-y-1.5 text-[11px] font-semibold text-[#64748B]">
+        <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full" style="background:#92400E"></span>Home 31%</span>
+        <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full" style="background:#16A34A"></span>Transfer 27%</span>
+        <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full" style="background:#EA580C"></span>Food 21%</span>
+        <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full" style="background:#0D9488"></span>Deposit 10%</span>
+        <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full" style="background:#EC4899"></span>Transport 5%</span>
+      </div>
+    </section>
+
+    <!-- insight card -->
+    <section class="mt-4 rounded-[24px] bg-gradient-to-r from-[#4F46E5] to-[#7C3AED] text-white p-4.5 p-5 shadow-[0_16px_36px_-12px_rgba(99,72,237,0.55)] flex gap-3">
+      <span class="flex-none w-10 h-10 rounded-2xl bg-white/15 flex items-center justify-center">
+        <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 17.5h5M10.3 20.5h3.4"/><path d="M12 3a6.2 6.2 0 0 1 3.6 11.2c-.7.55-1.1 1.1-1.1 2.3h-5c0-1.2-.4-1.75-1.1-2.3A6.2 6.2 0 0 1 12 3z"/></svg>
+      </span>
+      <p class="text-[13.5px] leading-relaxed"><span class="font-bold">Home is your top spend</span> — $1,824.23 (31% of expenses) this month.</p>
+    </section>
+
+    <!-- category ranking -->
+    <section class="mt-4 rounded-[24px] bg-white shadow-[0_8px_30px_rgba(15,23,42,0.08)] px-4 py-1.5">
+      <div class="flex items-center gap-3 py-3">
+        <span class="w-2.5 h-2.5 flex-none rounded-full" style="background:#92400E"></span>
+        <span class="w-[74px] flex-none text-sm font-semibold">Home</span>
+        <span class="flex-1 h-1.5 rounded-full bg-[#EDEFF5] overflow-hidden"><span class="bar-fill block h-full rounded-full" data-bar="31" style="width:0%;background:#92400E"></span></span>
+        <span class="w-[86px] flex-none text-right text-sm font-bold">$1,824.23</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="text-[#B6BECB] flex-none"><path d="m6 9.5 6 6 6-6"/></svg>
+      </div>
+      <div class="border-t border-slate-50"></div>
+      <div class="flex items-center gap-3 py-3">
+        <span class="w-2.5 h-2.5 flex-none rounded-full" style="background:#16A34A"></span>
+        <span class="w-[74px] flex-none text-sm font-semibold">Transfer</span>
+        <span class="flex-1 h-1.5 rounded-full bg-[#EDEFF5] overflow-hidden"><span class="bar-fill block h-full rounded-full" data-bar="27" style="width:0%;background:#16A34A"></span></span>
+        <span class="w-[86px] flex-none text-right text-sm font-bold">$1,577.35</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="text-[#B6BECB] flex-none"><path d="m6 9.5 6 6 6-6"/></svg>
+      </div>
+      <div class="border-t border-slate-50"></div>
+      <div class="flex items-center gap-3 py-3">
+        <span class="w-2.5 h-2.5 flex-none rounded-full" style="background:#EA580C"></span>
+        <span class="w-[74px] flex-none text-sm font-semibold">Food</span>
+        <span class="flex-1 h-1.5 rounded-full bg-[#EDEFF5] overflow-hidden"><span class="bar-fill block h-full rounded-full" data-bar="21" style="width:0%;background:#EA580C"></span></span>
+        <span class="w-[86px] flex-none text-right text-sm font-bold">$1,234.93</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="text-[#B6BECB] flex-none"><path d="m6 9.5 6 6 6-6"/></svg>
+      </div>
+      <div class="border-t border-slate-50"></div>
+      <div class="flex items-center gap-3 py-3">
+        <span class="w-2.5 h-2.5 flex-none rounded-full" style="background:#0D9488"></span>
+        <span class="w-[74px] flex-none text-sm font-semibold">Deposit</span>
+        <span class="flex-1 h-1.5 rounded-full bg-[#EDEFF5] overflow-hidden"><span class="bar-fill block h-full rounded-full" data-bar="10" style="width:0%;background:#0D9488"></span></span>
+        <span class="w-[86px] flex-none text-right text-sm font-bold">$600.00</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="text-[#B6BECB] flex-none"><path d="m6 9.5 6 6 6-6"/></svg>
+      </div>
+      <div class="border-t border-slate-50"></div>
+      <div class="flex items-center gap-3 py-3">
+        <span class="w-2.5 h-2.5 flex-none rounded-full" style="background:#EC4899"></span>
+        <span class="w-[74px] flex-none text-sm font-semibold">Transport</span>
+        <span class="flex-1 h-1.5 rounded-full bg-[#EDEFF5] overflow-hidden"><span class="bar-fill block h-full rounded-full" data-bar="5" style="width:0%;background:#EC4899"></span></span>
+        <span class="w-[86px] flex-none text-right text-sm font-bold">$294.03</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="text-[#B6BECB] flex-none"><path d="m6 9.5 6 6 6-6"/></svg>
+      </div>
+      <div class="border-t border-slate-50"></div>
+      <div class="flex items-center gap-3 py-3">
+        <span class="w-2.5 h-2.5 flex-none rounded-full" style="background:#64748B"></span>
+        <span class="w-[74px] flex-none text-sm font-semibold">Pets</span>
+        <span class="flex-1 h-1.5 rounded-full bg-[#EDEFF5] overflow-hidden"><span class="bar-fill block h-full rounded-full" data-bar="1" style="width:0%;min-width:4px;background:#64748B"></span></span>
+        <span class="w-[86px] flex-none text-right text-sm font-bold">$55.50</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="text-[#B6BECB] flex-none"><path d="m6 9.5 6 6 6-6"/></svg>
+      </div>
+      <div class="border-t border-slate-50"></div>
+      <div class="flex items-center gap-3 py-3">
+        <span class="w-2.5 h-2.5 flex-none rounded-full" style="background:#4F46E5"></span>
+        <span class="w-[74px] flex-none text-sm font-semibold">Health</span>
+        <span class="flex-1 h-1.5 rounded-full bg-[#EDEFF5] overflow-hidden"><span class="bar-fill block h-full rounded-full" data-bar="1" style="width:0%;min-width:4px;background:#4F46E5"></span></span>
+        <span class="w-[86px] flex-none text-right text-sm font-bold">$87.98</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="text-[#B6BECB] flex-none"><path d="m6 9.5 6 6 6-6"/></svg>
+      </div>
+      <div class="border-t border-slate-50"></div>
+      <div class="flex items-center gap-3 py-3">
+        <span class="w-2.5 h-2.5 flex-none rounded-full" style="background:#78716C"></span>
+        <span class="w-[74px] flex-none text-sm font-semibold">Family</span>
+        <span class="flex-1 h-1.5 rounded-full bg-[#EDEFF5] overflow-hidden"><span class="bar-fill block h-full rounded-full" data-bar="1" style="width:0%;min-width:4px;background:#78716C"></span></span>
+        <span class="w-[86px] flex-none text-right text-sm font-bold">$84.23</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="text-[#B6BECB] flex-none"><path d="m6 9.5 6 6 6-6"/></svg>
+      </div>
+      <div class="border-t border-slate-50"></div>
+      <div class="flex items-center gap-3 py-3">
+        <span class="w-2.5 h-2.5 flex-none rounded-full" style="background:#22C55E"></span>
+        <span class="w-[74px] flex-none text-sm font-semibold">Fun</span>
+        <span class="flex-1 h-1.5 rounded-full bg-[#EDEFF5] overflow-hidden"><span class="bar-fill block h-full rounded-full" data-bar="1" style="width:0%;min-width:4px;background:#22C55E"></span></span>
+        <span class="w-[86px] flex-none text-right text-sm font-bold">$39.27</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="text-[#B6BECB] flex-none"><path d="m6 9.5 6 6 6-6"/></svg>
+      </div>
+      <div class="border-t border-slate-50"></div>
+      <div class="flex items-center gap-3 py-3">
+        <span class="w-2.5 h-2.5 flex-none rounded-full" style="background:#8B5CF6"></span>
+        <span class="w-[74px] flex-none text-sm font-semibold">Streaming</span>
+        <span class="flex-1 h-1.5 rounded-full bg-[#EDEFF5] overflow-hidden"><span class="bar-fill block h-full rounded-full" data-bar="1" style="width:0%;min-width:4px;background:#8B5CF6"></span></span>
+        <span class="w-[86px] flex-none text-right text-sm font-bold">$83.09</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="text-[#B6BECB] flex-none"><path d="m6 9.5 6 6 6-6"/></svg>
+      </div>
+    </section>
+  </div>
+
+  <!-- bottom tab bar -->
+  <nav class="flex-none relative bg-white border-t border-slate-100 px-4 pt-2 pb-4">
+    <div class="flex items-end justify-between">
+      <button class="flex flex-col items-center gap-1 w-14 text-[#94A3B8]">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="4" cy="6" r="1.1" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1.1" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1.1" fill="currentColor" stroke="none"/></svg>
+        <span class="text-[10px] font-semibold">Transactions</span>
+      </button>
+      <button class="flex flex-col items-center gap-1 w-14 text-[#4F46E5]">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 20v-6M11 20V6M17 20v-9"/><path d="M3.5 20h17"/></svg>
+        <span class="text-[10px] font-bold">Stats</span>
+      </button>
+      <button class="w-14 flex justify-center" aria-label="Add transaction">
+        <span class="-mt-7 w-14 h-14 rounded-full bg-gradient-to-br from-[#4F46E5] to-[#7C3AED] text-white flex items-center justify-center shadow-[0_12px_24px_-6px_rgba(99,72,237,0.6)] ring-4 ring-[#F4F6FB]">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        </span>
+      </button>
+      <button class="flex flex-col items-center gap-1 w-14 text-[#94A3B8]">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5v9h9"/><path d="M20.2 15.5A9 9 0 1 1 12 3.5v9h9a9 9 0 0 1-.8 3z"/></svg>
+        <span class="text-[10px] font-semibold">Budgets</span>
+      </button>
+      <button class="flex flex-col items-center gap-1 w-14 text-[#94A3B8]">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>
+        <span class="text-[10px] font-semibold">More</span>
+      </button>
+    </div>
+    <div class="mx-auto mt-3 h-1 w-32 rounded-full bg-[#0B1226]/15"></div>
+  </nav>
+</div>
+    </script>
+
+    <!-- ============ SCREEN SOURCE: TRANSACTIONS — MINIMAL ============ -->
+    <script type="text/plain" id="src-min-transactions">
+<div class="h-full flex flex-col bg-white text-[#161616]">
+  <div class="flex items-center justify-between px-7 pt-4 pb-1 text-[13px] font-semibold flex-none">
+    <span>10:00</span>
+    <span class="flex items-center gap-1.5 text-[#161616]">
+      <svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor" aria-hidden="true"><rect x="0" y="7" width="3" height="4" rx="1"/><rect x="4.5" y="5" width="3" height="6" rx="1"/><rect x="9" y="2.5" width="3" height="8.5" rx="1"/><rect x="13.5" y="0" width="3" height="11" rx="1"/></svg>
+      <svg width="16" height="12" viewBox="0 0 24 18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M2.5 6.5a15 15 0 0 1 19 0"/><path d="M5.8 10.2a10.5 10.5 0 0 1 12.4 0"/><circle cx="12" cy="14.6" r="1.4" fill="currentColor" stroke="none"/></svg>
+      <svg width="25" height="12" viewBox="0 0 27 12" fill="none" aria-hidden="true"><rect x="0.8" y="0.8" width="21" height="10.4" rx="3" stroke="currentColor" opacity="0.4" stroke-width="1.2"/><rect x="2.6" y="2.6" width="14" height="6.8" rx="1.6" fill="currentColor"/><path d="M24.4 4v4a2.2 2.2 0 0 0 0-4z" fill="currentColor" opacity="0.6"/></svg>
+    </span>
+  </div>
+
+  <div class="flex-1 overflow-y-auto no-scrollbar px-5 pb-6">
+    <p class="mt-4 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6E6E6E]">September 2026</p>
+    <div class="mt-2 flex items-center justify-between">
+      <h1 class="text-[26px] font-light tracking-tight leading-none">Transactions</h1>
+      <span class="text-[12px] font-medium text-[#6E6E6E]">Total wallet</span>
+    </div>
+
+    <div class="mt-6 border-t border-b border-[#EBEBEB] py-5">
+      <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6E6E6E]">Total balance</p>
+      <p class="mt-2 text-[44px] leading-none font-extralight tracking-tight">$2,587.14</p>
+      <div class="mt-4 flex gap-6 text-[13px]">
+        <span><span class="text-[#6E6E6E]">Income</span> <span class="font-semibold text-[#2F9E44]">+$4,768.72</span></span>
+        <span><span class="text-[#6E6E6E]">Expenses</span> <span class="font-semibold text-[#E03131]">−$2,181.58</span></span>
+      </div>
+    </div>
+
+    <div class="mt-5 flex flex-wrap gap-2" data-chips>
+      <button data-chip class="chip-on rounded-full border border-[#EBEBEB] px-3.5 py-2 text-[13px] font-medium text-[#6E6E6E]">All</button>
+      <button data-chip class="rounded-full border border-[#EBEBEB] px-3.5 py-2 text-[13px] font-medium text-[#6E6E6E]">Expenses</button>
+      <button data-chip class="rounded-full border border-[#EBEBEB] px-3.5 py-2 text-[13px] font-medium text-[#6E6E6E]">Income</button>
+      <button data-chip class="rounded-full border border-[#EBEBEB] px-3.5 py-2 text-[13px] font-medium text-[#6E6E6E]">Transfers</button>
+    </div>
+
+    <p class="mt-6 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6E6E6E]">Fri, Sep 18</p>
+    <div class="mt-2 border-t border-[#EBEBEB]">
+      <div class="flex items-center gap-3 py-3 border-b border-[#EBEBEB]">
+        <div class="w-10 h-10 flex-none rounded-full flex items-center justify-center text-[13px] font-semibold" style="background:#E3F2EE;color:#0E7A5F">S</div>
+        <div class="flex-1 min-w-0"><p class="text-[15px] font-medium leading-snug">Salary</p><p class="text-xs text-[#6E6E6E]">Paycheck</p></div>
+        <div class="text-right flex-none"><p class="text-[14px] font-semibold text-[#2F9E44]">+$2,184.36</p><p class="text-[11px] text-[#A3A3A3] mt-0.5">Sep 18</p></div>
+      </div>
+      <div class="flex items-center gap-3 py-3 border-b border-[#EBEBEB]">
+        <div class="w-10 h-10 flex-none rounded-full flex items-center justify-center text-[13px] font-semibold" style="background:#FBE7EF;color:#BC4B7C">E</div>
+        <div class="flex-1 min-w-0"><p class="text-[15px] font-medium leading-snug">Electricity</p><p class="text-xs text-[#6E6E6E]">Electric bill</p></div>
+        <div class="text-right flex-none"><p class="text-[14px] font-semibold text-[#E03131]">−$132.40</p><p class="text-[11px] text-[#A3A3A3] mt-0.5">Sep 18</p></div>
+      </div>
+    </div>
+
+    <p class="mt-5 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6E6E6E]">Sat, Sep 12</p>
+    <div class="mt-2 border-t border-[#EBEBEB]">
+      <div class="flex items-center gap-3 py-3 border-b border-[#EBEBEB]">
+        <div class="w-10 h-10 flex-none rounded-full flex items-center justify-center text-[13px] font-semibold" style="background:#FFEDD9;color:#D96C06">I</div>
+        <div class="flex-1 min-w-0"><p class="text-[15px] font-medium leading-snug">Internet</p><p class="text-xs text-[#6E6E6E]">Internet</p></div>
+        <div class="text-right flex-none"><p class="text-[14px] font-semibold text-[#E03131]">−$79.99</p><p class="text-[11px] text-[#A3A3A3] mt-0.5">Sep 12</p></div>
+      </div>
+    </div>
+
+    <p class="mt-5 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6E6E6E]">Tue, Sep 8</p>
+    <div class="mt-2 border-t border-[#EBEBEB]">
+      <div class="flex items-center gap-3 py-3 border-b border-[#EBEBEB]">
+        <div class="w-10 h-10 flex-none rounded-full flex items-center justify-center text-[11px] font-semibold" style="background:#EDF6DA;color:#639922">WA</div>
+        <div class="flex-1 min-w-0"><p class="text-[15px] font-medium leading-snug">Water and trash</p><p class="text-xs text-[#6E6E6E]">Water and trash</p></div>
+        <div class="text-right flex-none"><p class="text-[14px] font-semibold text-[#E03131]">−$61.20</p><p class="text-[11px] text-[#A3A3A3] mt-0.5">Sep 8</p></div>
+      </div>
+    </div>
+
+    <p class="mt-5 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6E6E6E]">Sat, Sep 5</p>
+    <div class="mt-2 border-t border-[#EBEBEB]">
+      <div class="flex items-center gap-3 py-3 border-b border-[#EBEBEB]">
+        <div class="w-10 h-10 flex-none rounded-full flex items-center justify-center text-[13px] font-semibold" style="background:#EFE9FA;color:#7C5CBF">S</div>
+        <div class="flex-1 min-w-0"><p class="text-[15px] font-medium leading-snug">Streaming</p><p class="text-xs text-[#6E6E6E]">Streaming</p></div>
+        <div class="text-right flex-none"><p class="text-[14px] font-semibold text-[#E03131]">−$15.99</p><p class="text-[11px] text-[#A3A3A3] mt-0.5">Sep 5</p></div>
+      </div>
+    </div>
+
+    <p class="mt-5 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6E6E6E]">Fri, Sep 4</p>
+    <div class="mt-2 border-t border-[#EBEBEB]">
+      <div class="flex items-center gap-3 py-3 border-b border-[#EBEBEB]">
+        <div class="w-10 h-10 flex-none rounded-full flex items-center justify-center text-[13px] font-semibold" style="background:#E3F2EE;color:#0E7A5F">S</div>
+        <div class="flex-1 min-w-0"><p class="text-[15px] font-medium leading-snug">Salary</p><p class="text-xs text-[#6E6E6E]">Paycheck</p></div>
+        <div class="text-right flex-none"><p class="text-[14px] font-semibold text-[#2F9E44]">+$2,184.36</p><p class="text-[11px] text-[#A3A3A3] mt-0.5">Sep 4</p></div>
+      </div>
+    </div>
+
+    <p class="mt-5 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6E6E6E]">Thu, Sep 3</p>
+    <div class="mt-2 border-t border-[#EBEBEB]">
+      <div class="flex items-center gap-3 py-3 border-b border-[#EBEBEB]">
+        <div class="w-10 h-10 flex-none rounded-full flex items-center justify-center text-[13px] font-semibold" style="background:#FFF0D6;color:#CC8500">G</div>
+        <div class="flex-1 min-w-0"><p class="text-[15px] font-medium leading-snug">Gym</p><p class="text-xs text-[#6E6E6E]">Gym</p></div>
+        <div class="text-right flex-none"><p class="text-[14px] font-semibold text-[#E03131]">−$42.00</p><p class="text-[11px] text-[#A3A3A3] mt-0.5">Sep 3</p></div>
+      </div>
+    </div>
+
+    <p class="mt-5 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6E6E6E]">Wed, Sep 2</p>
+    <div class="mt-2 border-t border-[#EBEBEB]">
+      <div class="flex items-center gap-3 py-3 border-b border-[#EBEBEB]">
+        <div class="w-10 h-10 flex-none rounded-full flex items-center justify-center text-[13px] font-semibold" style="background:#E7F3EA;color:#3E7C4F">T</div>
+        <div class="flex-1 min-w-0"><p class="text-[15px] font-medium leading-snug">Transfer</p><p class="text-xs text-[#6E6E6E]">Move to savings</p></div>
+        <div class="text-right flex-none"><p class="text-[14px] font-semibold text-[#E03131]">−$400.00</p><p class="text-[11px] text-[#A3A3A3] mt-0.5">Sep 2</p></div>
+      </div>
+      <div class="flex items-center gap-3 py-3 border-b border-[#EBEBEB]">
+        <div class="w-10 h-10 flex-none rounded-full flex items-center justify-center text-[13px] font-semibold" style="background:#E7F3EA;color:#3E7C4F">T</div>
+        <div class="flex-1 min-w-0"><p class="text-[15px] font-medium leading-snug">Transfer</p><p class="text-xs text-[#6E6E6E]">Move to savings</p></div>
+        <div class="text-right flex-none"><p class="text-[14px] font-semibold text-[#2F9E44]">+$400.00</p><p class="text-[11px] text-[#A3A3A3] mt-0.5">Sep 2</p></div>
+      </div>
+    </div>
+
+    <p class="mt-5 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6E6E6E]">Tue, Sep 1</p>
+    <div class="mt-2 border-t border-[#EBEBEB]">
+      <div class="flex items-center gap-3 py-3 border-b border-[#EBEBEB]">
+        <div class="w-10 h-10 flex-none rounded-full flex items-center justify-center text-[13px] font-semibold" style="background:#FFE9E1;color:#D2542B">R</div>
+        <div class="flex-1 min-w-0"><p class="text-[15px] font-medium leading-snug">Rent</p><p class="text-xs text-[#6E6E6E]">Rent</p></div>
+        <div class="text-right flex-none"><p class="text-[14px] font-semibold text-[#E03131]">−$1,450.00</p><p class="text-[11px] text-[#A3A3A3] mt-0.5">Sep 1</p></div>
+      </div>
+    </div>
+  </div>
+
+  <nav class="flex-none relative bg-white border-t border-[#EBEBEB] px-4 pt-3 pb-4">
+    <div class="flex items-end justify-between">
+      <button class="flex flex-col items-center gap-1 w-14 text-[#161616]"><span class="text-[11px] font-semibold tracking-wide">Transactions</span></button>
+      <button class="flex flex-col items-center gap-1 w-14 text-[#6E6E6E]"><span class="text-[11px] font-medium tracking-wide">Stats</span></button>
+      <button class="w-14 flex justify-center" aria-label="Add transaction"><span class="w-[52px] h-[52px] rounded-full bg-[#161616] text-white flex items-center justify-center"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span></button>
+      <button class="flex flex-col items-center gap-1 w-14 text-[#6E6E6E]"><span class="text-[11px] font-medium tracking-wide">Budgets</span></button>
+      <button class="flex flex-col items-center gap-1 w-14 text-[#6E6E6E]"><span class="text-[11px] font-medium tracking-wide">More</span></button>
+    </div>
+    <div class="mx-auto mt-3 h-1 w-32 rounded-full bg-[#161616]/15"></div>
+  </nav>
+</div>
+    </script>
+
+    <!-- ============ SCREEN SOURCE: NEW TRANSACTION — MINIMAL ============ -->
+    <script type="text/plain" id="src-min-new">
+<div class="h-full flex flex-col bg-white text-[#161616]">
+  <div class="flex items-center justify-between px-7 pt-4 pb-1 text-[13px] font-semibold flex-none">
+    <span>10:00</span>
+    <span class="flex items-center gap-1.5 text-[#161616]">
+      <svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor" aria-hidden="true"><rect x="0" y="7" width="3" height="4" rx="1"/><rect x="4.5" y="5" width="3" height="6" rx="1"/><rect x="9" y="2.5" width="3" height="8.5" rx="1"/><rect x="13.5" y="0" width="3" height="11" rx="1"/></svg>
+      <svg width="16" height="12" viewBox="0 0 24 18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M2.5 6.5a15 15 0 0 1 19 0"/><path d="M5.8 10.2a10.5 10.5 0 0 1 12.4 0"/><circle cx="12" cy="14.6" r="1.4" fill="currentColor" stroke="none"/></svg>
+      <svg width="25" height="12" viewBox="0 0 27 12" fill="none" aria-hidden="true"><rect x="0.8" y="0.8" width="21" height="10.4" rx="3" stroke="currentColor" opacity="0.4" stroke-width="1.2"/><rect x="2.6" y="2.6" width="14" height="6.8" rx="1.6" fill="currentColor"/><path d="M24.4 4v4a2.2 2.2 0 0 0 0-4z" fill="currentColor" opacity="0.6"/></svg>
+    </span>
+  </div>
+
+  <div class="flex-none flex items-center gap-2 px-4 mt-1">
+    <button class="w-10 h-10 flex items-center justify-center rounded-full border border-[#EBEBEB]" aria-label="Close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    <h1 class="flex-1 text-center text-[17px] font-medium tracking-tight">New transaction</h1>
+    <span class="w-10"></span>
+  </div>
+
+  <div class="flex-1 overflow-y-auto no-scrollbar px-5 pb-4">
+    <div class="mt-4 flex rounded-full border border-[#EBEBEB] p-1" data-chips data-on="seg-on">
+      <button data-chip class="seg-on seg-exp flex-1 rounded-full py-2 text-[13.5px] font-medium text-[#6E6E6E]">Expense</button>
+      <button data-chip class="seg-inc flex-1 rounded-full py-2 text-[13.5px] font-medium text-[#6E6E6E]">Income</button>
+      <button data-chip class="seg-trf flex-1 rounded-full py-2 text-[13.5px] font-medium text-[#6E6E6E]">Transfer</button>
+    </div>
+
+    <div class="py-10 text-center">
+      <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6E6E6E]">Amount</p>
+      <p class="mt-2 text-[62px] leading-none font-extralight tracking-tight text-[#E03131]">$ 6.75<span class="caret text-[#E03131]">|</span></p>
+      <p class="mt-3 text-xs font-medium text-[#A3A3A3]">Tap to edit</p>
+    </div>
+
+    <div class="border-t border-b border-[#EBEBEB] py-5">
+      <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6E6E6E]">Category</p>
+      <div class="mt-4 grid grid-cols-4 gap-x-2 gap-y-5" data-chips data-on="cat-on">
+        <button data-chip class="cat-on flex flex-col items-center gap-2"><span class="cat-tile w-11 h-11 rounded-full flex items-center justify-center text-[12px] font-semibold" style="background:#F1E7E0;color:#7A5A48">C</span><span class="text-[11px] font-medium">Coffee</span></button>
+        <button data-chip class="flex flex-col items-center gap-2"><span class="cat-tile w-11 h-11 rounded-full flex items-center justify-center text-[12px] font-semibold" style="background:#FFEDD9;color:#D96C06">F</span><span class="text-[11px] font-medium">Food</span></button>
+        <button data-chip class="flex flex-col items-center gap-2"><span class="cat-tile w-11 h-11 rounded-full flex items-center justify-center text-[12px] font-semibold" style="background:#E1F0FA;color:#2273A5">T</span><span class="text-[11px] font-medium">Transport</span></button>
+        <button data-chip class="flex flex-col items-center gap-2"><span class="cat-tile w-11 h-11 rounded-full flex items-center justify-center text-[12px] font-semibold" style="background:#FBE3F1;color:#C24B8A">S</span><span class="text-[11px] font-medium">Shopping</span></button>
+        <button data-chip class="flex flex-col items-center gap-2"><span class="cat-tile w-11 h-11 rounded-full flex items-center justify-center text-[12px] font-semibold" style="background:#FDE3E3;color:#CE4A4A">H</span><span class="text-[11px] font-medium">Health</span></button>
+        <button data-chip class="flex flex-col items-center gap-2"><span class="cat-tile w-11 h-11 rounded-full flex items-center justify-center text-[12px] font-semibold" style="background:#FFF0D6;color:#CC8500">B</span><span class="text-[11px] font-medium">Bills</span></button>
+        <button data-chip class="flex flex-col items-center gap-2"><span class="cat-tile w-11 h-11 rounded-full flex items-center justify-center text-[12px] font-semibold" style="background:#E4F5E9;color:#3E9153">F</span><span class="text-[11px] font-medium">Fun</span></button>
+        <button data-chip class="flex flex-col items-center gap-2"><span class="cat-tile w-11 h-11 rounded-full flex items-center justify-center text-[12px] font-semibold" style="background:#F3F3F3;color:#6E6E6E">•••</span><span class="text-[11px] font-medium">More</span></button>
+      </div>
+    </div>
+
+    <div class="mt-5 border-t border-[#EBEBEB]">
+      <div class="flex items-center justify-between py-4 border-b border-[#EBEBEB]"><span class="text-sm text-[#6E6E6E]">Date</span><span class="text-sm font-medium">Fri, Sep 18 · 1:42 PM</span></div>
+      <div class="flex items-center justify-between py-4 border-b border-[#EBEBEB]"><span class="text-sm text-[#6E6E6E]">Wallet</span><span class="flex gap-2" data-chips><button data-chip class="chip-on rounded-full border border-[#EBEBEB] px-3.5 py-1.5 text-[13px] font-medium text-[#6E6E6E]">Checking</button><button data-chip class="rounded-full border border-[#EBEBEB] px-3.5 py-1.5 text-[13px] font-medium text-[#6E6E6E]">Savings</button></span></div>
+      <div class="flex items-center justify-between py-4 border-b border-[#EBEBEB]"><span class="text-sm text-[#6E6E6E]">Note</span><span class="text-sm text-[#A3A3A3]">Add a note…</span></div>
+    </div>
+
+    <div class="mt-5 border-t border-[#EBEBEB]">
+      <div class="flex items-center justify-between py-3.5 border-b border-[#EBEBEB]"><span class="text-sm font-medium">Confirmed</span><button class="switch" data-toggle role="switch" aria-checked="true" aria-label="Confirmed"><span class="knob"></span></button></div>
+      <div class="flex items-center justify-between py-3.5 border-b border-[#EBEBEB]"><span class="text-sm font-medium">Show in total wallet</span><button class="switch" data-toggle role="switch" aria-checked="true" aria-label="Show in total wallet"><span class="knob"></span></button></div>
+    </div>
+  </div>
+
+  <div class="flex-none px-5 pt-3 pb-5 bg-white border-t border-[#EBEBEB]">
+    <button class="w-full rounded-full bg-[#161616] py-4 text-[15px] font-semibold text-white">Save transaction</button>
+    <div class="mx-auto mt-3.5 h-1 w-32 rounded-full bg-[#161616]/15"></div>
+  </div>
+</div>
+    </script>
+
+    <!-- ============ SCREEN SOURCE: BUDGETS — MINIMAL ============ -->
+    <script type="text/plain" id="src-min-budgets">
+<div class="h-full flex flex-col bg-white text-[#161616]">
+  <div class="flex items-center justify-between px-7 pt-4 pb-1 text-[13px] font-semibold flex-none">
+    <span>10:00</span>
+    <span class="flex items-center gap-1.5 text-[#161616]">
+      <svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor" aria-hidden="true"><rect x="0" y="7" width="3" height="4" rx="1"/><rect x="4.5" y="5" width="3" height="6" rx="1"/><rect x="9" y="2.5" width="3" height="8.5" rx="1"/><rect x="13.5" y="0" width="3" height="11" rx="1"/></svg>
+      <svg width="16" height="12" viewBox="0 0 24 18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M2.5 6.5a15 15 0 0 1 19 0"/><path d="M5.8 10.2a10.5 10.5 0 0 1 12.4 0"/><circle cx="12" cy="14.6" r="1.4" fill="currentColor" stroke="none"/></svg>
+      <svg width="25" height="12" viewBox="0 0 27 12" fill="none" aria-hidden="true"><rect x="0.8" y="0.8" width="21" height="10.4" rx="3" stroke="currentColor" opacity="0.4" stroke-width="1.2"/><rect x="2.6" y="2.6" width="14" height="6.8" rx="1.6" fill="currentColor"/><path d="M24.4 4v4a2.2 2.2 0 0 0 0-4z" fill="currentColor" opacity="0.6"/></svg>
+    </span>
+  </div>
+
+  <div class="flex-1 overflow-y-auto no-scrollbar px-5 pb-6">
+    <p class="mt-4 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6E6E6E]">September 2026</p>
+    <div class="mt-2 flex items-center justify-between"><h1 class="text-[26px] font-light tracking-tight leading-none">Budgets</h1><span class="text-[12px] font-medium text-[#6E6E6E]">4 budgets</span></div>
+
+    <div class="mt-6 border-t border-b border-[#EBEBEB] py-5">
+      <div class="flex items-baseline justify-between"><p class="text-[13px] font-medium">Total</p><p class="text-[13px] font-semibold">77% used</p></div>
+      <p class="mt-2 text-[34px] leading-none font-extralight tracking-tight">$325.00</p>
+      <div class="mt-3 h-[4px] rounded-full bg-[#EFEFEF] overflow-hidden"><div class="bar-fill h-full rounded-full bg-[#161616]" data-bar="77" style="width:0%"></div></div>
+      <p class="mt-2.5 text-xs text-[#6E6E6E]">Spent $251.59 of $325.00 · <span class="text-[#161616] font-medium">$73.41 left</span> until Sep 30</p>
+    </div>
+
+    <div class="mt-6 border-b border-[#EBEBEB] pb-5">
+      <div class="flex items-start justify-between gap-3"><div class="flex items-center gap-3"><div class="w-10 h-10 flex-none rounded-full flex items-center justify-center text-[13px] font-semibold" style="background:#FBE7EF;color:#BC4B7C">E</div><div><p class="text-[15px] font-medium leading-snug">Electricity</p><p class="text-xs text-[#6E6E6E] mt-0.5">Ends Sep 30</p></div></div><div class="text-right"><p class="text-[18px] font-light tracking-tight text-[#E03131]">$17.60</p><p class="text-[11px] text-[#A3A3A3]">left</p></div></div>
+      <div class="mt-3.5 h-[4px] rounded-full bg-[#EFEFEF] overflow-hidden"><div class="bar-fill h-full rounded-full" data-bar="88" style="width:0%;background:#E03131"></div></div>
+      <div class="mt-2.5 flex items-center justify-between text-xs text-[#6E6E6E]"><span>Spent $132.40 of $150.00</span><span class="font-semibold text-[#E03131]">88% · <span class="uppercase tracking-wide text-[10px]">Almost over</span></span></div>
+    </div>
+
+    <div class="mt-5 border-b border-[#EBEBEB] pb-5">
+      <div class="flex items-start justify-between gap-3"><div class="flex items-center gap-3"><div class="w-10 h-10 flex-none rounded-full flex items-center justify-center text-[11px] font-semibold" style="background:#EDF6DA;color:#639922">WA</div><div><p class="text-[15px] font-medium leading-snug">Water and trash</p><p class="text-xs text-[#6E6E6E] mt-0.5">Ends Sep 30</p></div></div><div class="text-right"><p class="text-[18px] font-light tracking-tight">$28.80</p><p class="text-[11px] text-[#A3A3A3]">left</p></div></div>
+      <div class="mt-3.5 h-[4px] rounded-full bg-[#EFEFEF] overflow-hidden"><div class="bar-fill h-full rounded-full bg-[#161616]" data-bar="68" style="width:0%"></div></div>
+      <div class="mt-2.5 flex items-center justify-between text-xs text-[#6E6E6E]"><span>Spent $61.20 of $90.00</span><span class="font-semibold">68%</span></div>
+    </div>
+
+    <div class="mt-5 border-b border-[#EBEBEB] pb-5">
+      <div class="flex items-start justify-between gap-3"><div class="flex items-center gap-3"><div class="w-10 h-10 flex-none rounded-full flex items-center justify-center text-[13px] font-semibold" style="background:#FFF0D6;color:#CC8500">G</div><div><p class="text-[15px] font-medium leading-snug">Gym</p><p class="text-xs text-[#6E6E6E] mt-0.5">Ends Sep 30</p></div></div><div class="text-right"><p class="text-[18px] font-light tracking-tight">$18.00</p><p class="text-[11px] text-[#A3A3A3]">left</p></div></div>
+      <div class="mt-3.5 h-[4px] rounded-full bg-[#EFEFEF] overflow-hidden"><div class="bar-fill h-full rounded-full bg-[#161616]" data-bar="70" style="width:0%"></div></div>
+      <div class="mt-2.5 flex items-center justify-between text-xs text-[#6E6E6E]"><span>Spent $42.00 of $60.00</span><span class="font-semibold">70%</span></div>
+    </div>
+
+    <div class="mt-5 border-b border-[#EBEBEB] pb-5">
+      <div class="flex items-start justify-between gap-3"><div class="flex items-center gap-3"><div class="w-10 h-10 flex-none rounded-full flex items-center justify-center text-[13px] font-semibold" style="background:#EFE9FA;color:#7C5CBF">S</div><div><p class="text-[15px] font-medium leading-snug">Streaming</p><p class="text-xs text-[#6E6E6E] mt-0.5">Ends Sep 30</p></div></div><div class="text-right"><p class="text-[18px] font-light tracking-tight">$9.01</p><p class="text-[11px] text-[#A3A3A3]">left</p></div></div>
+      <div class="mt-3.5 h-[4px] rounded-full bg-[#EFEFEF] overflow-hidden"><div class="bar-fill h-full rounded-full bg-[#161616]" data-bar="64" style="width:0%"></div></div>
+      <div class="mt-2.5 flex items-center justify-between text-xs text-[#6E6E6E]"><span>Spent $15.99 of $25.00</span><span class="font-semibold">64%</span></div>
+    </div>
+  </div>
+
+  <nav class="flex-none relative bg-white border-t border-[#EBEBEB] px-4 pt-3 pb-4">
+    <div class="flex items-end justify-between">
+      <button class="flex flex-col items-center gap-1 w-14 text-[#6E6E6E]"><span class="text-[11px] font-medium tracking-wide">Transactions</span></button>
+      <button class="flex flex-col items-center gap-1 w-14 text-[#6E6E6E]"><span class="text-[11px] font-medium tracking-wide">Stats</span></button>
+      <button class="w-14 flex justify-center" aria-label="Add budget"><span class="w-[52px] h-[52px] rounded-full bg-[#161616] text-white flex items-center justify-center"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span></button>
+      <button class="flex flex-col items-center gap-1 w-14 text-[#161616]"><span class="text-[11px] font-semibold tracking-wide">Budgets</span></button>
+      <button class="flex flex-col items-center gap-1 w-14 text-[#6E6E6E]"><span class="text-[11px] font-medium tracking-wide">More</span></button>
+    </div>
+    <div class="mx-auto mt-3 h-1 w-32 rounded-full bg-[#161616]/15"></div>
+  </nav>
+</div>
+    </script>
+
+    <!-- ============ SCREEN SOURCE: OVERVIEW — MINIMAL ============ -->
+    <script type="text/plain" id="src-min-overview">
+<div class="h-full flex flex-col bg-white text-[#161616]">
+  <div class="flex items-center justify-between px-7 pt-4 pb-1 text-[13px] font-semibold flex-none">
+    <span>10:00</span>
+    <span class="flex items-center gap-1.5 text-[#161616]">
+      <svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor" aria-hidden="true"><rect x="0" y="7" width="3" height="4" rx="1"/><rect x="4.5" y="5" width="3" height="6" rx="1"/><rect x="9" y="2.5" width="3" height="8.5" rx="1"/><rect x="13.5" y="0" width="3" height="11" rx="1"/></svg>
+      <svg width="16" height="12" viewBox="0 0 24 18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M2.5 6.5a15 15 0 0 1 19 0"/><path d="M5.8 10.2a10.5 10.5 0 0 1 12.4 0"/><circle cx="12" cy="14.6" r="1.4" fill="currentColor" stroke="none"/></svg>
+      <svg width="25" height="12" viewBox="0 0 27 12" fill="none" aria-hidden="true"><rect x="0.8" y="0.8" width="21" height="10.4" rx="3" stroke="currentColor" opacity="0.4" stroke-width="1.2"/><rect x="2.6" y="2.6" width="14" height="6.8" rx="1.6" fill="currentColor"/><path d="M24.4 4v4a2.2 2.2 0 0 0 0-4z" fill="currentColor" opacity="0.6"/></svg>
+    </span>
+  </div>
+
+  <div class="flex-1 overflow-y-auto no-scrollbar px-5 pb-6">
+    <p class="mt-4 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6E6E6E]">August 2026</p>
+    <h1 class="mt-2 text-[26px] font-light tracking-tight leading-none">Overview</h1>
+
+    <div class="mt-4 flex rounded-full border border-[#EBEBEB] p-1" data-chips data-on="seg-on">
+      <button data-chip class="seg-on flex-1 rounded-full py-2 text-[13.5px] font-medium text-[#6E6E6E]">Expenses</button>
+      <button data-chip class="flex-1 rounded-full py-2 text-[13.5px] font-medium text-[#6E6E6E]">Income</button>
+      <button data-chip class="flex-1 rounded-full py-2 text-[13.5px] font-medium text-[#6E6E6E]">Summary</button>
+    </div>
+
+    <div class="mt-6 border-t border-b border-[#EBEBEB] py-6">
+      <div class="relative mx-auto w-[224px] h-[224px]">
+        <svg viewBox="0 0 200 200" class="w-full h-full">
+          <g transform="rotate(-90 100 100)">
+            <circle cx="100" cy="100" r="80" fill="none" stroke="#F0F0F0" stroke-width="18"/>
+            <circle class="donut-seg" data-pct="31" cx="100" cy="100" r="80" fill="none" stroke="#161616" stroke-width="18"/>
+            <circle class="donut-seg" data-pct="27" cx="100" cy="100" r="80" fill="none" stroke="#525252" stroke-width="18"/>
+            <circle class="donut-seg" data-pct="21" cx="100" cy="100" r="80" fill="none" stroke="#8A8A8A" stroke-width="18"/>
+            <circle class="donut-seg" data-pct="10" cx="100" cy="100" r="80" fill="none" stroke="#BDBDBD" stroke-width="18"/>
+            <circle class="donut-seg" data-pct="5" cx="100" cy="100" r="80" fill="none" stroke="#E0E0E0" stroke-width="18"/>
+            <circle class="donut-seg" data-pct="1" cx="100" cy="100" r="80" fill="none" stroke="#F0F0F0" stroke-width="18"/>
+            <circle class="donut-seg" data-pct="1" cx="100" cy="100" r="80" fill="none" stroke="#161616" stroke-width="18"/>
+            <circle class="donut-seg" data-pct="1" cx="100" cy="100" r="80" fill="none" stroke="#525252" stroke-width="18"/>
+            <circle class="donut-seg" data-pct="1" cx="100" cy="100" r="80" fill="none" stroke="#8A8A8A" stroke-width="18"/>
+            <circle class="donut-seg" data-pct="1" cx="100" cy="100" r="80" fill="none" stroke="#BDBDBD" stroke-width="18"/>
+          </g>
+        </svg>
+        <div class="absolute inset-0 flex flex-col items-center justify-center">
+          <p class="text-[26px] font-extralight tracking-tight text-[#E03131]">$5,880.61</p>
+          <p class="text-[11px] font-medium uppercase tracking-[0.18em] text-[#6E6E6E] mt-1">Total expenses</p>
+        </div>
+      </div>
+      <div class="mt-4 flex flex-wrap justify-center gap-x-4 gap-y-1.5 text-[11px] font-medium text-[#6E6E6E]">
+        <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full" style="background:#161616"></span>Home 31%</span>
+        <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full" style="background:#525252"></span>Transfer 27%</span>
+        <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full" style="background:#8A8A8A"></span>Food 21%</span>
+        <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full" style="background:#BDBDBD"></span>Deposit 10%</span>
+        <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full" style="background:#E0E0E0"></span>Transport 5%</span>
+      </div>
+    </div>
+
+    <div class="mt-5 border-t border-b border-[#EBEBEB] py-4">
+      <p class="text-[13.5px] leading-relaxed"><span class="font-semibold">Home is your top spend</span> — $1,824.23 (31% of expenses) this month.</p>
+    </div>
+
+    <div class="mt-5">
+      <div class="flex items-center gap-3 py-3 border-b border-[#EBEBEB]"><span class="w-2.5 h-2.5 flex-none rounded-full" style="background:#161616"></span><span class="w-[74px] flex-none text-sm font-medium">Home</span><span class="flex-1 h-[3px] rounded-full bg-[#EFEFEF] overflow-hidden"><span class="bar-fill block h-full rounded-full" data-bar="31" style="width:0%;background:#161616"></span></span><span class="w-[86px] flex-none text-right text-sm font-medium text-[#E03131]">$1,824.23</span></div>
+      <div class="flex items-center gap-3 py-3 border-b border-[#EBEBEB]"><span class="w-2.5 h-2.5 flex-none rounded-full" style="background:#525252"></span><span class="w-[74px] flex-none text-sm font-medium">Transfer</span><span class="flex-1 h-[3px] rounded-full bg-[#EFEFEF] overflow-hidden"><span class="bar-fill block h-full rounded-full" data-bar="27" style="width:0%;background:#525252"></span></span><span class="w-[86px] flex-none text-right text-sm font-medium text-[#E03131]">$1,577.35</span></div>
+      <div class="flex items-center gap-3 py-3 border-b border-[#EBEBEB]"><span class="w-2.5 h-2.5 flex-none rounded-full" style="background:#8A8A8A"></span><span class="w-[74px] flex-none text-sm font-medium">Food</span><span class="flex-1 h-[3px] rounded-full bg-[#EFEFEF] overflow-hidden"><span class="bar-fill block h-full rounded-full" data-bar="21" style="width:0%;background:#8A8A8A"></span></span><span class="w-[86px] flex-none text-right text-sm font-medium text-[#E03131]">$1,234.93</span></div>
+      <div class="flex items-center gap-3 py-3 border-b border-[#EBEBEB]"><span class="w-2.5 h-2.5 flex-none rounded-full" style="background:#BDBDBD"></span><span class="w-[74px] flex-none text-sm font-medium">Deposit</span><span class="flex-1 h-[3px] rounded-full bg-[#EFEFEF] overflow-hidden"><span class="bar-fill block h-full rounded-full" data-bar="10" style="width:0%;background:#BDBDBD"></span></span><span class="w-[86px] flex-none text-right text-sm font-medium text-[#E03131]">$600.00</span></div>
+      <div class="flex items-center gap-3 py-3 border-b border-[#EBEBEB]"><span class="w-2.5 h-2.5 flex-none rounded-full" style="background:#E0E0E0"></span><span class="w-[74px] flex-none text-sm font-medium">Transport</span><span class="flex-1 h-[3px] rounded-full bg-[#EFEFEF] overflow-hidden"><span class="bar-fill block h-full rounded-full" data-bar="5" style="width:0%;background:#E0E0E0"></span></span><span class="w-[86px] flex-none text-right text-sm font-medium text-[#E03131]">$294.03</span></div>
+      <div class="flex items-center gap-3 py-3 border-b border-[#EBEBEB]"><span class="w-2.5 h-2.5 flex-none rounded-full" style="background:#F0F0F0"></span><span class="w-[74px] flex-none text-sm font-medium">Pets</span><span class="flex-1 h-[3px] rounded-full bg-[#EFEFEF] overflow-hidden"><span class="bar-fill block h-full rounded-full" data-bar="1" style="width:0%;min-width:4px;background:#F0F0F0"></span></span><span class="w-[86px] flex-none text-right text-sm font-medium text-[#E03131]">$55.50</span></div>
+      <div class="flex items-center gap-3 py-3 border-b border-[#EBEBEB]"><span class="w-2.5 h-2.5 flex-none rounded-full" style="background:#161616"></span><span class="w-[74px] flex-none text-sm font-medium">Health</span><span class="flex-1 h-[3px] rounded-full bg-[#EFEFEF] overflow-hidden"><span class="bar-fill block h-full rounded-full" data-bar="1" style="width:0%;min-width:4px;background:#161616"></span></span><span class="w-[86px] flex-none text-right text-sm font-medium text-[#E03131]">$87.98</span></div>
+      <div class="flex items-center gap-3 py-3 border-b border-[#EBEBEB]"><span class="w-2.5 h-2.5 flex-none rounded-full" style="background:#525252"></span><span class="w-[74px] flex-none text-sm font-medium">Family</span><span class="flex-1 h-[3px] rounded-full bg-[#EFEFEF] overflow-hidden"><span class="bar-fill block h-full rounded-full" data-bar="1" style="width:0%;min-width:4px;background:#525252"></span></span><span class="w-[86px] flex-none text-right text-sm font-medium text-[#E03131]">$84.23</span></div>
+      <div class="flex items-center gap-3 py-3 border-b border-[#EBEBEB]"><span class="w-2.5 h-2.5 flex-none rounded-full" style="background:#8A8A8A"></span><span class="w-[74px] flex-none text-sm font-medium">Fun</span><span class="flex-1 h-[3px] rounded-full bg-[#EFEFEF] overflow-hidden"><span class="bar-fill block h-full rounded-full" data-bar="1" style="width:0%;min-width:4px;background:#8A8A8A"></span></span><span class="w-[86px] flex-none text-right text-sm font-medium text-[#E03131]">$39.27</span></div>
+      <div class="flex items-center gap-3 py-3 border-b border-[#EBEBEB]"><span class="w-2.5 h-2.5 flex-none rounded-full" style="background:#BDBDBD"></span><span class="w-[74px] flex-none text-sm font-medium">Streaming</span><span class="flex-1 h-[3px] rounded-full bg-[#EFEFEF] overflow-hidden"><span class="bar-fill block h-full rounded-full" data-bar="1" style="width:0%;min-width:4px;background:#BDBDBD"></span></span><span class="w-[86px] flex-none text-right text-sm font-medium text-[#E03131]">$83.09</span></div>
+    </div>
+  </div>
+
+  <nav class="flex-none relative bg-white border-t border-[#EBEBEB] px-4 pt-3 pb-4">
+    <div class="flex items-end justify-between">
+      <button class="flex flex-col items-center gap-1 w-14 text-[#6E6E6E]"><span class="text-[11px] font-medium tracking-wide">Transactions</span></button>
+      <button class="flex flex-col items-center gap-1 w-14 text-[#161616]"><span class="text-[11px] font-semibold tracking-wide">Stats</span></button>
+      <button class="w-14 flex justify-center" aria-label="Add transaction"><span class="w-[52px] h-[52px] rounded-full bg-[#161616] text-white flex items-center justify-center"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span></button>
+      <button class="flex flex-col items-center gap-1 w-14 text-[#6E6E6E]"><span class="text-[11px] font-medium tracking-wide">Budgets</span></button>
+      <button class="flex flex-col items-center gap-1 w-14 text-[#6E6E6E]"><span class="text-[11px] font-medium tracking-wide">More</span></button>
+    </div>
+    <div class="mx-auto mt-3 h-1 w-32 rounded-full bg-[#161616]/15"></div>
+  </nav>
+</div>
+    </script>
+
+    <script>
+      (function () {
+        var SCREEN_HEAD = '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+          + '<meta name="viewport" content="width=device-width, initial-scale=1">'
+          + '<title>Money Lover screen</title>'
+          + '<script src="https://cdn.tailwindcss.com"><\/script>'
+          + '<script>if(window.tailwind){tailwind.config={theme:{extend:{fontFamily:{sans:["Plus Jakarta Sans","Inter","system-ui","sans-serif"]}}}};}<\/script>'
+          + '<link rel="preconnect" href="https://fonts.googleapis.com">'
+          + '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
+          + '<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">'
+          + '<style>'
+          + ':root{color-scheme:light}'
+          + 'html,body{height:100%;margin:0;background:#F4F6FB}'
+          + 'body{font-family:"Plus Jakarta Sans",Inter,system-ui,sans-serif;color:#0B1226;-webkit-font-smoothing:antialiased}'
+          + 'button{cursor:pointer;background:none;border:0;font:inherit;color:inherit}'
+          + '.no-scrollbar::-webkit-scrollbar{display:none}'
+          + '.no-scrollbar{scrollbar-width:none;-ms-overflow-style:none}'
+          + '.bar-fill{transition:width 1.15s cubic-bezier(.22,.8,.3,1)}'
+          + '.chip-on{background-color:#4F46E5 !important;color:#fff !important}'
+          + '.seg-on{background-color:#fff !important;color:#0B1226 !important;box-shadow:0 3px 10px rgba(15,23,42,.14)}'
+          + '.seg-on.rose{color:#F43F5E !important}'
+          + '.cat-on .cat-tile{box-shadow:0 0 0 2px #fff,0 0 0 4.5px #4F46E5}'
+          + '.cat-on span:last-child{color:#0B1226}'
+          + '.cat-row-on{background-color:#EEF2FF}'
+          + '.cat-check{opacity:0;transition:opacity .15s}'
+          + '.cat-row-on .cat-check{opacity:1}'
+          + '.switch{width:48px;height:28px;border-radius:999px;background:#10B981;position:relative;flex:none;transition:background .25s;padding:0}'
+          + '.switch .knob{position:absolute;top:2px;left:2px;width:24px;height:24px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(15,23,42,.3);transition:transform .25s;transform:translateX(20px)}'
+          + '.switch.off{background:#CBD5E1}'
+          + '.switch.off .knob{transform:translateX(0)}'
+          + '.caret{display:inline-block;margin-left:2px;font-weight:300;animation:blink 1.1s steps(1) infinite}'
+          + '@keyframes blink{0%,55%{opacity:1}56%,100%{opacity:0}}'
+          + '@media (prefers-reduced-motion: reduce){.bar-fill{transition:none}.caret{animation:none}}'
+          + '</style></head><body>';
+
+        var MIN_HEAD = '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+          + '<meta name="viewport" content="width=device-width, initial-scale=1">'
+          + '<title>Money Lover screen — Minimal</title>'
+          + '<script src="https://cdn.tailwindcss.com"><\/script>'
+          + '<script>if(window.tailwind){tailwind.config={theme:{extend:{fontFamily:{sans:["Plus Jakarta Sans","Inter","system-ui","sans-serif"]}}}};}<\/script>'
+          + '<link rel="preconnect" href="https://fonts.googleapis.com">'
+          + '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
+          + '<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">'
+          + '<style>'
+          + ':root{color-scheme:light}'
+          + 'html,body{height:100%;margin:0;background:#FFFFFF}'
+          + 'body{font-family:"Plus Jakarta Sans",Inter,system-ui,sans-serif;color:#161616;-webkit-font-smoothing:antialiased}'
+          + 'button{cursor:pointer;background:none;border:0;font:inherit;color:inherit}'
+          + '.no-scrollbar::-webkit-scrollbar{display:none}'
+          + '.no-scrollbar{scrollbar-width:none;-ms-overflow-style:none}'
+          + '.bar-fill{transition:width 1.15s cubic-bezier(.22,.8,.3,1)}'
+          + '.chip-on{background-color:#161616 !important;color:#fff !important;border-color:#161616 !important}'
+          + '.seg-on{background-color:#161616 !important;color:#fff !important;box-shadow:none}'
+          + '.seg-exp.seg-on{background-color:#FDECEC !important;color:#E03131 !important}'
+          + '.seg-inc.seg-on{background-color:#E9F5EE !important;color:#2F9E44 !important}'
+          + '.seg-trf.seg-on{background-color:#EFEFEF !important;color:#161616 !important}'
+          + '.cat-on .cat-tile{box-shadow:0 0 0 2px #fff,0 0 0 4px #161616}'
+          + '.cat-on span:last-child{color:#161616}'
+          + '.switch{width:48px;height:28px;border-radius:999px;background:#161616;position:relative;flex:none;transition:background .25s;padding:0}'
+          + '.switch .knob{position:absolute;top:2px;left:2px;width:24px;height:24px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(22,22,22,.22);transition:transform .25s;transform:translateX(20px)}'
+          + '.switch.off{background:#E5E5E5}'
+          + '.switch.off .knob{transform:translateX(0)}'
+          + '.caret{display:inline-block;margin-left:2px;font-weight:300;animation:blink 1.1s steps(1) infinite}'
+          + '@keyframes blink{0%,55%{opacity:1}56%,100%{opacity:0}}'
+          + '@media (prefers-reduced-motion: reduce){.bar-fill{transition:none}.caret{animation:none}}'
+          + '</style></head><body>';
+
+        var SCREEN_TAIL = '<script>'
+          + 'document.querySelectorAll("[data-bar]").forEach(function(el){'
+          + '  var p=el.getAttribute("data-bar");'
+          + '  requestAnimationFrame(function(){requestAnimationFrame(function(){el.style.width=p+"%";});});'
+          + '});'
+          + 'var segs=document.querySelectorAll(".donut-seg");'
+          + 'if(segs.length){var C=2*Math.PI*80,acc=0;'
+          + '  segs.forEach(function(s){var p=parseFloat(s.getAttribute("data-pct"))/100;'
+          + '    s.style.strokeDasharray="0 "+C.toFixed(1);s.style.strokeDashoffset=(-acc*C).toFixed(1);acc+=p;});'
+          + '  requestAnimationFrame(function(){requestAnimationFrame(function(){'
+          + '    segs.forEach(function(s,i){var p=parseFloat(s.getAttribute("data-pct"))/100;'
+          + '      var len=Math.max(p*C-2.5,0.5);'
+          + '      s.style.transition="stroke-dasharray 1s cubic-bezier(.22,.8,.3,1) "+(i*0.06)+"s";'
+          + '      s.style.strokeDasharray=len.toFixed(1)+" "+(C-len).toFixed(1);});'
+          + '  });});}'
+          + 'document.querySelectorAll("[data-chips]").forEach(function(group){'
+          + '  var on=group.getAttribute("data-on")||"chip-on";'
+          + '  var btns=group.querySelectorAll("[data-chip]");'
+          + '  btns.forEach(function(b){b.addEventListener("click",function(){'
+          + '    btns.forEach(function(x){x.classList.remove(on);});b.classList.add(on);});});'
+          + '});'
+          + 'document.querySelectorAll("[data-toggle]").forEach(function(t){'
+          + '  t.addEventListener("click",function(){t.classList.toggle("off");'
+          + '    t.setAttribute("aria-checked",t.classList.contains("off")?"false":"true");});'
+          + '});'
+          + '<\/script></body></html>';
+
+        var map = {
+          transactions: 'src-transactions',
+          new: 'src-new',
+          budgets: 'src-budgets',
+          overview: 'src-overview'
+        };
+        var minMap = {
+          transactions: 'src-min-transactions',
+          new: 'src-min-new',
+          budgets: 'src-min-budgets',
+          overview: 'src-min-overview'
+        };
+        var docs = { vibrant: {}, minimal: {} };
+        Object.keys(map).forEach(function (key) {
+          var src = document.getElementById(map[key]);
+          if (src) docs.vibrant[key] = SCREEN_HEAD + src.textContent + SCREEN_TAIL;
+          var minSrc = document.getElementById(minMap[key]);
+          if (minSrc) docs.minimal[key] = MIN_HEAD + minSrc.textContent + SCREEN_TAIL;
+        });
+
+        var frames = Array.prototype.slice.call(document.querySelectorAll('iframe[data-screen]'));
+        function applyVariant(variant) {
+          frames.forEach(function (frame) {
+            var key = frame.getAttribute('data-screen');
+            var html = docs[variant] && docs[variant][key];
+            if (html) frame.srcdoc = html;
+          });
+          var vb = document.getElementById('toggle-vibrant');
+          var mb = document.getElementById('toggle-minimal');
+          if (vb && mb) {
+            vb.setAttribute('aria-pressed', variant === 'vibrant' ? 'true' : 'false');
+            mb.setAttribute('aria-pressed', variant === 'minimal' ? 'true' : 'false');
+          }
+        }
+
+        var vibrantBtn = document.getElementById('toggle-vibrant');
+        var minimalBtn = document.getElementById('toggle-minimal');
+        if (vibrantBtn) vibrantBtn.addEventListener('click', function () { applyVariant('vibrant'); });
+        if (minimalBtn) minimalBtn.addEventListener('click', function () { applyVariant('minimal'); });
+
+        applyVariant('vibrant');
+      })();
+    </script>
+  </body>
+</html>

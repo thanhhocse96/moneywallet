@@ -6,3 +6,7 @@
 /build
 /captures
 .externalNativeBuild
+.local/
+*.keystore
+key.properties
+release/

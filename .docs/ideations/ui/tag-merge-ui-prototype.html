@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tag Merge — Material 3 Minimal Prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --md-primary:#6750A4; --md-on-primary:#FFFFFF;
+    --md-surface:#FEF7FF; --md-on-surface:#1D1B20;
+    --md-surface-container-low:#F7F2FA; --md-surface-container:#F3EDF7;
+    --md-surface-container-high:#ECE6F0; --md-surface-container-highest:#E6E0E9;
+    --md-on-surface-variant:#49454F; --md-outline-variant:#CAC4D0;
+    --md-surface-dim:#DED8E1;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{
+    font-family:'Roboto',sans-serif; background:#E8E4EC; color:var(--md-on-surface);
+    min-height:100vh; display:flex; flex-direction:column; align-items:center;
+    padding:28px 16px; gap:14px;
+  }
+  .page-title{font-size:15px;font-weight:500;color:var(--md-on-surface-variant);letter-spacing:.2px}
+  .page-sub{font-size:12.5px;color:var(--md-on-surface-variant);opacity:.75;max-width:420px;text-align:center;line-height:1.5}
+
+  /* ---------- phone frame ---------- */
+  .phone{
+    width:390px;height:800px;background:var(--md-surface);border-radius:36px;
+    box-shadow:0 12px 44px rgba(29,27,32,.22);overflow:hidden;position:relative;
+    display:flex;flex-direction:column;
+  }
+  .statusbar{
+    height:44px;flex:0 0 44px;display:flex;align-items:center;justify-content:space-between;
+    padding:0 26px;font-size:13px;font-weight:500;
+  }
+  .screen{flex:1;display:none;flex-direction:column;min-height:0;position:relative}
+  .screen.active{display:flex}
+
+  /* ---------- top app bar ---------- */
+  .topbar{
+    flex:0 0 64px;display:flex;align-items:center;gap:4px;padding:0 8px 0 16px;
+    background:var(--md-surface);
+  }
+  .topbar.selecting{background:var(--md-surface-container-high)}
+  .topbar .title{font-size:22px;font-weight:400;flex:1}
+  .topbar.selecting .title{font-size:20px}
+  .iconbtn{
+    width:44px;height:44px;border:none;background:transparent;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;cursor:pointer;
+    color:var(--md-on-surface-variant);font-size:20px;
+  }
+  .iconbtn:active{background:var(--md-surface-container-highest)}
+
+  /* ---------- search ---------- */
+  .searchwrap{padding:4px 16px 8px}
+  .search{
+    display:flex;align-items:center;gap:10px;background:var(--md-surface-container-high);
+    border-radius:28px;padding:0 16px;height:52px;color:var(--md-on-surface-variant);font-size:15px;
+  }
+
+  /* ---------- tag list ---------- */
+  .taglist{flex:1;overflow-y:auto;padding:4px 0 90px}
+  .tagrow{
+    display:flex;align-items:center;gap:14px;padding:12px 16px;cursor:pointer;user-select:none;
+    border-bottom:1px solid var(--md-surface-container-high);
+  }
+  .tagrow:active{background:var(--md-surface-container-low)}
+  .tagrow.selected{background:#EDE7F6}
+  .dot{width:14px;height:14px;border-radius:50%;flex:0 0 14px}
+  .tagmeta{flex:1;min-width:0}
+  .tagname{font-size:16px}
+  .tagname b{font-weight:500}
+  .tagsub{font-size:12.5px;color:var(--md-on-surface-variant);margin-top:2px}
+  .aliaschip{
+    display:inline-block;background:var(--md-surface-container-highest);border-radius:8px;
+    padding:1px 8px;margin:2px 4px 0 0;font-size:12px;color:var(--md-on-surface-variant);
+  }
+  .count{
+    font-size:13px;color:var(--md-on-surface-variant);background:var(--md-surface-container-high);
+    border-radius:12px;padding:3px 10px;flex:0 0 auto;
+  }
+  .checkbox{
+    width:22px;height:22px;border-radius:6px;border:2px solid var(--md-on-surface-variant);
+    flex:0 0 22px;display:none;align-items:center;justify-content:center;
+    color:#fff;font-size:14px;font-weight:700;
+  }
+  .selecting .checkbox{display:flex}
+  .selecting .tagrow.selected .checkbox{background:var(--md-primary);border-color:var(--md-primary)}
+  .empty{padding:48px 32px;text-align:center;color:var(--md-on-surface-variant);font-size:14px;line-height:1.6}
+
+  /* ---------- bottom merge bar ---------- */
+  .mergebar{
+    position:absolute;left:0;right:0;bottom:80px;display:none;justify-content:center;
+    padding:0 16px;z-index:5;
+  }
+  .mergebar.show{display:flex}
+  .mergebtn{
+    border:none;cursor:pointer;background:var(--md-primary);color:var(--md-on-primary);
+    font-family:inherit;font-size:15px;font-weight:500;border-radius:20px;height:56px;
+    padding:0 26px;display:flex;align-items:center;gap:10px;
+    box-shadow:0 4px 14px rgba(103,80,164,.4);
+  }
+  .mergebtn:disabled{background:var(--md-surface-container-highest);color:var(--md-on-surface-variant);
+    box-shadow:none;cursor:default;opacity:.7}
+
+  /* ---------- bottom nav ---------- */
+  .bottomnav{
+    flex:0 0 80px;display:flex;background:var(--md-surface-container-low);
+    border-top:1px solid var(--md-surface-container-high);
+  }
+  .navitem{
+    flex:1;border:none;background:transparent;font-family:inherit;cursor:pointer;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;
+    color:var(--md-on-surface-variant);font-size:12px;font-weight:500;
+  }
+  .navitem .pill{
+    width:64px;height:32px;border-radius:16px;display:flex;align-items:center;justify-content:center;
+    font-size:19px;
+  }
+  .navitem.active{color:var(--md-on-surface)}
+  .navitem.active .pill{background:#E8DEF8;color:var(--md-on-surface)}
+
+  /* ---------- bottom sheet ---------- */
+  .scrim{
+    position:absolute;inset:0;background:rgba(0,0,0,.32);opacity:0;pointer-events:none;
+    transition:opacity .25s;z-index:10;
+  }
+  .scrim.show{opacity:1;pointer-events:auto}
+  .sheet{
+    position:absolute;left:0;right:0;bottom:0;z-index:11;background:var(--md-surface-container-low);
+    border-radius:28px 28px 0 0;padding:10px 0 calc(20px + env(safe-area-inset-bottom));
+    transform:translateY(105%);transition:transform .3s cubic-bezier(.2,.8,.3,1);
+    max-height:78%;display:flex;flex-direction:column;
+  }
+  .sheet.show{transform:translateY(0)}
+  .handle{width:32px;height:4px;border-radius:2px;background:var(--md-outline-variant);margin:0 auto 14px}
+  .sheet h2{font-size:20px;font-weight:500;padding:0 24px}
+  .sheet .subtitle{font-size:13.5px;color:var(--md-on-surface-variant);padding:6px 24px 10px}
+  .radiolist{overflow-y:auto;padding:2px 0}
+  .radiorow{
+    display:flex;align-items:center;gap:14px;padding:12px 24px;cursor:pointer;
+  }
+  .radiorow:active{background:var(--md-surface-container-high)}
+  .radio{
+    width:20px;height:20px;border-radius:50%;border:2px solid var(--md-on-surface-variant);
+    flex:0 0 20px;position:relative;
+  }
+  .radiorow.checked .radio{border-color:var(--md-primary)}
+  .radiorow.checked .radio::after{
+    content:'';position:absolute;inset:3px;border-radius:50%;background:var(--md-primary);
+  }
+  .preview{
+    margin:10px 24px 4px;background:var(--md-surface-container-high);border-radius:14px;
+    padding:13px 16px;font-size:13.5px;line-height:1.55;color:var(--md-on-surface-variant);
+  }
+  .preview b{color:var(--md-on-surface)}
+  .sheet-actions{display:flex;justify-content:flex-end;gap:4px;padding:12px 16px 0}
+  .textbtn{
+    border:none;background:transparent;font-family:inherit;font-size:14.5px;font-weight:500;
+    color:var(--md-primary);padding:10px 16px;border-radius:20px;cursor:pointer;
+  }
+  .textbtn:active{background:#E8DEF8}
+  .fillbtn{
+    border:none;font-family:inherit;font-size:14.5px;font-weight:500;cursor:pointer;
+    background:var(--md-primary);color:var(--md-on-primary);
+    padding:10px 22px;border-radius:20px;
+  }
+  .fillbtn:active{opacity:.88}
+
+  /* ---------- snackbar ---------- */
+  .snackbar{
+    position:absolute;left:16px;right:16px;bottom:96px;z-index:12;background:#1D1B20;color:#F5EFF7;
+    border-radius:12px;padding:14px 18px;font-size:14px;display:flex;align-items:center;gap:12px;
+    transform:translateY(20px);opacity:0;pointer-events:none;transition:all .3s;
+    box-shadow:0 6px 18px rgba(0,0,0,.3);
+  }
+  .snackbar.show{transform:translateY(0);opacity:1}
+
+  /* ---------- typing demo ---------- */
+  .typewrap{flex:1;display:flex;flex-direction:column;padding:8px 16px;min-height:0}
+  .fieldlabel{font-size:13px;font-weight:500;color:var(--md-primary);margin:8px 0 6px}
+  .editor{
+    position:relative;border:1px solid var(--md-outline-variant);border-radius:14px;
+    min-height:150px;background:var(--md-surface);
+  }
+  .editor:focus-within{border-color:var(--md-primary);border-width:2px}
+  .backdrop,.typearea{
+    font-family:inherit;font-size:16px;line-height:1.6;padding:14px 16px;
+    white-space:pre-wrap;word-wrap:break-word;
+  }
+  .backdrop{position:absolute;inset:0;color:transparent;pointer-events:none;overflow:hidden}
+  .backdrop mark{
+    background:#E8DEF8;color:var(--md-primary);border-radius:5px;padding:0 2px;font-weight:500;
+  }
+  .typearea{
+    position:relative;background:transparent;border:none;outline:none;resize:none;width:100%;
+    min-height:150px;color:var(--md-on-surface);caret-color:var(--md-primary);
+  }
+  .suggest{
+    margin-top:8px;background:var(--md-surface-container-low);border-radius:16px;overflow:hidden;
+    box-shadow:0 4px 16px rgba(29,27,32,.14);display:none;
+  }
+  .suggest.show{display:block}
+  .suggest .shead{font-size:12px;color:var(--md-on-surface-variant);padding:10px 16px 4px;letter-spacing:.3px}
+  .sugrow{
+    display:flex;align-items:center;gap:12px;padding:11px 16px;cursor:pointer;width:100%;
+    border:none;background:transparent;font-family:inherit;text-align:left;font-size:15px;
+    color:var(--md-on-surface);
+  }
+  .sugrow:active{background:var(--md-surface-container-high)}
+  .sugrow .why{margin-left:auto;font-size:12px;color:var(--md-on-surface-variant)}
+  .typenote{font-size:12.5px;color:var(--md-on-surface-variant);line-height:1.6;margin-top:12px}
+  .typenote b{color:var(--md-on-surface)}
+</style>
+</head>
+<body>
+  <div class="page-title">Tag merge — Material 3 · Minimal</div>
+  <div class="page-sub">Prototype tương tác: màn hình Tags → chọn nhiều → bottom sheet gộp · tab "Gõ thử" demo autocomplete fuzzy khi gõ #</div>
+
+  <div class="phone" id="phone">
+    <div class="statusbar"><span>21:15</span><span>▰▰▰</span></div>
+
+    <!-- ============ SCREEN: TAGS ============ -->
+    <div class="screen active" id="screen-tags">
+      <div class="topbar" id="topbar">
+        <div class="title" id="topbar-title">Tags</div>
+        <button class="iconbtn" id="btn-search-top" aria-label="Tìm">⌕</button>
+        <button class="iconbtn" id="btn-close-select" aria-label="Đóng" style="display:none">✕</button>
+      </div>
+      <div class="searchwrap" id="searchwrap">
+        <div class="search"><span>⌕</span><span>Tìm tag…</span></div>
+      </div>
+      <div class="taglist" id="taglist"></div>
+
+      <div class="mergebar" id="mergebar">
+        <button class="mergebtn" id="btn-merge" disabled>⤨&nbsp; Gộp tags</button>
+      </div>
+
+      <div class="scrim" id="scrim"></div>
+      <div class="sheet" id="sheet" role="dialog" aria-label="Gộp tags">
+        <div class="handle"></div>
+        <h2>Gộp tags</h2>
+        <div class="subtitle">Chọn tag làm key chính</div>
+        <div class="radiolist" id="radiolist"></div>
+        <div class="preview" id="merge-preview"></div>
+        <div class="sheet-actions">
+          <button class="textbtn" id="btn-cancel-merge">Hủy</button>
+          <button class="fillbtn" id="btn-confirm-merge">Gộp</button>
+        </div>
+      </div>
+
+      <div class="snackbar" id="snackbar"><span id="snackbar-text"></span></div>
+    </div>
+
+    <!-- ============ SCREEN: TYPING DEMO ============ -->
+    <div class="screen" id="screen-type">
+      <div class="topbar">
+        <div class="title">Gõ thử</div>
+      </div>
+      <div class="typewrap">
+        <div class="fieldlabel">MÔ TẢ GIAO DỊCH</div>
+        <div class="editor">
+          <div class="backdrop" id="backdrop" aria-hidden="true"></div>
+          <textarea class="typearea" id="typearea" rows="5" spellcheck="false"
+            placeholder="VD: Cà phê sáng #cof…"></textarea>
+        </div>
+        <div class="suggest" id="suggest"><div class="shead">GỢI Ý TAG</div><div id="suglist"></div></div>
+        <div class="typenote">
+          Gõ <b>#</b> rồi gõ tiếp: từ ký tự thứ 2 bắt đầu fuzzy match (gõ <b>an</b> vẫn ra <b>#ăn_sáng</b>).
+          Tag trong text được highlight live — đúng spec "thấy boundary thật khi đang gõ".
+        </div>
+      </div>
+    </div>
+
+    <nav class="bottomnav">
+      <button class="navitem active" id="nav-tags"><span class="pill">▤</span>Tags</button>
+      <button class="navitem" id="nav-type"><span class="pill">✎</span>Gõ thử</button>
+    </nav>
+  </div>
+
+<script>
+(function(){
+  'use strict';
+
+  /* ---------------- data ---------------- */
+  var TAGS = [
+    {id:1, name:'coffee',   color:'#8D6E63', count:42, aliases:[]},
+    {id:2, name:'coffe',    color:'#A1887F', count:3,  aliases:[]},
+    {id:3, name:'cafe',     color:'#BCAAA4', count:5,  aliases:[]},
+    {id:4, name:'ăn_sáng',  color:'#81C784', count:28, aliases:[]},
+    {id:5, name:'grab',     color:'#64B5F6', count:17, aliases:[]},
+    {id:6, name:'highlands',color:'#4DB6AC', count:9,  aliases:[]}
+  ];
+  var selected = [];   // ids, giữ thứ tự chọn
+  var selecting = false;
+  var mergeChoice = null;
+
+  /* ---------------- helpers ---------------- */
+  function $(id){ return document.getElementById(id); }
+  function esc(s){
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+  function tagById(id){
+    for (var i=0;i<TAGS.length;i++) if (TAGS[i].id===id) return TAGS[i];
+    return null;
+  }
+
+  /* ---------------- tag list ---------------- */
+  function renderList(){
+    var list = $('taglist');
+    var html = '';
+    if (TAGS.length===0){
+      html = '<div class="empty">Chưa có tag nào.<br>Gõ #tag trong mô tả giao dịch để tạo.</div>';
+    } else {
+      for (var i=0;i<TAGS.length;i++){
+        var t = TAGS[i];
+        var sel = selected.indexOf(t.id)>=0;
+        var aliasHtml = '';
+        for (var a=0;a<t.aliases.length;a++){
+          aliasHtml += '<span class="aliaschip">⇄ #'+esc(t.aliases[a])+'</span>';
+        }
+        html +=
+          '<div class="tagrow'+(sel?' selected':'')+(selecting?' selecting':'')+'" data-id="'+t.id+'">'+
+            '<span class="checkbox">'+(sel?'✓':'')+'</span>'+
+            '<span class="dot" style="background:'+t.color+'"></span>'+
+            '<div class="tagmeta">'+
+              '<div class="tagname"><b>#'+esc(t.name)+'</b></div>'+
+              '<div class="tagsub">'+(t.aliases.length? aliasHtml : 'Nhấn giữ để chọn nhiều')+'</div>'+
+            '</div>'+
+            '<span class="count">'+t.count+'</span>'+
+          '</div>';
+      }
+    }
+    list.innerHTML = html;
+    var rows = list.querySelectorAll('.tagrow');
+    for (var r=0;r<rows.length;r++){
+      (function(row){
+        var id = parseInt(row.getAttribute('data-id'),10);
+        row.addEventListener('click', function(){ onRowTap(id); });
+        row.addEventListener('contextmenu', function(e){ e.preventDefault(); onRowLongPress(id); });
+        var t = null;
+        row.addEventListener('touchstart', function(){
+          t = setTimeout(function(){ onRowLongPress(id); }, 450);
+        }, {passive:true});
+        row.addEventListener('touchend', function(){ if(t) clearTimeout(t); });
+        row.addEventListener('touchmove', function(){ if(t) clearTimeout(t); });
+      })(rows[r]);
+    }
+    renderChrome();
+  }
+
+  function renderChrome(){
+    var bar = $('topbar');
+    var n = selected.length;
+    if (selecting){
+      bar.classList.add('selecting');
+      $('topbar-title').textContent = n>0 ? n+' đã chọn' : 'Chọn tags';
+      $('btn-search-top').style.display='none';
+      $('btn-close-select').style.display='flex';
+      $('searchwrap').style.display='none';
+    } else {
+      bar.classList.remove('selecting');
+      $('topbar-title').textContent = 'Tags';
+      $('btn-search-top').style.display='flex';
+      $('btn-close-select').style.display='none';
+      $('searchwrap').style.display='block';
+    }
+    var mb = $('mergebar'), btn = $('btn-merge');
+    if (selecting && n>0){
+      mb.classList.add('show');
+      btn.disabled = n<2;
+      btn.innerHTML = '⤨&nbsp; Gộp '+n+' tags';
+    } else {
+      mb.classList.remove('show');
+    }
+  }
+
+  function onRowTap(id){
+    if (selecting){ toggleSelect(id); return; }
+    // tap thường: mở chi tiết (demo: vào thẳng selection cho nhanh)
+    enterSelection(); toggleSelect(id);
+  }
+  function onRowLongPress(id){
+    if (!selecting) enterSelection();
+    toggleSelect(id);
+  }
+  function enterSelection(){ selecting = true; }
+  function exitSelection(){ selecting=false; selected=[]; renderList(); }
+  function toggleSelect(id){
+    var i = selected.indexOf(id);
+    if (i>=0) selected.splice(i,1); else selected.push(id);
+    if (selected.length===0){ exitSelection(); return; }
+    renderList();
+  }
+  $('btn-close-select').addEventListener('click', exitSelection);
+
+  /* ---------------- merge sheet ---------------- */
+  function openMergeSheet(){
+    if (selected.length<2) return;
+    var cands = [];
+    for (var i=0;i<selected.length;i++) cands.push(tagById(selected[i]));
+    cands.sort(function(a,b){ return b.count-a.count; });
+    mergeChoice = cands[0].id;
+    var html='';
+    for (var j=0;j<cands.length;j++){
+      var t=cands[j];
+      html +=
+        '<div class="radiorow'+(t.id===mergeChoice?' checked':'')+'" data-id="'+t.id+'">'+
+          '<span class="radio"></span>'+
+          '<span class="dot" style="background:'+t.color+'"></span>'+
+          '<div class="tagmeta"><div class="tagname"><b>#'+esc(t.name)+'</b></div></div>'+
+          '<span class="count">'+t.count+' giao dịch</span>'+
+        '</div>';
+    }
+    $('radiolist').innerHTML = html;
+    var rows = $('radiolist').querySelectorAll('.radiorow');
+    for (var r=0;r<rows.length;r++){
+      rows[r].addEventListener('click', function(){
+        mergeChoice = parseInt(this.getAttribute('data-id'),10);
+        var all = $('radiolist').querySelectorAll('.radiorow');
+        for (var k=0;k<all.length;k++) all[k].classList.remove('checked');
+        this.classList.add('checked');
+        renderPreview(cands);
+      });
+    }
+    renderPreview(cands);
+    $('scrim').classList.add('show');
+    $('sheet').classList.add('show');
+  }
+
+  function renderPreview(cands){
+    var main = tagById(mergeChoice);
+    var others = [];
+    for (var i=0;i<cands.length;i++) if (cands[i].id!==mergeChoice) others.push('#'+esc(cands[i].name));
+    var total = 0;
+    for (var j=0;j<cands.length;j++) total += cands[j].count;
+    $('merge-preview').innerHTML =
+      '→ <b>#'+esc(main.name)+'</b> ('+total+' giao dịch).<br>'+
+      (others.length? others.join(', ')+' thành alias — gõ nhầm sau này tự nhận.' : '');
+  }
+
+  function closeMergeSheet(){
+    $('scrim').classList.remove('show');
+    $('sheet').classList.remove('show');
+  }
+  $('btn-merge').addEventListener('click', openMergeSheet);
+  $('btn-cancel-merge').addEventListener('click', closeMergeSheet);
+  $('scrim').addEventListener('click', closeMergeSheet);
+
+  $('btn-confirm-merge').addEventListener('click', function(){
+    var main = tagById(mergeChoice);
+    var absorbedNames = [];
+    var newAliases = main.aliases.slice();
+    for (var i=TAGS.length-1;i>=0;i--){
+      var t = TAGS[i];
+      if (selected.indexOf(t.id)>=0 && t.id!==mergeChoice){
+        main.count += t.count;
+        absorbedNames.push(t.name);
+        newAliases.push(t.name);
+        for (var a=0;a<t.aliases.length;a++) newAliases.push(t.aliases[a]);
+        TAGS.splice(i,1);
+      }
+    }
+    main.aliases = newAliases;
+    closeMergeSheet();
+    exitSelection();
+    showSnackbar('Đã gộp thành #'+main.name+' ('+absorbedNames.length+' alias mới)');
+  });
+
+  var snackTimer = null;
+  function showSnackbar(msg){
+    $('snackbar-text').textContent = msg;
+    $('snackbar').classList.add('show');
+    if (snackTimer) clearTimeout(snackTimer);
+    snackTimer = setTimeout(function(){ $('snackbar').classList.remove('show'); }, 2800);
+  }
+
+  /* ---------------- bottom nav ---------------- */
+  function goScreen(name){
+    $('screen-tags').classList.toggle('active', name==='tags');
+    $('screen-type').classList.toggle('active', name==='type');
+    $('nav-tags').classList.toggle('active', name==='tags');
+    $('nav-type').classList.toggle('active', name==='type');
+    if (name==='tags' && selecting) exitSelection();
+  }
+  $('nav-tags').addEventListener('click', function(){ goScreen('tags'); });
+  $('nav-type').addEventListener('click', function(){ goScreen('type'); });
+
+  /* ---------------- typing demo: live highlight + fuzzy suggest ---------------- */
+  var typearea = $('typearea'), backdrop = $('backdrop');
+  var HASHTAG_RE = /(?<![\p{L}\p{N}_])#([\p{L}\p{N}_][\p{L}\p{N}_-]*)/gu;
+
+  function norm(s){
+    return s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+  }
+  function isSubseq(q,t){
+    var j=0;
+    for (var i=0;i<t.length && j<q.length;i++) if (t[i]===q[j]) j++;
+    return j===q.length;
+  }
+  function suggest(query){
+    var q = norm(query);
+    if (!q) return [];
+    var out = [];
+    for (var i=0;i<TAGS.length;i++){
+      var tn = norm(TAGS[i].name);
+      var score = -1;
+      if (tn.indexOf(q)===0) score = 0;
+      else if (q.length>=2 && isSubseq(q,tn)) score = 1;
+      if (score>=0) out.push({tag:TAGS[i], score:score});
+    }
+    out.sort(function(a,b){
+      if (a.score!==b.score) return a.score-b.score;
+      return b.tag.count-a.tag.count;
+    });
+    return out.slice(0,6);
+  }
+
+  function currentToken(){
+    var pos = typearea.selectionStart;
+    var before = typearea.value.slice(0,pos);
+    var m = /#([\p{L}\p{N}_-]*)$/u.exec(before);
+    if (!m) return null;
+    return {text:m[1], start:pos-m[0].length};
+  }
+
+  function renderHighlight(){
+    var v = typearea.value;
+    var html = esc(v).replace(HASHTAG_RE, '<mark>#$1</mark>');
+    backdrop.innerHTML = html + '\n';
+    backdrop.scrollTop = typearea.scrollTop;
+  }
+
+  var debTimer = null;
+  function renderSuggest(){
+    var tok = currentToken();
+    var box = $('suggest');
+    if (!tok || tok.text.length<1){ box.classList.remove('show'); return; }
+    var res = suggest(tok.text);
+    if (!res.length){ box.classList.remove('show'); return; }
+    var html='';
+    for (var i=0;i<res.length;i++){
+      var why = res[i].score===0 ? 'khớp đầu' : 'gần đúng';
+      html += '<button class="sugrow" data-name="'+esc(res[i].tag.name)+'">'+
+        '<span class="dot" style="background:'+res[i].tag.color+'"></span>'+
+        '<b>#'+esc(res[i].tag.name)+'</b><span class="why">'+why+' · '+res[i].tag.count+'</span></button>';
+    }
+    $('suglist').innerHTML = html;
+    var btns = $('suglist').querySelectorAll('.sugrow');
+    for (var b=0;b<btns.length;b++){
+      btns[b].addEventListener('mousedown', function(e){
+        e.preventDefault();
+        insertTag(this.getAttribute('data-name'));
+      });
+    }
+    box.classList.add('show');
+  }
+
+  function insertTag(name){
+    var tok = currentToken();
+    if (!tok) return;
+    var v = typearea.value;
+    var pos = typearea.selectionStart;
+    typearea.value = v.slice(0,tok.start)+'#'+name+' '+v.slice(pos);
+    typearea.focus();
+    renderHighlight(); renderSuggest();
+  }
+
+  typearea.addEventListener('input', function(){
+    renderHighlight();
+    if (debTimer) clearTimeout(debTimer);
+    debTimer = setTimeout(renderSuggest, 120);
+  });
+  typearea.addEventListener('scroll', function(){ backdrop.scrollTop = typearea.scrollTop; });
+  typearea.addEventListener('blur', function(){
+    setTimeout(function(){ $('suggest').classList.remove('show'); }, 150);
+  });
+
+  /* ---------------- init ---------------- */
+  renderList();
+  renderHighlight();
+})();
+</script>
+</body>
+</html>
