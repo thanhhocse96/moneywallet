@@ -1,7 +1,13 @@
 # docs/decisions/ — MoneyWallet
 # Decision records (ADR). Tiền tố hai chữ số tăng tuần tự theo thứ tự tạo.
 
-## Danh sách decision (theo roadmap)
+## Tình trạng hồ sơ
+
+Kiểm tra 2026-10-20: thư mục chỉ có README và `00-template.md`. Tên 01–06 dưới là danh mục dự kiến, **không phải decision record đã tồn tại**. ADR-7/8 trong ideation không tự thành hồ sơ được duyệt.
+
+Scope theo `.context/MILESTONES.md`; UI human xác nhận ở `docs/standards/ui-design-direction.md`. Không dùng mục SDK/flavor/license cũ dưới đây để tự thay dependency, bỏ flavor hoặc đưa kết luận pháp lý.
+
+## Danh mục lịch sử/dự kiến (không phải danh sách file hiện có)
 
 | STT | File | Nội dung |
 |---|---|---|

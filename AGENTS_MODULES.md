@@ -18,6 +18,7 @@
 - Activity/Fragment, Loader (hiện tại), ViewModel+Flow (roadmap P4).
 - Không xóa `DataContentProvider`, `SyncContentProvider`, `SQLDatabase`, `SQLCache`, `Contract`, `MultiUriCursorWrapper` khi chưa có test oracle pass.
 - Migrate từng màn hình theo pattern đã chuẩn hóa.
+- UI theo theme + Material 3 + minimalism + Apple-like island; xem `docs/standards/ui-design-direction.md` và MODULE_UI. Vertical slice chọn sau audit baseline.
 
 ### Backup layer (MODULE_BACKUP.md)
 

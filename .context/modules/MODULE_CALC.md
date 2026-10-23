@@ -12,4 +12,4 @@
 - `CurrencyConverterPicker.convert()` — truyền đúng currency (fallback default) cho `MoneyPicker`.
 - `EquationSolver` phép chia — dùng `BigDecimal` + `HALF_UP`.
 - Unit test table-driven (~40 case) cho formatter/converter.
-- Bắt buộc fix 1-cent bugs trước tính năng vàng (P2).
+- Audit lỗi tiền theo baseline; correctness/làm tròn cần cho mọi feature tiền, không gắn với phase vàng mặc định.

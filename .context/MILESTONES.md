@@ -1,85 +1,97 @@
-# .context/MILESTONES.md — MoneyWallet
-# Milestone source of truth. Đọc cả mục "Nợ kỹ thuật đang mang" trước khi nhận task mới.
+# .context/MILESTONES.md — MoneyWallet / MoneyVibe
+# Source of truth cho scope và trạng thái; ideation không tự cấp quyền triển khai.
 
 Current milestone: **P0 — Toolchain & compliance**
 
-## Checklist P0 — Toolchain & compliance (1–2 tuần)
+## Scope đã cập nhật ngày 2026-10-20
 
-**Mục tiêu:** build system hiện đại, app đạt chuẩn Play Store 2026. Code vẫn Java, behavior không đổi.
+- Human chọn hướng tiếp nhận tallybook và duy trì fork bằng human–agent theo từng bước.
+- UI đã xác nhận: **theme + Material 3 + minimalism + Apple-like island**; xem `docs/standards/ui-design-direction.md`.
+- **Giá vàng tự động ngoài scope**: không có checklist API/scrape/worker giá vàng; không tự khôi phục từ roadmap cũ.
+- Không giao xây lại vàng như vertical slice mặc định. Ideation ghi vàng đã làm riêng; TB-01 phải tìm artifact nếu cần bảo toàn, không coi là bằng chứng code đã nằm trong repo.
+- Vẫn P0, không chuyển milestone/archive tensions hoặc tự renumber theo ideation 5 phase. Các phase tương lai là định hướng, chưa phải quyền triển khai mọi hạng mục.
 
-- [ ] AGP 4.0.1 → 8.x, Gradle 6.1.1 → 8.x, `jcenter()` → `mavenCentral()`
-- [ ] `compileSdk`/`targetSdk` 29 → 35 (hoặc 36), `minSdk` 21 → 26
-- [ ] Gắn Kotlin plugin 2.x (chưa viết Kotlin, chỉ chuẩn bị)
-- [ ] Xóa `free_reflection` + code trong `App.java` (crash Android 11+)
-- [ ] Gọn flavor: giữ `floss`+`osm`, bỏ `proprietary`/`gmap` (cần API key không có)
-- [ ] Scoped storage: backup/export chuyển sang SAF (không còn `WRITE_EXTERNAL_STORAGE`)
-- [ ] `USE_FINGERPRINT` → Biometric API (`USE_BIOMETRIC`)
-- [ ] Foreground service types + `SCHEDULE_EXACT_ALARM` nếu dùng (Android 14+)
-- [ ] Fix build break do bump lib, chạy smoke test thủ công toàn bộ luồng chính
+## P0 — Tiếp nhận tallybook, toolchain & compliance
 
-**Exit criteria:** `./gradlew assembleRelease` pass; cài trên máy Android 14/15/16 chạy được; backup/restore OK.
+Plan: `docs/plans/000_P0_TALLYBOOK_ADOPTION_PLAN.md`. Workflow: `docs/standards/human-agent-development.md`.
 
-## Checklist P1 — Room core + validation (2 tuần)
+- [ ] TB-01: audit local/upstream, pin SHA, xác minh schema/toolchain/backend/dependency/license/contribution policy.
+- [ ] TB-02: quyết thay đổi dependency/flavor/backend/applicationId/signing/version có bằng chứng.
+- [ ] TB-03: tích hợp trên nhánh riêng, giữ lịch sử/docs/phần riêng; ghi conflict resolutions.
+- [ ] TB-04: human chạy build/lint/test và smoke test trên baseline ứng viên.
+- [ ] TB-05: human kiểm chứng restore/upgrade trên bản sao và backup round-trip.
+- [ ] TB-06: cập nhật context và audit lại backlog theo SHA được chấp nhận.
+- [ ] TB-07: chuẩn bị task dev nhỏ đầu tiên có acceptance và rollback.
 
-- [ ] 24 `@Entity` map 1:1 tên bảng/cột (giữ `String` cho cột DATETIME)
-- [ ] `currencies`: `@PrimaryKey` trên `currency_iso` (TEXT)
-- [ ] Junction tables: `@Entity(primaryKeys = [...])`; FK đúng `CASCADE`/`SET_NULL`
-- [ ] `RoomDatabase` version 4 + migration 3→4: `CREATE INDEX` cho các cột FK
-- [ ] Export schema JSON, bật `exportSchema = true`
-- [ ] Test quyết định: lấy file `.db` thật từ bản 4.0.5.10, mở bằng Room, assert đọc đủ 24 bảng + số dòng khớp
-- [ ] DAO CRUD cơ bản cho 24 bảng
+Audit P0 gồm SDK/JDK/Gradle, repositories, hidden API, scoped storage, biometric, service/alarm permissions và release configuration. Chỉ lập task sửa phần còn thiếu đã xác minh; không mặc định bump version, bỏ flavor hay thay dependency từ checklist cũ.
 
-**Exit criteria:** test mở `.db` thật pass trên 3 sample khác nhau.
+**Exit:** human chấp nhận baseline sau log build theo variant thực, smoke/restore đạt; thay đổi hành vi đã được quyết; context khớp source. Không tuyên bố đạt chuẩn Play Store nếu chưa kiểm chứng yêu cầu phát hành tại thời điểm đó.
 
-## Checklist P2 — Vertical slice: currency + vàng trên stack mới (2–3 tuần)
+## P1 — Room core + validation (sau baseline)
 
-- [ ] Entity `currencies` thêm cột `unit_type` (0 = decimal, 1 = vàng VN) + migration 4→5
-- [ ] `GoldFormatter`: `257` (phân) → `"2 lượng 5 chỉ 7 phân"`; parse ngược
-- [ ] UI nhập tiền cho vàng: 3 ô lượng/chỉ/phân
-- [ ] Seed currency `VAU` ("Vàng", symbol `lượng`, decimals 2) — không dùng `XAU`
-- [ ] Nhập tỉ giá thủ công: dialog "1 lượng = X VND"
-- [ ] Migrate 2 màn hình currency sang ViewModel + StateFlow
-- [ ] Characterization test cho GoldFormatter (~30 case)
+- [ ] Inventory schema thật: bảng/cột/default/FK/index và DB version tại SHA đích.
+- [ ] Thiết kế entities/DAO giữ tên và semantics; ngày giờ TEXT theo invariant hiện hành.
+- [ ] Chọn migration version theo baseline và thứ tự release; không hardcode 3→4 hay 10→11 từ ideation.
+- [ ] Export schema; test DB rỗng/có dữ liệu/sau restore, đối chiếu số dòng và giá trị nghiệp vụ.
+- [ ] Backup trước lần đầu backend mới mở DB cũ; kiểm chứng recovery.
+- [ ] Xác minh khả năng KMP theo dependency/version thực trước quyết định shared module.
 
-## Checklist P3 — Port write orchestration sang Repository (3–4 tuần)
+**Exit:** migration và round-trip đạt trên bộ mẫu thống nhất, không mất dữ liệu. Premise về Room validation/index phải được kiểm chứng bằng nguồn đúng version và test.
 
-- [ ] Repository per aggregate: `TransactionRepository`, `DebtRepository`, `BudgetRepository`, `SavingRepository`, `RecurrenceRepository`
-- [ ] Port ~30 method insert/update/delete từ `SQLDatabase`
-- [ ] Mỗi repository method bọc `@Transaction`
-- [ ] Characterization test so sánh DB state giữa implementation cũ và mới
-- [ ] `DataContentProvider` chuyển thành lớp delegate mỏng gọi Repository
+## P2 — Vertical slice trên stack mới (chưa chọn domain)
 
-## Checklist P4 — Migrate UI: Loader → Flow, xóa Provider (3–4 tuần)
+- [ ] Chọn một luồng end-to-end nhỏ sau TB-06.
+- [ ] Chốt semantics, dữ liệu, màn hình mẫu và acceptance trước code.
+- [ ] Chứng minh DAO/repository → ViewModel/state → UI và regression với hành vi cần giữ.
 
-- [ ] Từng màn hình: `CursorLoader` → `ViewModel` + `StateFlow`
-- [ ] Xóa `LocalBroadcastManager` (36 files)
-- [ ] Xóa `startActivityForResult` (14 files) → Activity Result API
-- [ ] Khi migrate xong: xóa `DataContentProvider`, `SyncContentProvider`, `SQLDatabase`, `SQLCache`, `Contract`, `MultiUriCursorWrapper`
+Không mặc định vàng/currency. Tag và currency scale là ứng viên từ ideation, chưa phải lựa chọn được duyệt.
 
-## Checklist P5 — UI modernization (ongoing)
+## P3 — Repository write orchestration
 
-- [ ] Material 3 theme
-- [ ] Thay lib chết: `material-dialogs` → MDC, `bottomsheetpickers` → MDC pickers, `MPAndroidChart` → Vico/Compose chart
-- [ ] Compose cho màn hình mới
+- [ ] Inventory transfer, debt, budget, saving, recurrence, split nếu có theo baseline.
+- [ ] Port theo aggregate, bảo đảm atomicity và failure recovery.
+- [ ] Characterization test DB state, kèm expected result đúng cho bug đã biết.
+- [ ] Giữ Provider làm cầu nối khi còn consumer; chỉ bỏ code sau test oracle phù hợp.
 
-## Checklist P6 — Vàng phase 2: giá tự động (2–3 tuần, optional)
+## P4 — Migrate UI data flow
 
-- [ ] Nguồn giá vàng VN (SJC/BTMC): API hoặc scrape có cache
-- [ ] Worker định kỳ cập nhật tỉ giá vàng (WorkManager)
+- [ ] Chuẩn hóa pattern từ vertical slice; chuyển từng màn hình sang ViewModel + Flow.
+- [ ] Inventory rồi thay Loader/broadcast/activity-result cũ; không dùng số file lịch sử làm acceptance.
+- [ ] Kiểm tra consumer và regression trước khi xóa Provider/cache/Contract.
 
-## Nợ kỹ thuật đang mang
+## P5 — Theme và thiết kế trải nghiệm
 
-- Backlog outstanding: xem `.docs/moneywallet-outstanding-backlog.md`
-- Hotfix #177/#221 (crash boot loop SAF) — ưu tiên cao nhất
-- 1-cent bugs (#205, #189, #290, #128, #45, #32) — bắt buộc trước tính năng vàng
-- #303 (backup/restore mất wallet notes)
-- #197 (restore chỉ ra subset dữ liệu)
+Hướng thiết kế áp dụng cho UI mới ngay khi làm, không phải chờ P5 mới có theme.
 
-## Decision log (ADR)
+- [ ] Audit theme/components kế thừa; không mặc định tallybook đáp ứng thiết kế MoneyVibe.
+- [ ] Tokens màu, typography, spacing, shape, elevation dùng chung; xác định modes/theme và preference trong task thiết kế.
+- [ ] Material 3 làm nền component; minimalism và Apple-like island định hình bố cục/phân cấp.
+- [ ] Màn hình mẫu Transactions / New transaction / Budgets / Overview và tag merge đối chiếu prototype trước rollout.
+- [ ] Kiểm chứng số tiền dài/âm, font scale, contrast, touch targets, keyboard/insets, empty/loading/error.
+- [ ] Chọn View/XML/Compose và thay lib theo nhu cầu đã kiểm chứng; danh sách thay lib không thay thế mục tiêu thiết kế.
 
-- ADR-1: Thay thế thay vì convert Java→Kotlin hàng loạt.
-- ADR-2: Giữ ngày giờ dạng TEXT `"yyyy-MM-dd HH:mm:ss"`.
-- ADR-3: Đơn vị lưu trữ vàng = phân (INTEGER), decimals = 2.
-- ADR-4: Không dùng ISO `XAU` cho vàng VN → dùng `VAU`.
-- ADR-5: minSdk 26, targetSdk 35/36; bỏ flavor `proprietary`/`gmap`.
-- ADR-6: GPL v3 + iText AGPL → mọi bản fork phải open-source.
+**Exit từng slice:** human kiểm chứng hình thức/tương tác; theme nhất quán, nghiệp vụ và accessibility không regress.
+
+## Feature intake từ ideation — chưa tự lên lịch release
+
+| Feature | Nội dung giữ khi lập task | Điều kiện trước implementation |
+|---|---|---|
+| Tag/hashtag | Text là nguồn sự thật; parse-on-write; merge/rename/alias nguyên tử | Grammar, split-note attribution, history scan, dedupe khi merge và migration thống nhất |
+| Currency scale | DB lưu tiền thật; scale chỉ nhập/hiển thị | Minor units, làm tròn/overflow; conversion legacy là task riêng có preview và backup |
+| Icon | Pack → SVG/emoji → raster tùy nhu cầu | Chốt pack/format; xác minh backup/export cột mới và file |
+
+Nguồn: `.docs/ideations/02-specs/`. Thứ tự feature chưa quyết; không tự nhét tất cả vào P2.
+
+## Nợ kỹ thuật cần xác minh lại
+
+Nguồn lịch sử: `.docs/ideations/03-backlog/moneywallet-outstanding-backlog.md`.
+
+- SAF #177/#221; tiền/làm tròn #205/#189/#290/#128/#45/#32.
+- Wallet notes #303, restore #197, orphan attachments #298, CSV/import.
+- TB-01/TB-06 phân loại còn lỗi / xác minh đã sửa / chưa tái hiện tại SHA đích. Không kết luận hotfix bắt buộc hoặc bug đã hết từ tài liệu cũ.
+
+## Quyết định và bằng chứng
+
+- Giữ invariants: migrate từng bước, semantics ngày TEXT, dữ liệu/package/security theo AGENTS/module.
+- SDK/flavor, license dependency, KMP và migration numbering cần evidence baseline; nhãn ADR trong ideation không thay decision record.
+- Audit: `docs/plans/evidence/2026-10-20-governance-reconciliation.md`.

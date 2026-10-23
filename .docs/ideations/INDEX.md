@@ -4,6 +4,8 @@
 > Đây là scratch area — nội dung có thể bị thay đổi, chưa nhất quán với code sản phẩm.
 > Các file đã promote thành quyết định sẽ được chuyển sang `docs/decisions/` hoặc `.context/`.
 
+> Scope override từ human 2026-10-20: giá vàng tự động ngoài scope; UI = theme + Material 3 + minimalism + Apple-like island. Xem `.context/MILESTONES.md`, `docs/standards/ui-design-direction.md` và `docs/plans/evidence/2026-10-20-governance-reconciliation.md`. Trạng thái “đã chốt/đã verify” dưới đây là lời ghi trong research, không thay evidence/decision hiện hành.
+
 ---
 
 ## Cấu trúc thư mục

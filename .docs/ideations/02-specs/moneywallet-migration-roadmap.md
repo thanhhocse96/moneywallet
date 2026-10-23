@@ -1,5 +1,7 @@
 # Roadmap hiện đại hóa MoneyWallet
 
+> LEGACY IDEATION — không dùng checklist này để giao task. Scope ở `.context/MILESTONES.md`: P6 giá vàng tự động ngoài scope; P2 không mặc định xây vàng; UI theme/M3/minimalism/Apple-like island. Giữ nội dung để truy nguyên, không phải archive/chuyển milestone.
+
 > Từ codebase Java (commit 11/2021, 441 files, ~70k LOC) → app Android hiện đại (Kotlin, Room, coroutines/Flow, targetSdk 35/36), kèm tính năng vàng (phân/chỉ/lượng).
 > Đọc kèm: `moneywallet-data-layer-deep-analysis.md` (phân tích tầng data).
 

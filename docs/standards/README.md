@@ -5,6 +5,9 @@
 
 - `android-build-safety-contract.md` — Build safety (bắt buộc đọc trước khi sửa Gradle).
 - `decision-memo-format.md` — Format 7 mục khi xin human quyết định.
+- `human-agent-development.md` — Phối hợp dev/agent, task card, evidence, handoff và duy trì fork/upstream.
+- `ui-design-direction.md` — Hướng theme, Material 3, minimalism, Apple-like island đã được human xác nhận.
+- `ui-artifact-digest.md` — Phân tích source hai variant, thuật ngữ Inset Grouped, tokens, screen brief và handoff cho agent.
 
 ## Quy tắc chung
 

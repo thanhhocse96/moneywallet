@@ -5,12 +5,15 @@
 - Activity/Fragment, Loader (hiện tại), ViewModel+Flow (roadmap P4).
 - Không xóa `DataContentProvider`, `SyncContentProvider`, `SQLDatabase`, `SQLCache`, `Contract`, `MultiUriCursorWrapper` khi chưa có test oracle pass.
 - Migrate từng màn hình theo pattern đã chuẩn hóa.
+- Hướng human xác nhận: theme + Material 3 + minimalism + Apple-like island; theo `docs/standards/ui-design-direction.md`.
 [/manual]
 
 ### Rules
 
-- Màn hình đầu tiên migrate sang ViewModel+Flow là currency (P2 vertical slice).
-- Xóa `LocalBroadcastManager` (36 files) khi migrate xong.
-- Xóa `startActivityForResult` (14 files) → Activity Result API.
+- Trước task thiết kế/implement UI, đọc `docs/standards/ui-artifact-digest.md`: phân biệt grouped cards với list phẳng, variant với theme, app canvas với khung mockup. Inset Grouped là pattern tham chiếu, không phải yêu cầu dùng iOS framework.
+
+- Vertical slice chọn sau audit baseline; không mặc định currency/vàng.
+- Inventory consumer `LocalBroadcastManager` và `startActivityForResult` theo SHA thực trước thay/xóa; số file trong ideation là lịch sử.
+- Theme là hệ tokens/components nhất quán; Material dependency không đủ đánh dấu UI hoàn tất.
 - Mỗi màn hình migrate có checklist test tay.
 - Grep toàn bộ `CONTENT_` trước khi xóa provider.

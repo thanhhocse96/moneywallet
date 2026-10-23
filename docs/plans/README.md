@@ -1,18 +1,15 @@
-# docs/plans/ — MoneyWallet
-# Phase planning files. Tên file khớp version/milestone trong nội dung.
+# docs/plans/ — MoneyWallet / MoneyVibe
 
-## Danh sách planning (theo roadmap P0–P6)
+## Tài liệu hiện có
 
-| File | Mô tả |
-|---|---|
-| `000_P0_TOOLCHAIN_COMPLIANCE_PLAN.md` | P0 — Toolchain & compliance |
-| `001_P1_ROOM_CORE_VALIDATION_PLAN.md` | P1 — Room core + validate trên `.db` thật |
-| `002_P2_VERTICAL_SLICE_CURRENCY_GOLD_PLAN.md` | P2 — Vertical slice: currency + vàng |
-| `003_P3_REPOSITORY_WRITE_PLAN.md` | P3 — Port write orchestration sang Repository |
-| `004_P4_UI_MIGRATION_LOADER_TO_FLOW_PLAN.md` | P4 — Migrate UI: Loader → Flow, xóa Provider |
-| `005_P5_UI_MODERNIZATION_PLAN.md` | P5 — UI modernization (M3, thay lib chết) |
-| `006_P6_GOLD_PHASE2_AUTO_PRICE_PLAN.md` | P6 — Vàng phase 2: giá tự động |
+- [P0 — Tiếp nhận tallybook](000_P0_TALLYBOOK_ADOPTION_PLAN.md): TB-01 → TB-07.
+- [Audit governance 2026-10-20](evidence/2026-10-20-governance-reconciliation.md): sai biệt, hiệu chỉnh, nội dung cần xác minh.
+- [Workflow human–agent](../standards/human-agent-development.md).
 
-## Quy tắc đặt tên
+Source of truth: `.context/MILESTONES.md`; vẫn P0. Giá vàng tự động ngoài scope; UI theo [hướng thiết kế](../standards/ui-design-direction.md).
 
-`###_VERSION_<X>_<TOPIC>_PLANNING.md` (ví dụ: `001_VERSION_1_1_0_FEATURE_PLANNING.md`). Không đổi tên planning file nếu chưa có human xác nhận.
+## Quy tắc
+
+- Chỉ liệt kê plan đã tồn tại; không trình bày tên file dự kiến như kế hoạch đã duyệt.
+- Plan tương lai theo milestone và baseline đã kiểm chứng, không sao chép số phase/migration ideation.
+- Không đổi tên plan hiện có khi chưa có human xác nhận. File mới gắn milestone/version và nội dung rõ ràng.

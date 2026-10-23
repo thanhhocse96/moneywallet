@@ -11,6 +11,8 @@ Current milestone: **P0 — Toolchain & compliance**
 
 Milestone source of truth: `.context/MILESTONES.md`.
 
+Scope clarification (human, 2026-10-20): tiếp nhận tallybook trước; giá vàng tự động ngoài scope; UI theo theme + Material 3 + minimalism + Apple-like island (`docs/standards/ui-design-direction.md`). P0 chưa đổi. Không lấy roadmap/ADR trong ideation làm quyền implement; facts upstream phải pin SHA và kiểm chứng.
+
 Quy tắc quản lý tension theo milestone:
 
 - Trong cùng milestone hiện tại, tension đã `RESOLVED_ACTIVE` nằm trong `.context/TENSIONS_ACTIVE.md`.
@@ -319,11 +321,12 @@ Theo `.context/MILESTONES.md`:
 |---|---|
 | P0 | Toolchain & compliance |
 | P1 | Room core + validate trên `.db` thật |
-| P2 | Vertical slice: currency + vàng trên stack mới |
+| P2 | Vertical slice trên stack mới; domain chọn sau audit baseline |
 | P3 | Port write orchestration sang Repository |
 | P4 | Migrate UI: Loader → Flow, xóa Provider |
-| P5 | UI modernization (M3, thay lib chết) |
-| P6 | Vàng phase 2: giá tự động |
+| P5 | Theme + Material 3 + minimalism + Apple-like island |
+
+P6 giá vàng tự động của roadmap cũ ngoài scope hiện hành. Điều chỉnh scope không phải chuyển milestone hoặc lệnh archive.
 
 ### Quy tắc version
 

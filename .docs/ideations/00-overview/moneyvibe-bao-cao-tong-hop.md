@@ -1,6 +1,8 @@
 # BÁO CÁO TỔNG HỢP: DỰ ÁN MONEYVIBE
 ## Hiện đại hóa MoneyWallet → app quản lý chi tiêu thế hệ mới
 
+> Governance 2026-10-20: đây là ideation; version/schema/bugfix/backup compatibility upstream chưa được TB-01 kiểm chứng. ADR/số phase dưới không tự thay milestone. UI hiện hành theo `docs/standards/ui-design-direction.md`. Không thực hiện reset --hard từ ví dụ dưới; plan tiếp nhận giữ lịch sử trên nhánh riêng.
+
 > Ngày lập: 2026-10-19 · Trạng thái: **planning hoàn tất, chưa viết code sản phẩm mới**
 > Tài liệu chi tiết kèm theo: `moneywallet-migration-roadmap.md`, `moneywallet-hashtag-tag-spec.md`,
 > `moneywallet-icon-spec.md`, `moneywallet-data-layer-deep-analysis.md`, `tag-merge-ui-prototype.html`

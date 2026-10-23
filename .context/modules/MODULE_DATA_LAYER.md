@@ -8,13 +8,14 @@
 - Auto-backup JSON trước lần đầu Room mở DB cũ (theo roadmap P1).
 [/manual]
 
-### Tables (24 bảng theo schema hiện tại)
+### Schema source of truth
 
-- `wallet`, `transaction_item`, `person`, `category`, `budget`, `saving`, `debt`, `recurrence`, `currency`, `exchange_rate`, `attachment`, và các junction table...
+- Inventory từ `storage/database/Schema.java` và DB thật tại SHA được chọn; không dùng tên domain rút gọn làm tên SQL. Source hiện tại dùng `wallets`, `transactions`, `currencies`.
+- Không hardcode 24/27 bảng từ ideation cho acceptance; ghi danh sách bảng/cột/default/FK/index thực trong báo cáo baseline.
 
 ### Rules
 
 - Mọi query ghi đọc qua `ContentProvider` hoặc `SQLDatabase` trực tiếp.
 - Không dùng raw SQL concat với user input.
 - FK cascade đúng như schema gốc.
-- Migration 3→4: thêm `CREATE INDEX` cho các cột FK (DB cũ không có index).
+- Migration version và indices theo schema baseline/target thực; test với Room version đã chọn. Không mặc định thiếu index FK luôn gây validation failure từ research cũ.
