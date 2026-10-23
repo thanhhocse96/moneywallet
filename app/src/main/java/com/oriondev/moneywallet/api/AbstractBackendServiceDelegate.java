@@ -24,7 +24,9 @@ import android.content.Intent;
 
 import androidx.activity.ComponentActivity;
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.annotation.StringRes;
+import androidx.fragment.app.Fragment;
 
 /**
  * Created by andrea on 21/11/18.
@@ -50,6 +52,16 @@ public abstract class AbstractBackendServiceDelegate {
 
     public abstract boolean isServiceEnabled(Context context);
 
+    /**
+     * Registers the activity result launchers this backend needs. A Fragment refuses a
+     * registration once its view has been created, so call this from onAttach or onCreate,
+     * never from {@link #setup}, which runs on a click. A backend that registers a launcher
+     * here needs this called before its {@link #setup}.
+     */
+    public void registerLaunchers(@NonNull Fragment fragment) {
+        // most backends have nothing to register
+    }
+
     public abstract void setup(ComponentActivity activity) throws BackendException;
 
     public abstract void teardown(ComponentActivity activity) throws BackendException;
@@ -60,6 +72,30 @@ public abstract class AbstractBackendServiceDelegate {
 
     public boolean handleActivityResult(Context context, int requestCode, int resultCode, Intent data) {
         return false;
+    }
+
+    /**
+     * Whether the user can disconnect (forget/revoke) this backend. Most backends can be
+     * disconnected; the local external-memory backend cannot, since it holds no session to drop.
+     */
+    public boolean isDisconnectable() {
+        return true;
+    }
+
+    /**
+     * Whether {@link #setup} can be run again on an enabled backend to pick a different location.
+     */
+    public boolean isFolderChangeable() {
+        return false;
+    }
+
+    /**
+     * A line naming where this backend stores its backups, or null if it has none to show. It
+     * may query another app's provider, so call it off the main thread.
+     */
+    @Nullable
+    public String describeLocation(Context context) {
+        return null;
     }
 
     protected void setBackendServiceEnabled(boolean enabled) {

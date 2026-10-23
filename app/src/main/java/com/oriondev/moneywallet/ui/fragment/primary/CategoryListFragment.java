@@ -50,6 +50,7 @@ public class CategoryListFragment extends CursorListFragment implements Category
     private static final String ARG_SHOW_CHILDREN = "CategoryListFragment::Arguments::ShowChildren";
 
     private Controller mController;
+    private CategoryCursorAdapter mAdapter;
 
     public static CategoryListFragment newInstance(Contract.CategoryType type, boolean showChildren) {
         Bundle arguments = new Bundle();
@@ -68,7 +69,31 @@ public class CategoryListFragment extends CursorListFragment implements Category
 
     @Override
     protected AbstractCursorAdapter onCreateAdapter() {
-        return new CategoryCursorAdapter(this);
+        mAdapter = new CategoryCursorAdapter(this);
+        // After a rotation the activity has its query back before this view is built, so the
+        // adapter is asked for it here instead of waiting to be told.
+        mAdapter.setQuery(mController != null ? mController.getCategoryQuery() : "");
+        return mAdapter;
+    }
+
+    public void setQuery(String query) {
+        if (mAdapter != null) {
+            mAdapter.setQuery(query);
+            showListState();
+        }
+    }
+
+    /**
+     * Which categories have their children hidden is stored once for the whole application, and
+     * this list is not the only one reading it: the picker opens over the category screen and
+     * both draw the same categories. Asking again here is what stops the one underneath drawing
+     * a state the other has already changed, which would make its next arrow tap do nothing. The
+     * rows themselves need no reloading, since the loader is watching the categories already.
+     */
+    @Override
+    public void onResume() {
+        super.onResume();
+        mAdapter.reloadCollapsedCategories();
     }
 
     @NonNull
@@ -136,5 +161,7 @@ public class CategoryListFragment extends CursorListFragment implements Category
     public interface Controller {
 
         void onCategoryClick(long id);
+
+        String getCategoryQuery();
     }
 }

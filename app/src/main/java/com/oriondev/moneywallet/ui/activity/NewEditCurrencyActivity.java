@@ -3,6 +3,7 @@ package com.oriondev.moneywallet.ui.activity;
 import android.app.Activity;
 import android.content.ContentResolver;
 import android.content.ContentValues;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
@@ -18,10 +19,10 @@ import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 
-import com.afollestad.materialdialogs.DialogAction;
-import com.afollestad.materialdialogs.MaterialDialog;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.oriondev.moneywallet.R;
 import com.oriondev.moneywallet.model.CurrencyUnit;
+import com.oriondev.moneywallet.model.MoneyScale;
 import com.oriondev.moneywallet.storage.database.Contract;
 import com.oriondev.moneywallet.storage.database.DataContentProvider;
 import com.oriondev.moneywallet.storage.database.SQLiteDataException;
@@ -195,26 +196,23 @@ public class NewEditCurrencyActivity extends SinglePanelScrollActivity {
 
     @Override
     public boolean onMenuItemClick(MenuItem item) {
-        switch (item.getItemId()) {
-            case R.id.action_save_changes:
-                onSaveChanges();
-                break;
-            case R.id.action_delete_item:
-                ThemedDialog.buildMaterialDialog(this)
-                        .title(R.string.title_warning)
-                        .content(R.string.message_delete_currency)
-                        .positiveText(android.R.string.ok)
-                        .negativeText(android.R.string.cancel)
-                        .onPositive(new MaterialDialog.SingleButtonCallback() {
+        int itemId = item.getItemId();
+        if (itemId == R.id.action_save_changes) {
+            onSaveChanges();
+        } else if (itemId == R.id.action_delete_item) {
+            ThemedDialog.buildMaterialDialog(this)
+                    .setTitle(R.string.title_warning)
+                    .setMessage(R.string.message_delete_currency)
+                    .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
 
-                            @Override
-                            public void onClick(@NonNull MaterialDialog dialog, @NonNull DialogAction which) {
-                                onDelete();
-                            }
+                        @Override
+                        public void onClick(DialogInterface dialog, int which) {
+                            onDelete();
+                        }
 
-                        })
-                        .show();
-                break;
+                    })
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show();
         }
         return false;
     }
@@ -243,15 +241,12 @@ public class NewEditCurrencyActivity extends SinglePanelScrollActivity {
                     if (currencyUnit != null) {
                         final Uri uri = Uri.withAppendedPath(DataContentProvider.CONTENT_CURRENCIES, mIso);
                         if (currencyUnit.getDecimals() != decimalCount) {
-                            MaterialDialog.Builder builder = ThemedDialog.buildMaterialDialog(this)
-                                    .title(R.string.title_warning)
-                                    .positiveText(android.R.string.ok)
-                                    .negativeText(android.R.string.cancel)
-                                    .neutralText(R.string.action_skip)
-                                    .onPositive(new MaterialDialog.SingleButtonCallback() {
+                            MaterialAlertDialogBuilder builder = ThemedDialog.buildMaterialDialog(this)
+                                    .setTitle(R.string.title_warning)
+                                    .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
 
                                         @Override
-                                        public void onClick(@NonNull MaterialDialog dialog, @NonNull DialogAction which) {
+                                        public void onClick(DialogInterface dialog, int which) {
                                             contentValues.put(Contract.Currency.FIX_MONEY_DECIMALS, true);
                                             contentResolver.update(uri, contentValues, null, null);
                                             CurrencyManager.invalidateCache(NewEditCurrencyActivity.this);
@@ -260,10 +255,11 @@ public class NewEditCurrencyActivity extends SinglePanelScrollActivity {
                                         }
 
                                     })
-                                    .onNeutral(new MaterialDialog.SingleButtonCallback() {
+                                    .setNegativeButton(android.R.string.cancel, null)
+                                    .setNeutralButton(R.string.action_skip, new DialogInterface.OnClickListener() {
 
                                         @Override
-                                        public void onClick(@NonNull MaterialDialog dialog, @NonNull DialogAction which) {
+                                        public void onClick(DialogInterface dialog, int which) {
                                             contentValues.put(Contract.Currency.FIX_MONEY_DECIMALS, false);
                                             contentResolver.update(uri, contentValues, null, null);
                                             CurrencyManager.invalidateCache(NewEditCurrencyActivity.this);
@@ -275,13 +271,13 @@ public class NewEditCurrencyActivity extends SinglePanelScrollActivity {
                             if (currencyUnit.getDecimals() < decimalCount) {
                                 // in this case we have to multiply the current values
                                 int exponent = decimalCount - currencyUnit.getDecimals();
-                                int multiplier = (int) Math.pow(10, exponent);
-                                builder.content(R.string.message_multiply_currency_decimals, multiplier);
+                                int multiplier = (int) MoneyScale.rescale(1L, exponent);
+                                builder.setMessage(getString(R.string.message_multiply_currency_decimals, multiplier));
                             } else {
                                 // in this case we have to divide the current values
                                 int exponent = currencyUnit.getDecimals() - decimalCount;
-                                int divider = (int) Math.pow(10, exponent);
-                                builder.content(R.string.message_divide_currency_decimals, divider);
+                                int divider = (int) MoneyScale.rescale(1L, exponent);
+                                builder.setMessage(getString(R.string.message_divide_currency_decimals, divider));
                             }
                             builder.show();
                             return;
@@ -310,9 +306,9 @@ public class NewEditCurrencyActivity extends SinglePanelScrollActivity {
             } catch (SQLiteDataException e) {
                 if (e.getErrorCode() == Contract.ErrorCode.CURRENCY_IN_USE) {
                     ThemedDialog.buildMaterialDialog(this)
-                            .title(R.string.title_error)
-                            .content(R.string.message_error_delete_currency)
-                            .positiveText(android.R.string.ok)
+                            .setTitle(R.string.title_error)
+                            .setMessage(R.string.message_error_delete_currency)
+                            .setPositiveButton(android.R.string.ok, null)
                             .show();
                 }
             }

@@ -19,6 +19,7 @@
 
 package com.oriondev.moneywallet.ui.activity;
 
+import android.Manifest;
 import android.content.ContentResolver;
 import android.content.ContentUris;
 import android.content.ContentValues;
@@ -26,6 +27,7 @@ import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
 import androidx.annotation.NonNull;
+import androidx.core.app.ActivityCompat;
 import androidx.fragment.app.FragmentManager;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -37,6 +39,7 @@ import com.oriondev.moneywallet.R;
 import com.oriondev.moneywallet.broadcast.RecurrenceBroadcastReceiver;
 import com.oriondev.moneywallet.model.CurrencyUnit;
 import com.oriondev.moneywallet.model.Event;
+import com.oriondev.moneywallet.model.MoneyScale;
 import com.oriondev.moneywallet.model.Place;
 import com.oriondev.moneywallet.model.RecurrenceSetting;
 import com.oriondev.moneywallet.model.Wallet;
@@ -53,8 +56,10 @@ import com.oriondev.moneywallet.ui.view.text.MaterialEditText;
 import com.oriondev.moneywallet.ui.view.text.Validator;
 import com.oriondev.moneywallet.utils.CurrencyManager;
 import com.oriondev.moneywallet.utils.DateUtils;
+import com.oriondev.moneywallet.utils.DefaultWallet;
 import com.oriondev.moneywallet.utils.IconLoader;
 import com.oriondev.moneywallet.utils.MoneyFormatter;
+import com.oriondev.moneywallet.utils.Utils;
 
 import java.util.Date;
 import java.util.Locale;
@@ -102,7 +107,20 @@ public class NewEditRecurrentTransferActivity extends NewEditItemActivity implem
     private EventPicker mEventPicker;
     private PlacePicker mPlacePicker;
 
+    private static final int REQUEST_CODE_NOTIFICATION_PERMISSION = 35627;
+
     private MoneyFormatter mMoneyFormatter = MoneyFormatter.getInstance();
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        if (getMode() == Mode.NEW_ITEM && Utils.shouldAskNotificationPermission(this)) {
+            PreferenceManager.setAskedNotificationPermission();
+            ActivityCompat.requestPermissions(this,
+                    new String[]{Manifest.permission.POST_NOTIFICATIONS},
+                    REQUEST_CODE_NOTIFICATION_PERMISSION);
+        }
+    }
     
     @Override
     protected void onCreateHeaderView(LayoutInflater inflater, ViewGroup parent, Bundle savedInstanceState) {
@@ -272,7 +290,7 @@ public class NewEditRecurrentTransferActivity extends NewEditItemActivity implem
         if (savedInstanceState == null) {
             ContentResolver contentResolver = getContentResolver();
             if (getMode() == Mode.EDIT_ITEM) {
-                Uri uri = ContentUris.withAppendedId(DataContentProvider.CONTENT_TRANSFER_MODELS, getItemId());
+                Uri uri = ContentUris.withAppendedId(DataContentProvider.CONTENT_RECURRENT_TRANSFERS, getItemId());
                 String[] projection = new String[] {
                         Contract.RecurrentTransfer.DESCRIPTION,
                         Contract.RecurrentTransfer.WALLET_FROM_ID,
@@ -345,7 +363,9 @@ public class NewEditRecurrentTransferActivity extends NewEditItemActivity implem
                                     DateUtils.getDateFromSQLDateString(cursor.getString(cursor.getColumnIndex(Contract.RecurrentTransfer.EVENT_END_DATE)))
                             );
                         }
-                        conversionRate = (double) moneyTo / moneyFrom;
+                        conversionRate = MoneyScale.deriveRate(moneyFrom, moneyTo,
+                                CurrencyManager.getDecimals(walletFrom.getCurrency()),
+                                CurrencyManager.getDecimals(walletTo.getCurrency()));
                         mConfirmedCheckBox.setChecked(cursor.getInt(cursor.getColumnIndex(Contract.RecurrentTransfer.CONFIRMED)) == 1);
                         mCountInTotalCheckBox.setChecked(cursor.getInt(cursor.getColumnIndex(Contract.RecurrentTransfer.COUNT_IN_TOTAL)) == 1);
                         Date startDate = DateUtils.getDateFromSQLDateString(cursor.getString(cursor.getColumnIndex(Contract.RecurrentTransfer.START_DATE)));
@@ -363,11 +383,13 @@ public class NewEditRecurrentTransferActivity extends NewEditItemActivity implem
                         Contract.Wallet.START_MONEY,
                         Contract.Wallet.TOTAL_MONEY
                 };
-                long currentWallet = PreferenceManager.getCurrentWallet();
+                long currentWallet = DefaultWallet.resolveNewItemWallet(contentResolver);
                 Cursor cursor;
                 if (currentWallet == PreferenceManager.TOTAL_WALLET_ID) {
                     Uri uri = DataContentProvider.CONTENT_WALLETS;
-                    cursor = contentResolver.query(uri, projection, null, null, null);
+                    cursor = contentResolver.query(uri, projection,
+                            Contract.Wallet.ARCHIVED + " = 0", null,
+                            Contract.Wallet.INDEX + " ASC, " + Contract.Wallet.NAME + " ASC");
                 } else {
                     Uri uri = ContentUris.withAppendedId(DataContentProvider.CONTENT_WALLETS, currentWallet);
                     cursor = contentResolver.query(uri, projection, null, null, null);
@@ -455,7 +477,7 @@ public class NewEditRecurrentTransferActivity extends NewEditItemActivity implem
         if (currencyUnit1 != null && currencyUnit2 != null && !currencyUnit1.equals(currencyUnit2)) {
             // we have two different currencies, its time to show the secondary currency line and do
             // a conversion on the fly with the provided conversion rate.
-            mExchangeRateTextView.setText(String.format(Locale.getDefault(), "%s ➡ %s: %.2f", currencyUnit1.getSymbol(), currencyUnit2.getSymbol(), conversionRate));
+            mExchangeRateTextView.setText(String.format(Locale.getDefault(), "%s -> %s: %.2f", currencyUnit1.getSymbol(), currencyUnit2.getSymbol(), conversionRate));
             long convertedAmount = mConverterPicker.convert(mMoneyPicker.getCurrentMoney());
             mMoneyFormatter.applyNotTinted(mSecondaryMoneyTextView, currencyUnit2, convertedAmount);
             mExchangeRateTextView.setVisibility(View.VISIBLE);

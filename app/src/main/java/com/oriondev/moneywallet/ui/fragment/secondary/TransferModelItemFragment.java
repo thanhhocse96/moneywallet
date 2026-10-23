@@ -23,6 +23,7 @@ import android.app.Activity;
 import android.content.ContentResolver;
 import android.content.ContentUris;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
@@ -40,8 +41,6 @@ import android.view.ViewGroup;
 import android.widget.CheckBox;
 import android.widget.TextView;
 
-import com.afollestad.materialdialogs.DialogAction;
-import com.afollestad.materialdialogs.MaterialDialog;
 import com.oriondev.moneywallet.R;
 import com.oriondev.moneywallet.model.CurrencyUnit;
 import com.oriondev.moneywallet.storage.database.Contract;
@@ -113,30 +112,26 @@ public class TransferModelItemFragment extends SecondaryPanelFragment implements
 
     @Override
     public boolean onMenuItemClick(MenuItem item) {
-        switch (item.getItemId()) {
-            case R.id.action_edit_item:
-                Intent intent = new Intent(getActivity(), NewEditTransferModelActivity.class);
-                intent.putExtra(NewEditItemActivity.MODE, NewEditItemActivity.Mode.EDIT_ITEM);
-                intent.putExtra(NewEditItemActivity.ID, getItemId());
-                startActivity(intent);
-                break;
-            case R.id.action_delete_item:
-                showDeleteDialog(getActivity());
-                break;
+        int itemId = item.getItemId();
+        if (itemId == R.id.action_edit_item) {
+            Intent intent = new Intent(getActivity(), NewEditTransferModelActivity.class);
+            intent.putExtra(NewEditItemActivity.MODE, NewEditItemActivity.Mode.EDIT_ITEM);
+            intent.putExtra(NewEditItemActivity.ID, getItemId());
+            startActivity(intent);
+        } else if (itemId == R.id.action_delete_item) {
+            showDeleteDialog(getActivity());
         }
         return false;
     }
 
     private void showDeleteDialog(Context context) {
         ThemedDialog.buildMaterialDialog(context)
-                .title(R.string.title_warning)
-                .content(R.string.message_delete_transfer_model)
-                .positiveText(android.R.string.ok)
-                .negativeText(android.R.string.cancel)
-                .onPositive(new MaterialDialog.SingleButtonCallback() {
+                .setTitle(R.string.title_warning)
+                .setMessage(R.string.message_delete_transfer_model)
+                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
 
                     @Override
-                    public void onClick(@NonNull MaterialDialog dialog, @NonNull DialogAction which) {
+                    public void onClick(DialogInterface dialog, int which) {
                         Activity activity = getActivity();
                         if (activity != null) {
                             Uri uri = ContentUris.withAppendedId(DataContentProvider.CONTENT_TRANSFER_MODELS, getItemId());
@@ -148,13 +143,14 @@ public class TransferModelItemFragment extends SecondaryPanelFragment implements
                     }
 
                 })
+                .setNegativeButton(android.R.string.cancel, null)
                 .show();
     }
 
     @Override
     protected void onShowItemId(long itemId) {
         setLoadingScreen(true);
-        getLoaderManager().restartLoader(TRANSFER_MODEL_LOADER_ID, null, this);
+        LoaderManager.getInstance(this).restartLoader(TRANSFER_MODEL_LOADER_ID, null, this);
     }
 
     private void setLoadingScreen(boolean loading) {

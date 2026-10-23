@@ -238,6 +238,38 @@ public class JSONDatabaseExporter implements DatabaseExporter {
     }
 
     @Override
+    public void exportBudgetCategories(Cursor cursor) throws ExportException {
+        try {
+            mWriter.writeName(JSONDatabase.BudgetCategory.ARRAY);
+            mWriter.beginArray();
+            while (cursor.moveToNext()) {
+                BudgetCategory budgetCategory = SQLDatabaseExporter.getBudgetCategory(cursor);
+                JSONObject object = mFactory.getObject(budgetCategory);
+                mWriter.writeJSONObject(object);
+            }
+            mWriter.endArray();
+        } catch (IOException | JSONException e) {
+            throw new ExportException(e.getMessage());
+        }
+    }
+
+    @Override
+    public void exportCategoryRules(Cursor cursor) throws ExportException {
+        try {
+            mWriter.writeName(JSONDatabase.CategoryRule.ARRAY);
+            mWriter.beginArray();
+            while (cursor.moveToNext()) {
+                CategoryRule categoryRule = SQLDatabaseExporter.getCategoryRule(cursor);
+                JSONObject object = mFactory.getObject(categoryRule);
+                mWriter.writeJSONObject(object);
+            }
+            mWriter.endArray();
+        } catch (IOException | JSONException e) {
+            throw new ExportException(e.getMessage());
+        }
+    }
+
+    @Override
     public void exportSavings(Cursor cursor) throws ExportException {
         try {
             mWriter.writeName(JSONDatabase.Saving.ARRAY);
@@ -293,6 +325,22 @@ public class JSONDatabaseExporter implements DatabaseExporter {
             while (cursor.moveToNext()) {
                 Transaction transaction = SQLDatabaseExporter.getTransaction(cursor);
                 JSONObject object = mFactory.getObject(transaction);
+                mWriter.writeJSONObject(object);
+            }
+            mWriter.endArray();
+        } catch (IOException | JSONException e) {
+            throw new ExportException(e.getMessage());
+        }
+    }
+
+    @Override
+    public void exportTransactionSplits(Cursor cursor) throws ExportException {
+        try {
+            mWriter.writeName(JSONDatabase.TransactionSplit.ARRAY);
+            mWriter.beginArray();
+            while (cursor.moveToNext()) {
+                TransactionSplit transactionSplit = SQLDatabaseExporter.getTransactionSplit(cursor);
+                JSONObject object = mFactory.getObject(transactionSplit);
                 mWriter.writeJSONObject(object);
             }
             mWriter.endArray();

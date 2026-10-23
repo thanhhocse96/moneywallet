@@ -31,10 +31,7 @@
     <string name="menu_people">"Ludzie"</string>
     <string name="menu_converter">"Konwerter"</string>
     <string name="menu_calculator">"Kalkulator"</string>
-    <string name="menu_search_atm">"Wyszukaj bankomat"</string>
-    <string name="menu_search_bank">"Wyszukaj bank"</string>
     <string name="menu_setting">"Ustawienia"</string>
-    <string name="menu_support_developer">"Wspieraj dewelopera"</string>
     <string name="menu_about">"O aplikacji"</string>
 
     <!-- Transactions -->
@@ -77,7 +74,6 @@
     <string name="action_new">"Nowy"</string>
     <string name="action_edit">"Edytuj"</string>
     <string name="action_search">"Szukaj"</string>
-    <string name="action_filter">"Filtruj"</string>
     <string name="action_remove">"Usuń"</string>
     <string name="action_open">"Otwórz"</string>
     <string name="action_undo">"Cofnij"</string>
@@ -122,6 +118,7 @@
     <string name="hint_type">"Typ"</string>
     <string name="hint_incomes">"Dochody"</string>
     <string name="hint_expenses">"Wydatki"</string>
+    <string name="hint_transfers">"Przelewy"</string>
     <string name="hint_net_incomes">"Dochody netto"</string>
     <string name="hint_summary">"Podsumowanie"</string>
     <string name="hint_address">"Adres"</string>
@@ -131,8 +128,6 @@
     <string name="hint_directory">"Scierzka"</string>
     <string name="hint_navigate_up">"Nawiguj w górę"</string>
     <string name="hint_password">"Hasło"</string>
-    <string name="hint_atm_name">"Nazwa bankomatu"</string>
-    <string name="hint_bank_name">"Nazwa banku"</string>
     <string name="hint_attachments">"Załączniki"</string>
     <string name="hint_operation_in_progress">"W trakcie…"</string>
     <string name="hint_search_something">"Wyszukaj coś"</string>
@@ -161,7 +156,6 @@
     <string name="hint_auto_backup_only_if_data_changed">"Tylko gdy zmieniono dane"</string>
     <string name="hint_auto_backup_every_n_hours">"Co %d godzin"</string>
     <string name="hint_auto_backup_folder">"Folder"</string>
-    <string name="hint_auto_backup_root_folder">"Główny"</string>
 
     <string name="total_wallet_name">"W całości"</string>
 
@@ -203,10 +197,7 @@
     <string name="title_activity_search_transaction">"Szukaj"</string>
     <string name="title_activity_calendar">"Kalendarz"</string>
     <string name="title_activity_map">"Mapuj"</string>
-    <string name="title_activity_backend_explorer">"Przeglądaj backend"</string>
-    <string name="title_activity_backend_file_picker">"Wybierz plik"</string>
     <string name="title_activity_backend_folder_picker">"Wybierz filder"</string>
-    <string name="title_activity_support_developer">"Wspieraj dewelopera"</string>
     <string name="title_activity_import_data">"Importuj dane"</string>
     <string name="title_activity_export_data">"Eksportuj dane"</string>
 
@@ -242,9 +233,6 @@
     <string name="menu_action_import_data">"Importuj dane"</string>
     <string name="menu_action_export_data">"Eksportuj dane"</string>
 
-    <string name="bottom_sheet_icon_picker_title">"Spersonalizuj ikonę"</string>
-    <string name="bottom_sheet_icon_picker_action_select_icon">"Wybierz ikonę"</string>
-    <string name="bottom_sheet_icon_picker_action_change_icon">"Zmień ikonę"</string>
     <string name="bottom_sheet_icon_picker_action_remove_icon">"Usuń ikonę"</string>
     <string name="bottom_sheet_icon_picker_action_change_bg_color">"Zmień kolor tła"</string>
 
@@ -256,7 +244,6 @@
     <string name="dialog_budget_type_picker_title">"Typy budżetu"</string>
     <string name="dialog_place_picker_title">"Miejsca"</string>
     <string name="dialog_people_picker_title">"Ludzie"</string>
-    <string name="dialog_filter_search_title">"Filtruj"</string>
     <string name="dialog_change_log_title">"Rejestr zmian"</string>
     <string name="dialog_overview_setting_title">"Zaawansowane ustawienia"</string>
     <string name="dialog_recurrence_title">"Powtórz"</string>
@@ -341,11 +328,7 @@
     <string name="message_error_backend_recoverable">"Problem z połączeniem. Spróbuj ponownie."</string>
 
     <string name="cover_message_backup_external_memory_title">"Aplikacja może tworzyć i przywracać kopie zapasowe bezpośrednio z zewnętrznej pamięci urządzenia"</string>
-    <string name="cover_message_backup_dropbox_title">"Aplikacja może tworzyć i przywracać kopie zapasowe z osobistego konta Dropbox"</string>
-    <string name="cover_message_backup_google_drive_title">"Aplikacja może tworzyć i przywracać kopie zapasowe z osobistego konta Dysku Google"</string>
     <string name="cover_message_backup_external_memory_button">"Kontunuuj"</string>
-    <string name="cover_message_backup_dropbox_button">"Login"</string>
-    <string name="cover_message_backup_google_drive_button">"Login"</string>
 
     <string name="empty_message_secondary_panel">"Wybierz jeden element z lewego panelu, aby zobaczyć szczegóły"</string>
     <string name="empty_message_backup_cover">"Wybierz usługę, której chcesz używać do przechowywania i odzyskiwania osobistych kopii zapasowych"</string>
@@ -360,8 +343,6 @@
     <string name="title_success">"Sukces"</string>
     <string name="title_failed">"Niepowodzenie"</string>
     <string name="title_error">"Błąd"</string>
-    <string name="title_atm_search">"Wyszukaj bankomat"</string>
-    <string name="title_bank_search">"Wyszukaj bank"</string>
     <string name="title_changelog">"Dziennik zmian"</string>
     <string name="title_licenses">"Licencje"</string>
     <string name="title_debt_insert_master_transaction">"Dobra robota"</string>
@@ -387,8 +368,6 @@
     <string name="message_backup_restoring_failed">"Błąd podczas przywracania kopii zapasowej. Wiadomość
  
 : %s"</string>
-    <string name="message_backup_service_dropbox_disconnect">"Czy na pewno chcesz odłączyć swoje konto Dropbox?"</string>
-    <string name="message_backup_service_google_drive_disconnect">"Czy na pewno chcesz odłączyć swoje konto na Dysku Google?"</string>
     <string name="message_action_archive_wallet">"Czy na pewno chcesz zarchiwizować ten portfel? Nie będzie już widoczny w menu."</string>
     <string name="message_action_unarchive_wallet">"Czy na pewno chcesz rozpakować ten portfel? Będzie ponownie widoczny w menu."</string>
     <string name="message_action_archive_debt">"Czy na pewno chcesz zarchiwizować ten dług?"</string>
@@ -451,8 +430,6 @@
     <string name="spinner_item_start_date">"Od:   %s"</string>
     <string name="spinner_item_end_date">"Do:   %s"</string>
 
-    <string name="service_backup_drop_box">"DropBox"</string>
-    <string name="service_backup_google_drive">"Dysk Google"</string>
     <string name="service_backup_external_memory">"Pamięć zewnętrzna"</string>
 
     <string name="setting_title_user_interface">"Interfejs użytkownika"</string>
@@ -472,13 +449,12 @@
     <string name="setting_title_ui_group_type">"Grupowanie"</string>
     <string name="setting_title_ui_theme_color_primary">"Kolor podstawowy"</string>
     <string name="setting_title_ui_theme_color_accent">"Akcent kolorystyczny"</string>
-    <string name="setting_title_ui_theme_type">"Typ"</string>
 
     <string name="setting_category_utility_notification">"Powiadomienie"</string>
     <string name="setting_category_utility_security">"Bezpieczeństwo"</string>
     <string name="setting_category_utility_exchange_rates">"Kurs wymiany"</string>
     <string name="setting_title_daily_reminder">"Codzienne przypomnienie"</string>
-    <string name="setting_summary_daily_reminder">"Codziennie o godz: %02d:00"</string>
+    <string name="setting_summary_daily_reminder">"Codziennie o godz: %1$s"</string>
     <string name="setting_title_security">"Ochrona dostępu"</string>
     <string name="setting_title_security_change_pin">"Zmień kod PIN"</string>
     <string name="setting_title_security_change_sequence">"Zmień sekwencję odblokowania"</string>
@@ -544,7 +520,6 @@
 
     <string name="about_hint_version">"Wersja kompilacji"</string>
     <string name="about_hint_changelog">"Dziennik zmian"</string>
-    <string name="about_hint_support">"Wspieraj rozwój"</string>
     <string name="about_hint_rate_app">"Oceń tę aplikację"</string>
     <string name="about_hint_open_source_libraries">"Biblioteki Open Source"</string>
     <string name="about_hint_report_bug">"Zgłoś błąd"</string>
@@ -561,20 +536,15 @@
     <string name="about_hint_translators">"Tłumacze"</string>
 
     <string name="activity_launcher_legacy_edition_upgrade_title">"Aktualizacja…"</string>
-    <string name="activity_launcher_first_start_title">"Witamy w MoneyWallet"</string>
-    <string name="activity_launcher_first_start_content">"Czy używasz tej aplikacji po raz pierwszy, czy chcesz przywrócić poprzednią kopię zapasową?"</string>
+    <string name="activity_launcher_first_start_title">"Witamy w Tallybook"</string>
     <string name="activity_launcher_first_start_button_first_time">"Pierwszy raz"</string>
     <string name="activity_launcher_first_start_button_restore_backup">"Przywróc kopię zapasową"</string>
 
     <string name="activity_intro_title_slide_1">"Żadnych przykrych niespodzianek"</string>
     <string name="activity_intro_title_slide_2">"Odkrywaj i planuj"</string>
     <string name="activity_intro_title_slide_3">"Open source"</string>
-    <string name="activity_intro_title_slide_4">"Kopie zapasowe w chmurze"</string>
     <string name="activity_intro_title_slide_5">"Dobra robota"</string>
-    <string name="activity_intro_description_slide_1">"Pomorze Ci śledzić wszystkie wydatki"</string>
     <string name="activity_intro_description_slide_2">"Możęsz analizować gdzye wydajesz dużo i planować budżet"</string>
-    <string name="activity_intro_description_slide_3">"Projekt jest open source i każdy może pomóc"</string>
-    <string name="activity_intro_description_slide_4">"Wspiera większośc usług chmur by nigdy nie starcić danych"</string>
     <string name="activity_intro_description_slide_5">"Będziesz teraz przekierowany by utworzyć swoj pierwszy portlef"</string>
 
     <string name="help_create_new_pin_code">"Utwórz nowy kod PIN"</string>
@@ -682,22 +652,5 @@
     <string name="notification_channel_name_exchange_rate">"Kurs wymiany"</string>
     <string name="notification_channel_name_error">"Błąd"</string>
 
-    <string name="activity_donation_first_title">"Dziękuję!"</string>
-    <string name="activity_donation_first_content">"Jeśli podoba Ci się ta aplikacja i uważasz ją za przydatną, rozważ kupno mi piwa. Wesprze ten projekt i zachęci mnie do dalszego rozwoju."</string>
-    <string name="activity_donation_second_title">"Dlaczego powinienem?"</string>
-    <string name="activity_donation_second_content">"Ktoś mógłby powiedzieć: „Najlepsze rzeczy w życiu są bezpłatne” i zgadzam się z tym. Nie możesz kupić przyjaźni, miłości ani wspomnienia pięknego wschodu słońca. Dlatego postanowiłem udostępnić kod źródłowy tej aplikacji za darmo. Niestety życie nie jest darmowe. Każdego dnia masz tylko 24 godziny wolnego czasu i musisz podjąć decyzję, jak je wydać na utrzymanie. Jeśli podoba ci się ten projekt i chcesz, aby ewoluował on w przyszłości, pomyśl o wsparciu mojej pracy, aby pozwolić mi poświęcić na to więcej czasu. Każdy wkład ma ogromną różnicę."</string>
-    <string name="activity_donation_third_title">"Nie możesz wnieść wkładu pieniężnego? Nie ma problemu, nadal możesz dużo pomóc!"</string>
-    <string name="activity_donation_crypto_address_copied">"Skopiowano adres"</string>
-    <string name="activity_donation_action_share_title">"Udostępnij"</string>
-    <string name="activity_donation_action_share_content">"Podziel się tym z przyjaciółmi"</string>
-    <string name="activity_donation_action_share_message">"Cześć, zobacz %s"</string>
-    <string name="activity_donation_action_share_using">"Udostępnij za pomocą"</string>
-    <string name="activity_donation_action_rate_title">"Oceń"</string>
-    <string name="activity_donation_action_rate_content">"Napisz 5 gwiazdkową recenzję, która powie nam, co o tym myślisz"</string>
-    <string name="activity_donation_action_translate_title">"Tłumacz"</string>
-    <string name="activity_donation_action_translate_content">"Przetłumacz napisy w swoim języku"</string>
-    <string name="activity_donation_action_contribute_title">"Wspomórz"</string>
-    <string name="activity_donation_action_contribute_content">"Kod źródłowy jest publiczny i każdy może współpracować"</string>
-    <string name="activity_donation_final_content">"Każdy wkład, pieniężny lub niepieniężny, jest równy i stanowi dla mnie istotną różnicę. Mam nadzieję, że Ci się spodoba i jeszcze raz dziękuję za wybranie użycia tej aplikacji."</string>
 
 </resources>

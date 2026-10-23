@@ -76,10 +76,13 @@ public class DefaultBackupExporter extends AbstractBackupExporter {
             exporter.exportDebtPeople(SQLDatabaseExporter.getAllDebtPeople(contentResolver));
             exporter.exportBudgets(SQLDatabaseExporter.getAllBudget(contentResolver));
             exporter.exportBudgetWallets(SQLDatabaseExporter.getAllBudgetWallets(contentResolver));
+            exporter.exportBudgetCategories(SQLDatabaseExporter.getAllBudgetCategories(contentResolver));
+            exporter.exportCategoryRules(SQLDatabaseExporter.getAllCategoryRules(contentResolver));
             exporter.exportSavings(SQLDatabaseExporter.getAllSavings(contentResolver));
             exporter.exportRecurrentTransactions(SQLDatabaseExporter.getAllRecurrentTransactions(contentResolver));
             exporter.exportRecurrentTransfers(SQLDatabaseExporter.getAllRecurrentTransfers(contentResolver));
             exporter.exportTransactions(SQLDatabaseExporter.getAllTransactions(contentResolver));
+            exporter.exportTransactionSplits(SQLDatabaseExporter.getAllTransactionSplits(contentResolver));
             exporter.exportTransactionPeople(SQLDatabaseExporter.getAllTransactionPeople(contentResolver));
             exporter.exportTransactionModels(SQLDatabaseExporter.getAllTransactionModels(contentResolver));
             exporter.exportTransfers(SQLDatabaseExporter.getAllTransfers(contentResolver));

@@ -1,8 +1,7 @@
 {
   "repository": {
-    "code_url": "https://github.com/AndreAle94/moneywallet",
-    "issue_url": "https://github.com/AndreAle94/moneywallet/issues",
-    "donation_url": "https://github.com/AndreAle94/moneywallet#donations"
+    "code_url": "https://github.com/herrerad85/tallybook",
+    "issue_url": "https://github.com/herrerad85/tallybook/issues"
   },
   "other_info": [
     {
@@ -11,43 +10,43 @@
         {
           "icon": "ic_perm_identity_black_24dp",
           "title": "Andrea Alemani",
+          "subtitle": "Original author",
           "link": "https://github.com/AndreAle94"
+        },{
+          "icon": "ic_perm_identity_black_24dp",
+          "title": "herrerad85",
+          "subtitle": "Fork maintainer",
+          "link": "https://github.com/herrerad85"
         },{
           "icon": "ic_github_circle_black_24dp",
           "title_resource": "about_hint_fork",
-          "link": "https://github.com/AndreAle94/moneywallet"
-        }
-      ]
-    },{
-      "name_resource": "about_hint_logo_designer",
-      "items": [
-        {
-          "icon": "ic_perm_identity_black_24dp",
-          "title": "Adam Lapinski"
-        },{
-          "icon": "ic_public_black_24dp",
-          "title_resource": "about_hint_website",
-          "link": "http://www.yeti-designs.com"
+          "link": "https://github.com/herrerad85/tallybook"
         }
       ]
     },{
       "name_resource": "about_hint_icon_licenses",
       "items": [
         {
-          "icon": "ic_freepik_logo_24dp",
-          "title": "Freepik",
-          "subtitle_resource": "about_hint_icon_image_intro",
-          "link": "https://www.freepik.com"
-        },{
           "icon": "ic_material_design_icons_logo_24dp",
           "title": "Materialdesignicons.com",
           "subtitle_resource": "about_hint_md_icons",
           "link": "https://materialdesignicons.com"
         },{
-          "icon": "ic_round_icons_logo_24dp",
-          "title": "Round icons",
-          "subtitle_resource": "about_hint_icon_pack",
-          "link": "https://roundicons.com"
+          "title": "Phosphor Icons",
+          "subtitle": "Category glyphs, MIT License",
+          "link": "https://phosphoricons.com"
+        },{
+          "title": "Tabler Icons",
+          "subtitle": "Category glyphs, MIT License",
+          "link": "https://tabler.io/icons"
+        },{
+          "title": "Lucide",
+          "subtitle": "Category glyphs, ISC License",
+          "link": "https://lucide.dev"
+        },{
+          "title": "Bootstrap Icons",
+          "subtitle": "Category glyphs, MIT License",
+          "link": "https://icons.getbootstrap.com"
         }
       ]
     },{

@@ -23,6 +23,7 @@ import android.app.Activity;
 import android.content.ContentResolver;
 import android.content.ContentUris;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
@@ -38,10 +39,9 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
 
-import com.afollestad.materialdialogs.DialogAction;
-import com.afollestad.materialdialogs.MaterialDialog;
 import com.oriondev.moneywallet.R;
 import com.oriondev.moneywallet.model.CurrencyUnit;
+import com.oriondev.moneywallet.model.RecurrenceSetting;
 import com.oriondev.moneywallet.storage.database.Contract;
 import com.oriondev.moneywallet.storage.database.DataContentProvider;
 import com.oriondev.moneywallet.ui.activity.NewEditBudgetActivity;
@@ -76,6 +76,8 @@ public class BudgetItemFragment extends SecondaryPanelFragment implements Loader
     private TextView mEndDateTextView;
     private TextView mWalletsTextView;
 
+    private TextView mRecurrenceTextView;
+
     private MoneyFormatter mMoneyFormatter = MoneyFormatter.getInstance();
 
     @Override
@@ -92,6 +94,7 @@ public class BudgetItemFragment extends SecondaryPanelFragment implements Loader
         mMainLayout = view.findViewById(R.id.secondary_panel_layout);
         mTypeTextView = view.findViewById(R.id.type_text_view);
         mCategoryTextView = view.findViewById(R.id.category_text_view);
+        mRecurrenceTextView = view.findViewById(R.id.recurrence_text_view);
         mStartDateTextView = view.findViewById(R.id.start_date_text_view);
         mEndDateTextView = view.findViewById(R.id.end_date_text_view);
         mWalletsTextView = view.findViewById(R.id.wallets_text_view);
@@ -109,35 +112,30 @@ public class BudgetItemFragment extends SecondaryPanelFragment implements Loader
 
     @Override
     public boolean onMenuItemClick(MenuItem item) {
-        switch (item.getItemId()) {
-            case R.id.action_show_transaction_list:
-                Intent intent = new Intent(getActivity(), TransactionListActivity.class);
-                intent.putExtra(TransactionListActivity.BUDGET_ID, getItemId());
-                startActivity(intent);
-                break;
-            case R.id.action_edit_item:
-                intent = new Intent(getActivity(), NewEditBudgetActivity.class);
-                intent.putExtra(NewEditItemActivity.MODE, NewEditItemActivity.Mode.EDIT_ITEM);
-                intent.putExtra(NewEditItemActivity.ID, getItemId());
-                startActivity(intent);
-                break;
-            case R.id.action_delete_item:
-                showDeleteDialog(getActivity());
-                break;
+        int itemId = item.getItemId();
+        if (itemId == R.id.action_show_transaction_list) {
+            Intent intent = new Intent(getActivity(), TransactionListActivity.class);
+            intent.putExtra(TransactionListActivity.BUDGET_ID, getItemId());
+            startActivity(intent);
+        } else if (itemId == R.id.action_edit_item) {
+            Intent intent = new Intent(getActivity(), NewEditBudgetActivity.class);
+            intent.putExtra(NewEditItemActivity.MODE, NewEditItemActivity.Mode.EDIT_ITEM);
+            intent.putExtra(NewEditItemActivity.ID, getItemId());
+            startActivity(intent);
+        } else if (itemId == R.id.action_delete_item) {
+            showDeleteDialog(getActivity());
         }
         return false;
     }
 
     private void showDeleteDialog(Context context) {
         ThemedDialog.buildMaterialDialog(context)
-                .title(R.string.title_warning)
-                .content(R.string.message_delete_budget)
-                .positiveText(android.R.string.ok)
-                .negativeText(android.R.string.cancel)
-                .onPositive(new MaterialDialog.SingleButtonCallback() {
+                .setTitle(R.string.title_warning)
+                .setMessage(R.string.message_delete_budget)
+                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
 
                     @Override
-                    public void onClick(@NonNull MaterialDialog dialog, @NonNull DialogAction which) {
+                    public void onClick(DialogInterface dialog, int which) {
                         Activity activity = getActivity();
                         if (activity != null) {
                             Uri uri = ContentUris.withAppendedId(DataContentProvider.CONTENT_BUDGETS, getItemId());
@@ -149,14 +147,15 @@ public class BudgetItemFragment extends SecondaryPanelFragment implements Loader
                     }
 
                 })
+                .setNegativeButton(android.R.string.cancel, null)
                 .show();
     }
 
     @Override
     protected void onShowItemId(long itemId) {
         setLoadingScreen(true);
-        getLoaderManager().restartLoader(BUDGET_LOADER_ID, null, this);
-        getLoaderManager().restartLoader(WALLETS_LOADER_ID, null, this);
+        LoaderManager.getInstance(this).restartLoader(BUDGET_LOADER_ID, null, this);
+        LoaderManager.getInstance(this).restartLoader(WALLETS_LOADER_ID, null, this);
     }
 
     private void setLoadingScreen(boolean loading) {
@@ -189,7 +188,9 @@ public class BudgetItemFragment extends SecondaryPanelFragment implements Loader
                         Contract.Budget.TYPE,
                         Contract.Budget.CATEGORY_NAME,
                         Contract.Budget.START_DATE,
-                        Contract.Budget.END_DATE
+                        Contract.Budget.END_DATE,
+                        Contract.Budget.RULE,
+                        Contract.Budget.RULE_START
                 };
                 return new CursorLoader(activity, uri, projection, null, null, null);
             } else if (id == WALLETS_LOADER_ID) {
@@ -237,6 +238,15 @@ public class BudgetItemFragment extends SecondaryPanelFragment implements Loader
                 Date endDate = DateUtils.getDateFromSQLDateString(cursor.getString(cursor.getColumnIndex(Contract.Budget.END_DATE)));
                 DateFormatter.applyDate(mStartDateTextView, startDate);
                 DateFormatter.applyDate(mEndDateTextView, endDate);
+                String rule = cursor.getString(cursor.getColumnIndex(Contract.Budget.RULE));
+                String ruleStartString = cursor.getString(cursor.getColumnIndex(Contract.Budget.RULE_START));
+                Date anchor = ruleStartString != null ? DateUtils.getDateFromSQLDateString(ruleStartString) : startDate;
+                if (rule != null && RecurrenceSetting.periodEnd(rule, anchor, anchor) != null) {
+                    mRecurrenceTextView.setText(new RecurrenceSetting(anchor, rule).getUserReadableString(getActivity()));
+                    mRecurrenceTextView.setVisibility(View.VISIBLE);
+                } else {
+                    mRecurrenceTextView.setVisibility(View.GONE);
+                }
             } else {
                 showItemId(0L);
             }

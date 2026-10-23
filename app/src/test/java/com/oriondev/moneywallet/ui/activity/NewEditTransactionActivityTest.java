@@ -1,0 +1,2039 @@
+package com.oriondev.moneywallet.ui.activity;
+
+import android.content.ContentResolver;
+import android.content.ContentUris;
+import android.content.ContentValues;
+import android.content.Context;
+import android.content.Intent;
+import android.database.Cursor;
+import android.database.sqlite.SQLiteDatabase;
+import android.net.Uri;
+import android.os.Looper;
+import android.util.DisplayMetrics;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.EditText;
+import android.widget.ListView;
+import android.widget.TextView;
+
+import androidx.appcompat.app.AlertDialog;
+import androidx.appcompat.widget.Toolbar;
+import androidx.lifecycle.Lifecycle;
+import androidx.recyclerview.widget.RecyclerView;
+import androidx.test.core.app.ActivityScenario;
+import androidx.test.core.app.ApplicationProvider;
+
+import com.google.android.material.tabs.TabLayout;
+import com.oriondev.moneywallet.R;
+import com.oriondev.moneywallet.model.Attachment;
+import com.oriondev.moneywallet.model.Category;
+import com.oriondev.moneywallet.model.LockMode;
+import com.oriondev.moneywallet.model.Person;
+import com.oriondev.moneywallet.model.Wallet;
+import com.oriondev.moneywallet.picker.AttachmentPicker;
+import com.oriondev.moneywallet.picker.CategoryPicker;
+import com.oriondev.moneywallet.picker.DateTimePicker;
+import com.oriondev.moneywallet.picker.MoneyPicker;
+import com.oriondev.moneywallet.picker.PersonPicker;
+import com.oriondev.moneywallet.picker.WalletPicker;
+import com.oriondev.moneywallet.storage.database.Contract;
+import com.oriondev.moneywallet.storage.database.DataContentProvider;
+import com.oriondev.moneywallet.storage.database.SplitLedger;
+import com.oriondev.moneywallet.storage.database.TestDatabases;
+import com.oriondev.moneywallet.storage.preference.PreferenceManager;
+import com.oriondev.moneywallet.ui.fragment.dialog.WalletPickerDialog;
+import com.oriondev.moneywallet.ui.view.text.MaterialEditText;
+import com.oriondev.moneywallet.utils.CurrencyManager;
+import com.oriondev.moneywallet.utils.DateUtils;
+import com.oriondev.moneywallet.utils.IconLoader;
+import com.oriondev.moneywallet.utils.MoneyFormatter;
+
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.robolectric.RobolectricTestRunner;
+import org.robolectric.shadows.ShadowDialog;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Date;
+import java.util.List;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
+import static org.robolectric.Shadows.shadowOf;
+
+/**
+ * Drives the real editor on the JVM, against the real content provider over a fresh database,
+ * and reads what it wrote. TransactionEditorRulesTest covers each rule on its own; this covers
+ * the call sites, which is where a transposed argument or a dropped one compiles and ships.
+ *
+ * Amounts are minor units, so 1000 is 10.00. The saving fixture opens on 10.00, took a
+ * confirmed 100.00 ten days ago, an unconfirmed 50.00 five days ago that must not count, and
+ * gives back 30.00 ten days from now. From now onwards the lowest it reaches is 80.00; counted
+ * from before the deposit it is 10.00.
+ */
+@RunWith(RobolectricTestRunner.class)
+public class NewEditTransactionActivityTest {
+
+    private static final long DAY = 24L * 60L * 60L * 1000L;
+    private static final String ICON = "{\"type\":\"color\",\"color\":\"#000000\",\"name\":\"T\"}";
+
+    private static final String MONEY_PICKER = "NewEditTransactionActivity::Tag::MoneyPicker";
+    private static final String DATETIME_PICKER = "NewEditTransactionActivity::Tag::DateTimePicker";
+    private static final String CATEGORY_PICKER = "NewEditTransactionActivity::Tag::CategoryPicker";
+    private static final String PERSON_PICKER = "NewEditTransactionActivity::Tag::PersonPicker";
+    private static final String ATTACHMENT_PICKER = "NewEditTransactionActivity::Tag::AttachmentPicker";
+    private static final String WALLET_PICKER = "NewEditTransactionActivity::Tag::WalletPicker";
+
+    private ContentResolver mResolver;
+    private long mEuroWallet;
+    private long mDollarWallet;
+    private long mSaving;
+
+    @Before
+    public void setUp() {
+        Context context = ApplicationProvider.getApplicationContext();
+        TestDatabases.useFreshDatabase(context);
+        mResolver = context.getContentResolver();
+        // takes wallet id 1, so no wallet below shares its id with the saving, which is 1
+        insertWallet("Unused", "EUR");
+        mEuroWallet = insertWallet("Cash", "EUR");
+        mDollarWallet = insertWallet("Bank", "USD");
+        // a different number of unused rows per table, so the first place, event, person and
+        // category a case makes are ids 4, 5, 6 and 7 and none of them equals a wallet, the
+        // saving, a debt or a model, which are 1 to 3. An id read off the wrong column or from
+        // the wrong object is then a different number, which an assertion on an id can see
+        for (int i = 0; i < 3; i++) {
+            insertPlace();
+        }
+        for (int i = 0; i < 4; i++) {
+            insertEvent();
+        }
+        for (int i = 0; i < 5; i++) {
+            insertPerson("Unused");
+        }
+        for (int i = 0; i < 6; i++) {
+            insertCategory();
+        }
+        mSaving = insertSaving(1000L, 50000L, mEuroWallet);
+        insertSavingRow(10000L, daysFromNow(-10), Contract.CategoryTag.SAVING_DEPOSIT, true, mEuroWallet);
+        insertSavingRow(5000L, daysFromNow(-5), Contract.CategoryTag.SAVING_DEPOSIT, false, mEuroWallet);
+        insertSavingRow(3000L, daysFromNow(10), Contract.CategoryTag.SAVING_WITHDRAW, true, mEuroWallet);
+    }
+
+    @Test
+    public void aDepositOpensOnTheSavingsOwnWalletAndFilesTheRowAgainstTheSaving() {
+        int before = countTransactions();
+        try (ActivityScenario<NewEditTransactionActivity> scenario =
+                     ActivityScenario.launch(savingIntent(NewEditTransactionActivity.SAVING_DEPOSIT))) {
+            scenario.onActivity(activity -> {
+                assertEquals(View.GONE, activity.findViewById(R.id.wallet_edit_text).getVisibility());
+                assertEquals(View.GONE, activity.findViewById(R.id.category_edit_text).getVisibility());
+                assertEquals("Cash", walletField(activity));
+                // a deposit opens on nothing; only withdraw everything is prefilled
+                assertEquals(0L, moneyPicker(activity).getCurrentMoney());
+                moneyPicker(activity).setMoney(2500L);
+                save(activity);
+                assertTrue(activity.isFinishing());
+            });
+        }
+        assertEquals(before + 1, countTransactions());
+        Cursor row = newestTransaction();
+        assertEquals(2500L, row.getLong(row.getColumnIndex(Contract.Transaction.MONEY)));
+        assertEquals(mEuroWallet, row.getLong(row.getColumnIndex(Contract.Transaction.WALLET_ID)));
+        assertEquals(mSaving, row.getLong(row.getColumnIndex(Contract.Transaction.SAVING_ID)));
+        assertTrue(row.isNull(row.getColumnIndex(Contract.Transaction.DEBT_ID)));
+        assertEquals(NewEditTransactionActivity.TYPE_SAVING,
+                row.getInt(row.getColumnIndex(Contract.Transaction.TYPE)));
+        assertEquals(Contract.Direction.EXPENSE, row.getInt(row.getColumnIndex(Contract.Transaction.DIRECTION)));
+        assertEquals(Contract.CategoryTag.SAVING_DEPOSIT,
+                row.getString(row.getColumnIndex(Contract.Transaction.CATEGORY_TAG)));
+        row.close();
+    }
+
+    @Test
+    public void aWithdrawalIsFiledAsIncomeUnderTheWithdrawTag() {
+        int before = countTransactions();
+        try (ActivityScenario<NewEditTransactionActivity> scenario =
+                     ActivityScenario.launch(savingIntent(NewEditTransactionActivity.SAVING_WITHDRAW))) {
+            scenario.onActivity(activity -> {
+                moneyPicker(activity).setMoney(100L);
+                save(activity);
+                assertTrue(activity.isFinishing());
+            });
+        }
+        // the fixture's own future withdrawal is the newest row until the editor writes one
+        assertEquals(before + 1, countTransactions());
+        Cursor row = newestTransaction();
+        assertEquals(100L, row.getLong(row.getColumnIndex(Contract.Transaction.MONEY)));
+        assertEquals(Contract.Direction.INCOME, row.getInt(row.getColumnIndex(Contract.Transaction.DIRECTION)));
+        assertEquals(Contract.CategoryTag.SAVING_WITHDRAW,
+                row.getString(row.getColumnIndex(Contract.Transaction.CATEGORY_TAG)));
+        row.close();
+    }
+
+    @Test
+    public void withdrawEverythingOpensOnTheLowestBalanceFromNowAndCompletesTheSaving() {
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(
+                savingIntent(NewEditTransactionActivity.SAVING_WITHDRAW_EVERYTHING))) {
+            scenario.onActivity(activity -> {
+                assertEquals(8000L, moneyPicker(activity).getCurrentMoney());
+                save(activity);
+                assertTrue(activity.isFinishing());
+            });
+        }
+        Cursor row = newestTransaction();
+        assertEquals(8000L, row.getLong(row.getColumnIndex(Contract.Transaction.MONEY)));
+        assertEquals(Contract.Direction.INCOME, row.getInt(row.getColumnIndex(Contract.Transaction.DIRECTION)));
+        row.close();
+        assertTrue(savingIsComplete());
+    }
+
+    @Test
+    public void aWithdrawalOverTheLowestBalanceIsRefusedAndOneAtItIsSaved() {
+        int before = countTransactions();
+        try (ActivityScenario<NewEditTransactionActivity> scenario =
+                     ActivityScenario.launch(savingIntent(NewEditTransactionActivity.SAVING_WITHDRAW))) {
+            scenario.onActivity(activity -> {
+                moneyPicker(activity).setMoney(8001L);
+                save(activity);
+                assertFalse(activity.isFinishing());
+                assertEquals(before, countTransactions());
+                moneyPicker(activity).setMoney(8000L);
+                save(activity);
+                assertTrue(activity.isFinishing());
+            });
+        }
+        assertEquals(before + 1, countTransactions());
+        assertFalse(savingIsComplete());
+    }
+
+    @Test
+    public void theCeilingIsCountedFromTheDateOnScreen() {
+        int before = countTransactions();
+        // from yesterday the lowest is still 8000, from before the deposit it is 1000
+        Date onScreen = daysFromNow(-1);
+        try (ActivityScenario<NewEditTransactionActivity> scenario =
+                     ActivityScenario.launch(savingIntent(NewEditTransactionActivity.SAVING_WITHDRAW))) {
+            scenario.onActivity(activity -> {
+                moneyPicker(activity).setMoney(2000L);
+                dateTimePicker(activity).setCurrentDateTime(daysFromNow(-20));
+                save(activity);
+                assertFalse(activity.isFinishing());
+                assertEquals(before, countTransactions());
+                dateTimePicker(activity).setCurrentDateTime(onScreen);
+                save(activity);
+                assertTrue(activity.isFinishing());
+            });
+        }
+        assertEquals(before + 1, countTransactions());
+        Cursor row = newestTransaction();
+        assertEquals("the row keeps the date on screen, not the moment it was saved",
+                DateUtils.getSQLDateTimeString(onScreen),
+                row.getString(row.getColumnIndex(Contract.Transaction.DATE)));
+        row.close();
+    }
+
+    @Test
+    public void anEditedWithdrawalIsNotHeldAgainstItself() {
+        long row = insertSavingRow(5000L, daysFromNow(-1), Contract.CategoryTag.SAVING_WITHDRAW, true, mEuroWallet);
+        String storedDate = dateOf(row);
+        try (ActivityScenario<NewEditTransactionActivity> scenario =
+                     ActivityScenario.launch(editIntent(row))) {
+            scenario.onActivity(activity -> {
+                moneyPicker(activity).setMoney(7000L);
+                save(activity);
+                assertTrue(activity.isFinishing());
+            });
+        }
+        assertEquals(7000L, moneyOf(row));
+        assertEquals("an edit keeps the row's own date", storedDate, dateOf(row));
+    }
+
+    @Test
+    public void aStoredWithdrawalOnASavingUnderZeroCanBeLoweredButNotRaised() {
+        long saving = insertSaving(0L, 0L, mEuroWallet);
+        long row = insertSavingRow(saving, 5000L, daysFromNow(-1), Contract.CategoryTag.SAVING_WITHDRAW, true, mEuroWallet);
+        try (ActivityScenario<NewEditTransactionActivity> scenario =
+                     ActivityScenario.launch(editIntent(row))) {
+            scenario.onActivity(activity -> {
+                moneyPicker(activity).setMoney(5001L);
+                save(activity);
+                assertFalse(activity.isFinishing());
+                // lowered, but moved to a date before the one it was stored on, is a new drain
+                // on the day it moves across and is held to the ceiling, which is 0 here
+                moneyPicker(activity).setMoney(4000L);
+                dateTimePicker(activity).setCurrentDateTime(daysFromNow(-2));
+                save(activity);
+                assertFalse(activity.isFinishing());
+                dateTimePicker(activity).setCurrentDateTime(daysFromNow(-1));
+                save(activity);
+                assertTrue(activity.isFinishing());
+            });
+        }
+        assertEquals(4000L, moneyOf(row));
+    }
+
+    @Test
+    public void anAmountOfNothingIsNeverRefused() {
+        long saving = insertSaving(0L, 0L, mEuroWallet);
+        insertSavingRow(saving, 5000L, daysFromNow(-1), Contract.CategoryTag.SAVING_WITHDRAW, true, mEuroWallet);
+        Intent intent = savingIntent(NewEditTransactionActivity.SAVING_WITHDRAW);
+        intent.putExtra(NewEditTransactionActivity.SAVING_ID, saving);
+        int before = countTransactions();
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(intent)) {
+            scenario.onActivity(activity -> {
+                moneyPicker(activity).setMoney(1L);
+                save(activity);
+                assertFalse(activity.isFinishing());
+                // the lowest this saving reaches is minus 5000 and the ceiling is held at
+                // nothing, so the refusal names 0.00 and not a negative figure
+                AlertDialog dialog = (AlertDialog) ShadowDialog.getLatestDialog();
+                TextView message = dialog.findViewById(android.R.id.message);
+                assertEquals(activity.getString(R.string.error_saving_withdraw_over_balance,
+                        MoneyFormatter.getInstance().getNotTintedString(
+                                CurrencyManager.getCurrency("EUR"), 0L)),
+                        message.getText().toString());
+                moneyPicker(activity).setMoney(0L);
+                save(activity);
+                assertTrue(activity.isFinishing());
+            });
+        }
+        assertEquals(before + 1, countTransactions());
+    }
+
+    @Test
+    public void theCeilingStepsAsideForARowHeldInAnotherCurrency() {
+        long saving = insertSaving(0L, 0L, mEuroWallet);
+        long row = insertSavingRow(saving, 100L, daysFromNow(-1), Contract.CategoryTag.SAVING_WITHDRAW, true, mDollarWallet);
+        try (ActivityScenario<NewEditTransactionActivity> scenario =
+                     ActivityScenario.launch(editIntent(row))) {
+            scenario.onActivity(activity -> {
+                moneyPicker(activity).setMoney(99999L);
+                save(activity);
+                assertTrue(activity.isFinishing());
+            });
+        }
+        assertEquals(99999L, moneyOf(row));
+    }
+
+    @Test
+    public void aSavingIntentNamingNoActionClosesTheEditor() {
+        Intent intent = savingIntent(0);
+        intent.removeExtra(NewEditTransactionActivity.SAVING_ACTION);
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(intent)) {
+            // finished from inside its own onCreate, so it is gone before the scenario can hand
+            // it over
+            assertEquals(Lifecycle.State.DESTROYED, scenario.getState());
+        }
+    }
+
+    @Test
+    public void aDebtPaymentOffersTheWalletFieldAndKeepsItAcrossARecreate() {
+        long debt = insertDebt(mEuroWallet);
+        Intent intent = newItemIntent();
+        intent.putExtra(NewEditTransactionActivity.TYPE, NewEditTransactionActivity.TYPE_DEBT);
+        intent.putExtra(NewEditTransactionActivity.DEBT_ID, debt);
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(intent)) {
+            scenario.onActivity(activity -> {
+                assertEquals(View.VISIBLE, activity.findViewById(R.id.wallet_edit_text).getVisibility());
+                assertEquals(View.GONE, activity.findViewById(R.id.category_edit_text).getVisibility());
+            });
+            scenario.recreate();
+            scenario.onActivity(activity -> {
+                assertEquals(View.VISIBLE, activity.findViewById(R.id.wallet_edit_text).getVisibility());
+                moneyPicker(activity).setMoney(700L);
+                save(activity);
+                assertTrue(activity.isFinishing());
+            });
+        }
+        Cursor row = newestTransaction();
+        assertEquals(debt, row.getLong(row.getColumnIndex(Contract.Transaction.DEBT_ID)));
+        assertTrue(row.isNull(row.getColumnIndex(Contract.Transaction.SAVING_ID)));
+        assertEquals(NewEditTransactionActivity.TYPE_DEBT, row.getInt(row.getColumnIndex(Contract.Transaction.TYPE)));
+        assertEquals(Contract.CategoryTag.PAID_DEBT, row.getString(row.getColumnIndex(Contract.Transaction.CATEGORY_TAG)));
+        row.close();
+    }
+
+    @Test
+    public void aDebtPaymentsWalletPickerListsOnlyTheWalletsOfTheDebtsCurrency() {
+        long debt = insertDebt(mEuroWallet);
+        Intent intent = newItemIntent();
+        intent.putExtra(NewEditTransactionActivity.TYPE, NewEditTransactionActivity.TYPE_DEBT);
+        intent.putExtra(NewEditTransactionActivity.DEBT_ID, debt);
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(intent)) {
+            scenario.onActivity(activity -> {
+                activity.findViewById(R.id.wallet_edit_text).performClick();
+                shadowOf(Looper.getMainLooper()).idle();
+                List<String> names = walletPickerNames(activity);
+                assertEquals(2, names.size());
+                assertTrue(names.contains("Cash"));
+                assertTrue(names.contains("Unused"));
+                assertFalse(names.contains("Bank"));
+            });
+        }
+    }
+
+    @Test
+    public void payingInFullOpensOnWhatIsLeftAndTheDebtsDescription() {
+        long debt = insertPartlyPaidDebt();
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(
+                debtIntent(debt, NewEditTransactionActivity.DEBT_PAY_IN_FULL))) {
+            scenario.onActivity(activity -> {
+                assertEquals("10000 owed less the 2500 already paid, the figure the card shows",
+                        7500L, moneyPicker(activity).getCurrentMoney());
+                assertEquals("Rent", descriptionField(activity));
+            });
+        }
+    }
+
+    @Test
+    public void payingOpensOnNothingAndTheDebtsDescription() {
+        long debt = insertPartlyPaidDebt();
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(
+                debtIntent(debt, NewEditTransactionActivity.DEBT_PAY))) {
+            scenario.onActivity(activity -> {
+                assertEquals(0L, moneyPicker(activity).getCurrentMoney());
+                assertEquals("Rent", descriptionField(activity));
+            });
+        }
+    }
+
+    @Test
+    public void aDebtsOwnRowKeepsTheWalletField() {
+        long debt = insertDebt(mEuroWallet);
+        try (ActivityScenario<NewEditTransactionActivity> scenario =
+                     ActivityScenario.launch(editIntent(masterTransactionOf(debt)))) {
+            scenario.onActivity(activity -> {
+                assertEquals(View.VISIBLE, activity.findViewById(R.id.wallet_edit_text).getVisibility());
+                assertEquals(View.GONE, activity.findViewById(R.id.category_edit_text).getVisibility());
+            });
+        }
+    }
+
+    @Test
+    public void aDepositOverTheSavingsBalanceIsNeverRefused() {
+        int before = countTransactions();
+        try (ActivityScenario<NewEditTransactionActivity> scenario =
+                     ActivityScenario.launch(savingIntent(NewEditTransactionActivity.SAVING_DEPOSIT))) {
+            scenario.onActivity(activity -> {
+                moneyPicker(activity).setMoney(20000L);
+                save(activity);
+                assertTrue(activity.isFinishing());
+            });
+        }
+        assertEquals(before + 1, countTransactions());
+    }
+
+    @Test
+    public void aNewTransactionOpensOnTheWalletTheIntentNames() {
+        Intent intent = newItemIntent();
+        intent.putExtra(NewEditTransactionActivity.TYPE, NewEditTransactionActivity.TYPE_STANDARD);
+        intent.putExtra(NewEditTransactionActivity.WALLET_ID, mDollarWallet);
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(intent)) {
+            scenario.onActivity(activity -> assertEquals("Bank", walletField(activity)));
+        }
+    }
+
+    @Test
+    public void theWalletTheIntentNamesWinsOverTheConfiguredDefault() {
+        PreferenceManager.setDefaultWallet(mEuroWallet);
+        Intent intent = newItemIntent();
+        intent.putExtra(NewEditTransactionActivity.TYPE, NewEditTransactionActivity.TYPE_STANDARD);
+        intent.putExtra(NewEditTransactionActivity.WALLET_ID, mDollarWallet);
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(intent)) {
+            scenario.onActivity(activity -> assertEquals("Bank", walletField(activity)));
+        }
+    }
+
+    @Test
+    public void aNewTransactionOpensOnTheCurrentWalletWhenTheIntentNamesNone() {
+        PreferenceManager.setCurrentWallet(ApplicationProvider.getApplicationContext(), mDollarWallet);
+        Intent intent = newItemIntent();
+        intent.putExtra(NewEditTransactionActivity.TYPE, NewEditTransactionActivity.TYPE_STANDARD);
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(intent)) {
+            scenario.onActivity(activity -> assertEquals("Bank", walletField(activity)));
+        }
+    }
+
+    @Test
+    public void aNewTransactionOpenedFromAPersonHasThatPersonAttached() {
+        ContentValues person = new ContentValues();
+        person.put(Contract.Person.NAME, "Alice");
+        person.put(Contract.Person.ICON, ICON);
+        long personId = ContentUris.parseId(mResolver.insert(DataContentProvider.CONTENT_PEOPLE, person));
+        // no TYPE extra on purpose: the person screen, the launcher shortcut, the reminder and
+        // the main screen's button all launch without one and rely on the default
+        Intent intent = newItemIntent();
+        intent.putExtra(NewEditTransactionActivity.PERSON_ID, personId);
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(intent)) {
+            scenario.onActivity(activity -> {
+                assertEquals("Alice",
+                        ((MaterialEditText) activity.findViewById(R.id.people_edit_text)).getTextAsString());
+                // the id is what files the row; the label only shows the name
+                assertEquals(personId, personPicker(activity).getCurrentPeople()[0].getId());
+            });
+        }
+    }
+
+    @Test
+    public void aDebtLaunchWithNoDebtRowFilesUnderTheActionItNames() {
+        Intent intent = newItemIntent();
+        intent.putExtra(NewEditTransactionActivity.TYPE, NewEditTransactionActivity.TYPE_DEBT);
+        intent.putExtra(NewEditTransactionActivity.DEBT_ID, 999L);
+        intent.putExtra(NewEditTransactionActivity.DEBT_ACTION, NewEditTransactionActivity.DEBT_RECEIVE);
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(intent)) {
+            // the action picks the paid credit category, which makes this a payment; a debt row
+            // would have named the kind itself
+            scenario.onActivity(activity -> {
+                assertEquals(Contract.CategoryTag.PAID_CREDIT,
+                        categoryPicker(activity).getCurrentCategory().getTag());
+            });
+        }
+    }
+
+    @Test
+    public void withdrawEverythingOnASavingUnderZeroOpensOnNothingAndWritesNothingNegative() {
+        long saving = insertSaving(0L, 0L, mEuroWallet);
+        insertSavingRow(saving, 5000L, daysFromNow(1), Contract.CategoryTag.SAVING_WITHDRAW, true, mEuroWallet);
+        Intent intent = savingIntent(NewEditTransactionActivity.SAVING_WITHDRAW_EVERYTHING);
+        intent.putExtra(NewEditTransactionActivity.SAVING_ID, saving);
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(intent)) {
+            scenario.onActivity(activity -> {
+                // the lowest from now is minus 5000; the prefill is held at nothing
+                assertEquals(0L, moneyPicker(activity).getCurrentMoney());
+                save(activity);
+                assertTrue(activity.isFinishing());
+            });
+        }
+        Cursor row = newestTransaction();
+        assertEquals(0L, row.getLong(row.getColumnIndex(Contract.Transaction.MONEY)));
+        row.close();
+    }
+
+    @Test
+    public void aNewTransactionOnTheTotalWalletStillOpensOnAWallet() {
+        insertArchivedWallet("AAA Archived", "EUR");
+        PreferenceManager.setCurrentWallet(ApplicationProvider.getApplicationContext(),
+                PreferenceManager.TOTAL_WALLET_ID);
+        Intent intent = newItemIntent();
+        intent.putExtra(NewEditTransactionActivity.TYPE, NewEditTransactionActivity.TYPE_STANDARD);
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(intent)) {
+            // the archived wallet sorts first by name but is skipped, so the editor lands on Bank,
+            // the first unarchived wallet in the drawer's INDEX, NAME order
+            scenario.onActivity(activity -> assertEquals("Bank", walletField(activity)));
+        }
+    }
+
+    @Test
+    public void aNewTransactionOnTheTotalViewOpensOnTheConfiguredDefaultWallet() {
+        PreferenceManager.setCurrentWallet(ApplicationProvider.getApplicationContext(),
+                PreferenceManager.TOTAL_WALLET_ID);
+        PreferenceManager.setDefaultWallet(mEuroWallet);
+        Intent intent = newItemIntent();
+        intent.putExtra(NewEditTransactionActivity.TYPE, NewEditTransactionActivity.TYPE_STANDARD);
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(intent)) {
+            scenario.onActivity(activity -> assertEquals("Cash", walletField(activity)));
+        }
+    }
+
+    @Test
+    public void aConfiguredDefaultWinsOverTheViewedWallet() {
+        PreferenceManager.setCurrentWallet(ApplicationProvider.getApplicationContext(), mEuroWallet);
+        PreferenceManager.setDefaultWallet(mDollarWallet);
+        Intent intent = newItemIntent();
+        intent.putExtra(NewEditTransactionActivity.TYPE, NewEditTransactionActivity.TYPE_STANDARD);
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(intent)) {
+            scenario.onActivity(activity -> assertEquals("Bank", walletField(activity)));
+        }
+    }
+
+    @Test
+    public void aNewTransactionOnTheTotalViewOpensOnTheLowestSortIndexBeforeTheName() {
+        // written the way the wallet sort screen writes it, so Cash sorts ahead of Bank
+        Cursor cursor = mResolver.query(DataContentProvider.CONTENT_WALLETS,
+                new String[]{Contract.Wallet.ID}, null, null, null);
+        while (cursor.moveToNext()) {
+            long walletId = cursor.getLong(cursor.getColumnIndexOrThrow(Contract.Wallet.ID));
+            ContentValues values = new ContentValues();
+            values.put(Contract.Wallet.INDEX, walletId == mEuroWallet ? 1 : 2);
+            Uri uri = ContentUris.withAppendedId(DataContentProvider.CONTENT_WALLETS, walletId);
+            mResolver.update(uri, values, null, null);
+        }
+        cursor.close();
+        PreferenceManager.setCurrentWallet(ApplicationProvider.getApplicationContext(),
+                PreferenceManager.TOTAL_WALLET_ID);
+        Intent intent = newItemIntent();
+        intent.putExtra(NewEditTransactionActivity.TYPE, NewEditTransactionActivity.TYPE_STANDARD);
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(intent)) {
+            scenario.onActivity(activity -> assertEquals("Cash", walletField(activity)));
+        }
+    }
+
+    @Test
+    public void aNewTransactionFallsBackWhenTheConfiguredDefaultIsArchived() {
+        ContentValues values = new ContentValues();
+        values.put(Contract.Wallet.NAME, "Old");
+        values.put(Contract.Wallet.ICON, ICON);
+        values.put(Contract.Wallet.CURRENCY, "EUR");
+        values.put(Contract.Wallet.START_MONEY, 0L);
+        values.put(Contract.Wallet.COUNT_IN_TOTAL, true);
+        values.put(Contract.Wallet.ARCHIVED, true);
+        long archived = ContentUris.parseId(mResolver.insert(DataContentProvider.CONTENT_WALLETS, values));
+        PreferenceManager.setCurrentWallet(ApplicationProvider.getApplicationContext(),
+                PreferenceManager.TOTAL_WALLET_ID);
+        PreferenceManager.setDefaultWallet(archived);
+        Intent intent = newItemIntent();
+        intent.putExtra(NewEditTransactionActivity.TYPE, NewEditTransactionActivity.TYPE_STANDARD);
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(intent)) {
+            // the archived default is refused, and the Total branch skips archived wallets and
+            // sorts by INDEX then NAME, so it lands on Bank
+            scenario.onActivity(activity -> assertEquals("Bank", walletField(activity)));
+        }
+    }
+
+    @Test
+    public void withdrawEverythingOffersTheWholeBalanceOnASavingPastItsTarget() {
+        long saving = insertSaving(0L, 1000L, mEuroWallet);
+        insertSavingRow(saving, 5000L, daysFromNow(-10), Contract.CategoryTag.SAVING_DEPOSIT, true, mEuroWallet);
+        Intent intent = savingIntent(NewEditTransactionActivity.SAVING_WITHDRAW_EVERYTHING);
+        intent.putExtra(NewEditTransactionActivity.SAVING_ID, saving);
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(intent)) {
+            // the target is 1000 and the saving holds 5000; emptying it means all of it
+            scenario.onActivity(activity -> assertEquals(5000L, moneyPicker(activity).getCurrentMoney()));
+        }
+    }
+
+    @Test
+    public void aDebtPaymentCarriesTheDebtsOwnPerson() {
+        ContentValues person = new ContentValues();
+        person.put(Contract.Person.NAME, "Bob");
+        person.put(Contract.Person.ICON, ICON);
+        long personId = ContentUris.parseId(mResolver.insert(DataContentProvider.CONTENT_PEOPLE, person));
+        long debt = insertDebt(mEuroWallet, personId);
+        Intent intent = newItemIntent();
+        intent.putExtra(NewEditTransactionActivity.TYPE, NewEditTransactionActivity.TYPE_DEBT);
+        intent.putExtra(NewEditTransactionActivity.DEBT_ID, debt);
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(intent)) {
+            scenario.onActivity(activity ->
+                    assertEquals(personId, personPicker(activity).getCurrentPeople()[0].getId()));
+        }
+    }
+
+    @Test
+    public void aSavedStandardTransactionCarriesTheWalletAndCategoryIds() {
+        long categoryId = insertCategory();
+        Intent intent = newItemIntent();
+        intent.putExtra(NewEditTransactionActivity.TYPE, NewEditTransactionActivity.TYPE_STANDARD);
+        intent.putExtra(NewEditTransactionActivity.WALLET_ID, mDollarWallet);
+        int before = countTransactions();
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(intent)) {
+            scenario.onActivity(activity -> {
+                categoryPicker(activity).setCategory(new Category(categoryId, "Groceries",
+                        IconLoader.parse(ICON), Contract.CategoryType.EXPENSE, null));
+                moneyPicker(activity).setMoney(700L);
+                save(activity);
+                assertTrue(activity.isFinishing());
+            });
+        }
+        // the name on screen is not the id on the row, and a row filed against a wallet or a
+        // category that does not exist is dropped by the join with the editor reporting success
+        assertEquals(before + 1, countTransactions());
+        Cursor row = newestTransaction();
+        assertEquals(mDollarWallet, row.getLong(row.getColumnIndex(Contract.Transaction.WALLET_ID)));
+        assertEquals(categoryId, row.getLong(row.getColumnIndex(Contract.Transaction.CATEGORY_ID)));
+        row.close();
+    }
+
+    @Test
+    public void aSavedModelTransactionCarriesTheModelsIds() {
+        long categoryId = insertCategory();
+        long placeId = insertPlace();
+        long eventId = insertEvent();
+        long model = insertModel(4200L, mDollarWallet, categoryId, placeId, eventId);
+        Intent intent = newItemIntent();
+        intent.putExtra(NewEditTransactionActivity.TYPE, NewEditTransactionActivity.TYPE_MODEL);
+        intent.putExtra(NewEditTransactionActivity.MODEL_ID, model);
+        int before = countTransactions();
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(intent)) {
+            scenario.onActivity(activity -> {
+                save(activity);
+                assertTrue(activity.isFinishing());
+            });
+        }
+        assertEquals(before + 1, countTransactions());
+        Cursor row = newestTransaction();
+        assertEquals(4200L, row.getLong(row.getColumnIndex(Contract.Transaction.MONEY)));
+        assertEquals(mDollarWallet, row.getLong(row.getColumnIndex(Contract.Transaction.WALLET_ID)));
+        assertEquals(categoryId, row.getLong(row.getColumnIndex(Contract.Transaction.CATEGORY_ID)));
+        assertEquals(placeId, row.getLong(row.getColumnIndex(Contract.Transaction.PLACE_ID)));
+        assertEquals(eventId, row.getLong(row.getColumnIndex(Contract.Transaction.EVENT_ID)));
+        row.close();
+    }
+
+    @Test
+    public void aTransactionSavedFromAModelIsStoredAsAPlainOne() {
+        Intent intent = newItemIntent();
+        intent.putExtra(NewEditTransactionActivity.TYPE, NewEditTransactionActivity.TYPE_MODEL);
+        intent.putExtra(NewEditTransactionActivity.MODEL_ID, insertModel(4200L, mDollarWallet));
+        int before = countTransactions();
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(intent)) {
+            scenario.onActivity(activity -> {
+                save(activity);
+                assertTrue(activity.isFinishing());
+            });
+        }
+        assertEquals(before + 1, countTransactions());
+        assertEquals(Contract.TransactionType.STANDARD, longOf(newestId(), Contract.Transaction.TYPE));
+    }
+
+    @Test
+    public void aDebtPaymentCarriesTheDebtsOwnPlace() {
+        long placeId = insertPlace();
+        long debt = insertDebt(mEuroWallet, null, placeId);
+        Intent intent = newItemIntent();
+        intent.putExtra(NewEditTransactionActivity.TYPE, NewEditTransactionActivity.TYPE_DEBT);
+        intent.putExtra(NewEditTransactionActivity.DEBT_ID, debt);
+        int before = countTransactions();
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(intent)) {
+            scenario.onActivity(activity -> {
+                moneyPicker(activity).setMoney(300L);
+                save(activity);
+                assertTrue(activity.isFinishing());
+            });
+        }
+        assertEquals(before + 1, countTransactions());
+        Cursor row = newestTransaction();
+        assertEquals(placeId, row.getLong(row.getColumnIndex(Contract.Transaction.PLACE_ID)));
+        row.close();
+    }
+
+    @Test
+    public void aCopyOpensOnTheOriginalsValuesWithoutItsAttachments() {
+        long categoryId = insertCategory();
+        long attachmentId = insertAttachment();
+        ContentValues original = new ContentValues();
+        original.put(Contract.Transaction.MONEY, 1234L);
+        original.put(Contract.Transaction.DATE, DateUtils.getSQLDateTimeString(daysFromNow(-3)));
+        original.put(Contract.Transaction.DESCRIPTION, "Lunch");
+        original.put(Contract.Transaction.CATEGORY_ID, categoryId);
+        original.put(Contract.Transaction.DIRECTION, Contract.Direction.EXPENSE);
+        original.put(Contract.Transaction.TYPE, NewEditTransactionActivity.TYPE_STANDARD);
+        original.put(Contract.Transaction.WALLET_ID, mDollarWallet);
+        original.put(Contract.Transaction.CONFIRMED, true);
+        original.put(Contract.Transaction.COUNT_IN_TOTAL, true);
+        original.put(Contract.Transaction.ATTACHMENT_IDS, Contract.getObjectIds(new Attachment[] {
+                new Attachment(attachmentId, "receipt.jpg", "receipt.jpg", "image/jpeg", 1234L)}));
+        long originalId = ContentUris.parseId(
+                mResolver.insert(DataContentProvider.CONTENT_TRANSACTIONS, original));
+        Intent intent = newItemIntent();
+        intent.putExtra(NewEditTransactionActivity.DUPLICATE_ID, originalId);
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(intent)) {
+            scenario.onActivity(activity -> {
+                assertEquals(1234L, moneyPicker(activity).getCurrentMoney());
+                assertEquals(categoryId, categoryPicker(activity).getCurrentCategory().getId());
+                assertEquals("Bank", walletField(activity));
+                // removing an attachment in the editor deletes its file outright, so a copy that
+                // shared one would leave the original pointing at nothing
+                assertTrue(attachmentPicker(activity).getCurrentAttachments().isEmpty());
+            });
+        }
+    }
+
+    @Test
+    public void aModelFillsTheEditorFromItsOwnRow() {
+        long model = insertModel(4200L, mDollarWallet);
+        Intent intent = newItemIntent();
+        intent.putExtra(NewEditTransactionActivity.TYPE, NewEditTransactionActivity.TYPE_MODEL);
+        intent.putExtra(NewEditTransactionActivity.MODEL_ID, model);
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(intent)) {
+            scenario.onActivity(activity -> {
+                assertEquals(4200L, moneyPicker(activity).getCurrentMoney());
+                assertEquals("Bank", walletField(activity));
+            });
+        }
+    }
+
+    // splits, over SplitLedger, whose ids start at 901 and so never meet the rows above
+
+    private static final String PART_CATEGORY_PICKER = "NewEditTransactionActivity::Tag::PartCategoryPicker";
+    private static final String PART_MONEY_PICKER = "NewEditTransactionActivity::Tag::PartMoneyPicker";
+
+    @Test
+    public void aNewTransactionIsSavedWithItsParts() {
+        SplitLedger.build(ApplicationProvider.getApplicationContext());
+        Intent intent = newItemIntent();
+        intent.putExtra(NewEditTransactionActivity.WALLET_ID, SplitLedger.CASH);
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(intent)) {
+            scenario.onActivity(activity -> {
+                categoryPicker(activity).setCategory(ledgerCategory(SplitLedger.GROCERIES));
+                moneyPicker(activity).setMoney(9000L);
+                assertEquals(View.VISIBLE, activity.findViewById(R.id.split_edit_text).getVisibility());
+                addPart(activity, SplitLedger.HOUSEHOLD, 2000L);
+                addPart(activity, SplitLedger.FUEL, 1500L);
+                assertEquals(Arrays.asList("Household", "Fuel"), partLabels(activity));
+                assertEquals(remainingHint(activity, "Groceries"), remainingField(activity).getFloatingLabelText());
+                assertEquals(euro(9000L - 2000L - 1500L), remainingField(activity).getTextAsString());
+                save(activity);
+                assertTrue(activity.isFinishing());
+            });
+        }
+        long id = newestId();
+        assertEquals(sortedOf(SplitLedger.HOUSEHOLD + ":2000:null", SplitLedger.FUEL + ":1500:null"), storedParts(id));
+    }
+
+    /** The part picker offers the main category's type alone, and the keypad follows the pick. */
+    @Test
+    public void aPartIsPickedAmongCategoriesOfTheMainOnesType() {
+        SplitLedger.build(ApplicationProvider.getApplicationContext());
+        try (ActivityScenario<NewEditTransactionActivity> scenario =
+                     ActivityScenario.launch(editIntent(SplitLedger.PAY_SPLIT))) {
+            scenario.onActivity(activity -> {
+                activity.findViewById(R.id.split_edit_text).performClick();
+                Intent picker = shadowOf(activity).getNextStartedActivity();
+                assertEquals(CategoryPickerActivity.class.getName(), picker.getComponent().getClassName());
+                assertEquals(Contract.CategoryType.INCOME, picker.getSerializableExtra(CategoryPickerActivity.ONLY_TYPE));
+                partCategoryPicker(activity).setCategory(ledgerCategory(SplitLedger.BONUS));
+                assertStartedCalculator(activity);
+            });
+        }
+    }
+
+    /** The expense page is the second when every type is shown, so it cannot pass by being first. */
+    @Test
+    public void thePartPickerShowsThePageOfTheMainCategorysType() {
+        SplitLedger.build(ApplicationProvider.getApplicationContext());
+        Intent[] picker = new Intent[1];
+        try (ActivityScenario<NewEditTransactionActivity> scenario =
+                     ActivityScenario.launch(editIntent(SplitLedger.RECEIPT))) {
+            scenario.onActivity(activity -> {
+                activity.findViewById(R.id.split_edit_text).performClick();
+                picker[0] = shadowOf(activity).getNextStartedActivity();
+            });
+        }
+        try (ActivityScenario<CategoryPickerActivity> scenario = ActivityScenario.launch(picker[0])) {
+            scenario.onActivity(activity -> {
+                TabLayout tabs = activity.findViewById(R.id.tab_layout);
+                assertEquals(1, tabs.getTabCount());
+                assertEquals(activity.getString(R.string.menu_category_tab_expense), tabs.getTabAt(0).getText().toString());
+                List<String> names = categoryPickerNames(activity);
+                assertTrue(names.toString(), names.containsAll(Arrays.asList("Fuel", "Groceries")));
+                assertFalse(names.toString(), names.contains("Salary") || names.contains("Bonus"));
+            });
+        }
+    }
+
+    @Test
+    public void anEditedPartIsSavedAndTheOthersKept() {
+        SplitLedger.build(ApplicationProvider.getApplicationContext());
+        try (ActivityScenario<NewEditTransactionActivity> scenario =
+                     ActivityScenario.launch(editIntent(SplitLedger.RECEIPT))) {
+            scenario.onActivity(activity -> {
+                // the part flagged deleted is not listed
+                assertEquals(Arrays.asList("Household", "Fuel"), partLabels(activity));
+                choosePartAction(activity, 1, 1);
+                partMoneyPicker(activity).setMoney(4000L);
+                choosePartAction(activity, 0, 2);
+                AlertDialog note = (AlertDialog) ShadowDialog.getLatestDialog();
+                ((EditText) note.findViewById(R.id.dialog_input_edit_text)).setText("soap");
+                note.getButton(AlertDialog.BUTTON_POSITIVE).performClick();
+                shadowOf(Looper.getMainLooper()).idle();
+                assertEquals(euro(10000L - 2000L - 4000L), remainingField(activity).getTextAsString());
+                save(activity);
+                assertTrue(activity.isFinishing());
+            });
+        }
+        assertEquals(sortedOf(SplitLedger.HOUSEHOLD + ":2000:soap", SplitLedger.FUEL + ":4000:null"),
+                storedParts(SplitLedger.RECEIPT));
+    }
+
+    @Test
+    public void aTotalBelowThePartsIsRefused() {
+        SplitLedger.build(ApplicationProvider.getApplicationContext());
+        try (ActivityScenario<NewEditTransactionActivity> scenario =
+                     ActivityScenario.launch(editIntent(SplitLedger.RECEIPT))) {
+            scenario.onActivity(activity -> {
+                // the parts are 2000 and 3000
+                moneyPicker(activity).setMoney(2000L + 3000L - 1L);
+                assertRefused(activity, R.string.error_split_total_below_parts);
+                moneyPicker(activity).setMoney(2000L + 3000L);
+                save(activity);
+                assertTrue(activity.isFinishing());
+            });
+        }
+        assertEquals(2000L + 3000L, moneyOf(SplitLedger.RECEIPT));
+    }
+
+    /** Added plainly, 2000 raised to the largest amount less 1000, and 3000, wrap below the total. */
+    @Test
+    public void partsAddingUpPastTheLargestAmountAreRefusedBeforeTheDatabase() {
+        SplitLedger.build(ApplicationProvider.getApplicationContext());
+        List<String> row = rowsOf("transactions", "transaction_id = " + SplitLedger.RECEIPT);
+        List<String> parts = rowsOf("transaction_splits", "_transaction = " + SplitLedger.RECEIPT);
+        try (ActivityScenario<NewEditTransactionActivity> scenario =
+                     ActivityScenario.launch(editIntent(SplitLedger.RECEIPT))) {
+            scenario.onActivity(activity -> {
+                choosePartAction(activity, 0, 1);
+                partMoneyPicker(activity).setMoney(Long.MAX_VALUE - 1000L);
+                assertRefused(activity, R.string.error_split_total_below_parts);
+            });
+        }
+        assertEquals(row, rowsOf("transactions", "transaction_id = " + SplitLedger.RECEIPT));
+        assertEquals(parts, rowsOf("transaction_splits", "_transaction = " + SplitLedger.RECEIPT));
+    }
+
+    /** Spare goes from another window, through the app's own delete, after the editor took it for a part. */
+    @Test
+    public void aNewTransactionWhosePartCategoryIsDeletedElsewhereIsRefusedThenSaved() {
+        SplitLedger.build(ApplicationProvider.getApplicationContext());
+        Intent intent = newItemIntent();
+        intent.putExtra(NewEditTransactionActivity.WALLET_ID, SplitLedger.CASH);
+        int before = countTransactions();
+        long partsBefore = countParts("1");
+        List<String> label = new ArrayList<>();
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(intent)) {
+            scenario.onActivity(activity -> {
+                categoryPicker(activity).setCategory(ledgerCategory(SplitLedger.GROCERIES));
+                moneyPicker(activity).setMoney(9000L);
+                addPart(activity, SplitLedger.SPARE, 2000L);
+                addPart(activity, SplitLedger.FUEL, 1500L);
+                assertEquals(1, mResolver.delete(ContentUris.withAppendedId(
+                        DataContentProvider.CONTENT_CATEGORIES, SplitLedger.SPARE), null, null));
+                assertRefused(activity, R.string.error_split_not_saved);
+                label.addAll(partLabels(activity));
+                assertRefused(activity, R.string.error_split_not_saved);
+                choosePartAction(activity, 0, 0);
+                partCategoryPicker(activity).setCategory(ledgerCategory(SplitLedger.HOUSEHOLD));
+                save(activity);
+                assertTrue(activity.isFinishing());
+            });
+        }
+        assertEquals(Arrays.asList("Spare", "Fuel"), label);
+        assertEquals(before + 1, countTransactions());
+        assertEquals(partsBefore + 2, countParts("1"));
+        assertEquals(sortedOf(SplitLedger.HOUSEHOLD + ":2000:null", SplitLedger.FUEL + ":1500:null"),
+                storedParts(newestId()));
+    }
+
+    /** On an edit the row and its parts stay as they were, and removing the new part lets it save. */
+    @Test
+    public void anEditWhoseNewPartCategoryIsDeletedElsewhereIsRefusedThenSaved() {
+        SplitLedger.build(ApplicationProvider.getApplicationContext());
+        List<String> row = rowsOf("transactions", "transaction_id = " + SplitLedger.RECEIPT);
+        List<String> parts = rowsOf("transaction_splits", "_transaction = " + SplitLedger.RECEIPT);
+        try (ActivityScenario<NewEditTransactionActivity> scenario =
+                     ActivityScenario.launch(editIntent(SplitLedger.RECEIPT))) {
+            scenario.onActivity(activity -> {
+                moneyPicker(activity).setMoney(12000L);
+                addPart(activity, SplitLedger.SPARE, 1000L);
+                assertEquals(1, mResolver.delete(ContentUris.withAppendedId(
+                        DataContentProvider.CONTENT_CATEGORIES, SplitLedger.SPARE), null, null));
+                assertRefused(activity, R.string.error_split_not_saved);
+                assertEquals(row, rowsOf("transactions", "transaction_id = " + SplitLedger.RECEIPT));
+                assertEquals(parts, rowsOf("transaction_splits", "_transaction = " + SplitLedger.RECEIPT));
+                choosePartAction(activity, 2, -1);
+                save(activity);
+                assertTrue(activity.isFinishing());
+            });
+        }
+        assertEquals(12000L, moneyOf(SplitLedger.RECEIPT));
+        assertEquals(sortedOf(SplitLedger.HOUSEHOLD + ":2000:null", SplitLedger.FUEL + ":3000:null"),
+                storedParts(SplitLedger.RECEIPT));
+    }
+
+    @Test
+    public void aPartOfZeroIsRefused() {
+        SplitLedger.build(ApplicationProvider.getApplicationContext());
+        try (ActivityScenario<NewEditTransactionActivity> scenario =
+                     ActivityScenario.launch(editIntent(SplitLedger.RECEIPT))) {
+            scenario.onActivity(activity -> {
+                choosePartAction(activity, 0, 1);
+                partMoneyPicker(activity).setMoney(0L);
+                assertRefused(activity, R.string.error_split_part_not_positive);
+            });
+        }
+    }
+
+    /** A new main category of the other direction would leave the parts on the wrong side. */
+    @Test
+    public void aDirectionFlipOnASplitRowIsRefused() {
+        SplitLedger.build(ApplicationProvider.getApplicationContext());
+        try (ActivityScenario<NewEditTransactionActivity> scenario =
+                     ActivityScenario.launch(editIntent(SplitLedger.RECEIPT))) {
+            scenario.onActivity(activity -> {
+                categoryPicker(activity).setCategory(ledgerCategory(SplitLedger.SALARY));
+                assertRefused(activity, R.string.error_split_part_wrong_type);
+            });
+        }
+        assertEquals(SplitLedger.GROCERIES, longOf(SplitLedger.RECEIPT, Contract.Transaction.CATEGORY_ID));
+        assertEquals(Contract.Direction.EXPENSE, longOf(SplitLedger.RECEIPT, Contract.Transaction.DIRECTION));
+    }
+
+    /**
+     * CROSSED holds a Salary part on an expense, so it reads as unsplit. It opens on that part,
+     * is refused while the part stays, and removing it saves the row unsplit.
+     */
+    @Test
+    public void aRowWithInvalidPartsOpensOnThemAndIsRefusedUntilRepaired() {
+        SplitLedger.build(ApplicationProvider.getApplicationContext());
+        try (ActivityScenario<NewEditTransactionActivity> scenario =
+                     ActivityScenario.launch(editIntent(SplitLedger.CROSSED))) {
+            scenario.onActivity(activity -> {
+                assertEquals(Collections.singletonList("Salary"), partLabels(activity));
+                assertRefused(activity, R.string.error_split_part_wrong_type);
+                choosePartAction(activity, 0, -1);
+                assertEquals(View.GONE, activity.findViewById(R.id.split_parts_layout).getVisibility());
+                save(activity);
+                assertTrue(activity.isFinishing());
+            });
+        }
+        assertEquals(Collections.<String>emptyList(), storedParts(SplitLedger.CROSSED));
+    }
+
+    /** OVER holds parts of 800 and 700 on a total of 1000, and is saved once the total covers them. */
+    @Test
+    public void aRowWhosePartsPassItsTotalIsSavedOnceTheTotalCoversThem() {
+        SplitLedger.build(ApplicationProvider.getApplicationContext());
+        try (ActivityScenario<NewEditTransactionActivity> scenario =
+                     ActivityScenario.launch(editIntent(SplitLedger.OVER))) {
+            scenario.onActivity(activity -> {
+                assertEquals(Arrays.asList("Household", "Fuel"), partLabels(activity));
+                assertRefused(activity, R.string.error_split_total_below_parts);
+                moneyPicker(activity).setMoney(800L + 700L);
+                save(activity);
+                assertTrue(activity.isFinishing());
+            });
+        }
+        assertEquals(sortedOf(SplitLedger.HOUSEHOLD + ":800:null", SplitLedger.FUEL + ":700:null"),
+                storedParts(SplitLedger.OVER));
+    }
+
+    /**
+     * MoneyPicker keeps the minor units of the total when the wallet changes currency, and the
+     * parts keep theirs with it, so 10000 with parts of 2000 and 3000 becomes 10000 yen with parts
+     * of 2000 and 3000 yen.
+     */
+    @Test
+    public void aWalletOfAnotherCurrencyKeepsThePartsInStepWithTheTotal() {
+        SplitLedger.build(ApplicationProvider.getApplicationContext());
+        try (ActivityScenario<NewEditTransactionActivity> scenario =
+                     ActivityScenario.launch(editIntent(SplitLedger.RECEIPT))) {
+            scenario.onActivity(activity -> {
+                WalletPicker wallets = (WalletPicker) activity.getSupportFragmentManager().findFragmentByTag(WALLET_PICKER);
+                wallets.onWalletSelected(new Wallet(SplitLedger.YEN, "Yen", null,
+                        CurrencyManager.getCurrency("JPY"), 0L, 0L));
+                assertEquals(10000L, moneyPicker(activity).getCurrentMoney());
+                assertEquals(MoneyFormatter.getInstance().getNotTintedString(CurrencyManager.getCurrency("JPY"),
+                        10000L - 2000L - 3000L), remainingField(activity).getTextAsString());
+                save(activity);
+                assertTrue(activity.isFinishing());
+            });
+        }
+        assertEquals(SplitLedger.YEN, longOf(SplitLedger.RECEIPT, Contract.Transaction.WALLET_ID));
+        assertEquals(10000L, moneyOf(SplitLedger.RECEIPT));
+        assertEquals(sortedOf(SplitLedger.HOUSEHOLD + ":2000:null", SplitLedger.FUEL + ":3000:null"),
+                storedParts(SplitLedger.RECEIPT));
+    }
+
+    @Test
+    public void aCopyTakesThePartsAsPartsOfItsOwn() {
+        SplitLedger.build(ApplicationProvider.getApplicationContext());
+        List<String> original = storedParts(SplitLedger.RECEIPT);
+        Intent intent = newItemIntent();
+        intent.putExtra(NewEditTransactionActivity.DUPLICATE_ID, SplitLedger.RECEIPT);
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(intent)) {
+            scenario.onActivity(activity -> {
+                assertEquals(Arrays.asList("Household", "Fuel"), partLabels(activity));
+                save(activity);
+                assertTrue(activity.isFinishing());
+            });
+        }
+        long copy = newestId();
+        assertFalse(copy == SplitLedger.RECEIPT);
+        assertEquals(sortedOf(SplitLedger.HOUSEHOLD + ":2000:null", SplitLedger.FUEL + ":3000:null"), storedParts(copy));
+        assertEquals("the original keeps its own rows", original, storedParts(SplitLedger.RECEIPT));
+        assertEquals(2L, countParts("_transaction = " + copy + " AND split_id NOT IN (930, 931)"));
+    }
+
+    /** A part added, and one waiting for its category, both come back after a recreate. */
+    @Test
+    public void thePartsSurviveARecreate() {
+        SplitLedger.build(ApplicationProvider.getApplicationContext());
+        Intent intent = newItemIntent();
+        intent.putExtra(NewEditTransactionActivity.WALLET_ID, SplitLedger.CASH);
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(intent)) {
+            scenario.onActivity(activity -> {
+                categoryPicker(activity).setCategory(ledgerCategory(SplitLedger.GROCERIES));
+                moneyPicker(activity).setMoney(9000L);
+                addPart(activity, SplitLedger.HOUSEHOLD, 2000L);
+                activity.findViewById(R.id.split_edit_text).performClick();
+            });
+            scenario.recreate();
+            scenario.onActivity(activity -> {
+                assertEquals(Collections.singletonList("Household"), partLabels(activity));
+                assertEquals(euro(9000L - 2000L), remainingField(activity).getTextAsString());
+                // the category picked for the part that was being added when the screen went
+                partCategoryPicker(activity).setCategory(ledgerCategory(SplitLedger.FUEL));
+                partMoneyPicker(activity).setMoney(1500L);
+            });
+            scenario.recreate();
+            scenario.onActivity(activity -> {
+                assertEquals(Arrays.asList("Household", "Fuel"), partLabels(activity));
+                save(activity);
+                assertTrue(activity.isFinishing());
+            });
+        }
+        long id = newestId();
+        assertEquals(sortedOf(SplitLedger.HOUSEHOLD + ":2000:null", SplitLedger.FUEL + ":1500:null"), storedParts(id));
+    }
+
+    /** Nothing but a plain transaction offers the action, and saving one of the others leaves its parts. */
+    @Test
+    public void onlyAPlainTransactionOffersTheSplit() {
+        SplitLedger.build(ApplicationProvider.getApplicationContext());
+        List<String> debtParts = storedParts(SplitLedger.DEBT_ROW);
+        try (ActivityScenario<NewEditTransactionActivity> scenario =
+                     ActivityScenario.launch(editIntent(SplitLedger.DEBT_ROW))) {
+            scenario.onActivity(activity -> {
+                assertEquals(View.GONE, activity.findViewById(R.id.split_edit_text).getVisibility());
+                assertEquals(View.GONE, activity.findViewById(R.id.split_parts_layout).getVisibility());
+                save(activity);
+            });
+        }
+        assertEquals(debtParts, storedParts(SplitLedger.DEBT_ROW));
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(
+                savingIntent(NewEditTransactionActivity.SAVING_DEPOSIT))) {
+            scenario.onActivity(activity -> assertEquals(View.GONE,
+                    activity.findViewById(R.id.split_edit_text).getVisibility()));
+        }
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(
+                debtIntent(insertDebt(mEuroWallet), NewEditTransactionActivity.DEBT_PAY))) {
+            scenario.onActivity(activity -> assertEquals(View.GONE,
+                    activity.findViewById(R.id.split_edit_text).getVisibility()));
+        }
+        Intent model = newItemIntent();
+        model.putExtra(NewEditTransactionActivity.TYPE, NewEditTransactionActivity.TYPE_MODEL);
+        model.putExtra(NewEditTransactionActivity.MODEL_ID, insertModel(4200L, mEuroWallet));
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(model)) {
+            scenario.onActivity(activity -> assertEquals(View.VISIBLE,
+                    activity.findViewById(R.id.split_edit_text).getVisibility()));
+        }
+    }
+
+    @Test
+    public void aRowARecurrenceWroteHidesTheSplitAndACopyOfItOffersIt() {
+        SplitLedger.build(ApplicationProvider.getApplicationContext());
+        SQLiteDatabase db = SplitLedger.database(ApplicationProvider.getApplicationContext());
+        db.execSQL("INSERT INTO recurrent_transactions (recurrent_transaction_id, recurrent_transaction_money, " +
+                        "recurrent_transaction_category, recurrent_transaction_direction, " +
+                        "recurrent_transaction_wallet, recurrent_transaction_start_date, " +
+                        "recurrent_transaction_last_occurrence, recurrent_transaction_rule, uuid, last_edit, " +
+                        "deleted) VALUES (960, 10000, ?, ?, ?, '2026-01-15', '2026-01-15', 'FREQ=MONTHLY', " +
+                        "'recurrence-960', 0, 0)",
+                new Object[] {SplitLedger.GROCERIES, Contract.Direction.EXPENSE, SplitLedger.CASH});
+        db.execSQL("UPDATE transactions SET transaction_recurrence = 960 WHERE transaction_id = " + SplitLedger.RECEIPT);
+        try (ActivityScenario<NewEditTransactionActivity> scenario =
+                     ActivityScenario.launch(editIntent(SplitLedger.RECEIPT))) {
+            scenario.onActivity(activity -> {
+                assertEquals(View.GONE, activity.findViewById(R.id.split_edit_text).getVisibility());
+                assertEquals(View.GONE, activity.findViewById(R.id.split_parts_layout).getVisibility());
+            });
+        }
+        Intent copy = newItemIntent();
+        copy.putExtra(NewEditTransactionActivity.DUPLICATE_ID, SplitLedger.RECEIPT);
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(copy)) {
+            scenario.onActivity(activity -> {
+                assertEquals(View.VISIBLE, activity.findViewById(R.id.split_edit_text).getVisibility());
+                assertEquals(Arrays.asList("Household", "Fuel"), partLabels(activity));
+            });
+        }
+    }
+
+    private static Category ledgerCategory(long id) {
+        boolean income = id == SplitLedger.SALARY || id == SplitLedger.BONUS;
+        return new Category(id, SplitLedger.NAMES.get(id), null,
+                income ? Contract.CategoryType.INCOME : Contract.CategoryType.EXPENSE);
+    }
+
+    private static CategoryPicker partCategoryPicker(NewEditTransactionActivity activity) {
+        return (CategoryPicker) activity.getSupportFragmentManager().findFragmentByTag(PART_CATEGORY_PICKER);
+    }
+
+    private static MoneyPicker partMoneyPicker(NewEditTransactionActivity activity) {
+        return (MoneyPicker) activity.getSupportFragmentManager().findFragmentByTag(PART_MONEY_PICKER);
+    }
+
+    /** Adds a part the way a user does: the action, a category from the picker, then the keypad. */
+    private static void addPart(NewEditTransactionActivity activity, long category, long money) {
+        activity.findViewById(R.id.split_edit_text).performClick();
+        partCategoryPicker(activity).setCategory(ledgerCategory(category));
+        partMoneyPicker(activity).setMoney(money);
+    }
+
+    /**
+     * Opens the actions of a part and picks one: 0 category, 1 amount, 2 note, -1 remove.
+     */
+    private static void choosePartAction(NewEditTransactionActivity activity, int part, int action) {
+        ViewGroup parts = activity.findViewById(R.id.split_parts_layout);
+        parts.getChildAt(part).performClick();
+        AlertDialog dialog = (AlertDialog) ShadowDialog.getLatestDialog();
+        if (action < 0) {
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).performClick();
+        } else {
+            ListView list = dialog.getListView();
+            list.performItemClick(list, action, list.getAdapter().getItemId(action));
+        }
+        shadowOf(Looper.getMainLooper()).idle();
+    }
+
+    private static List<String> partLabels(NewEditTransactionActivity activity) {
+        ViewGroup parts = activity.findViewById(R.id.split_parts_layout);
+        List<String> labels = new ArrayList<>();
+        for (int i = 0; i < parts.getChildCount(); i++) {
+            labels.add(((MaterialEditText) parts.getChildAt(i)).getFloatingLabelText());
+        }
+        return labels;
+    }
+
+    private static MaterialEditText remainingField(NewEditTransactionActivity activity) {
+        return activity.findViewById(R.id.split_remaining_edit_text);
+    }
+
+    private static String remainingHint(NewEditTransactionActivity activity, String category) {
+        return activity.getString(R.string.hint_split_remaining, category);
+    }
+
+    private static String euro(long money) {
+        return MoneyFormatter.getInstance().getNotTintedString(CurrencyManager.getCurrency("EUR"), money);
+    }
+
+    /** Saves, and checks the save was refused with this message and nothing was written. */
+    private void assertRefused(NewEditTransactionActivity activity, int message) {
+        int before = countTransactions();
+        long parts = countParts("1");
+        save(activity);
+        assertFalse(activity.isFinishing());
+        AlertDialog dialog = (AlertDialog) ShadowDialog.getLatestDialog();
+        assertTrue(dialog.isShowing());
+        TextView text = dialog.findViewById(android.R.id.message);
+        assertEquals(activity.getString(message), text.getText().toString());
+        dialog.dismiss();
+        assertEquals(before, countTransactions());
+        assertEquals(parts, countParts("1"));
+    }
+
+    /** The live parts of a row as category:money:note. */
+    private List<String> storedParts(long transaction) {
+        List<String> parts = new ArrayList<>();
+        try (Cursor cursor = SplitLedger.database(ApplicationProvider.getApplicationContext()).rawQuery(
+                "SELECT split_category || ':' || split_money || ':' || IFNULL(split_note, 'null') FROM " +
+                        "transaction_splits WHERE deleted = 0 AND _transaction = " + transaction, null)) {
+            while (cursor.moveToNext()) {
+                parts.add(cursor.getString(0));
+            }
+        }
+        Collections.sort(parts);
+        return parts;
+    }
+
+    /** Every column of every row the selection takes, flagged deleted or not. */
+    private List<String> rowsOf(String table, String selection) {
+        List<String> rows = new ArrayList<>();
+        try (Cursor cursor = SplitLedger.database(ApplicationProvider.getApplicationContext()).rawQuery(
+                "SELECT * FROM " + table + " WHERE " + selection, null)) {
+            while (cursor.moveToNext()) {
+                List<String> columns = new ArrayList<>();
+                for (int i = 0; i < cursor.getColumnCount(); i++) {
+                    columns.add(cursor.getColumnName(i) + "=" + cursor.getString(i));
+                }
+                rows.add(columns.toString());
+            }
+        }
+        Collections.sort(rows);
+        return rows;
+    }
+
+    private long countParts(String selection) {
+        try (Cursor cursor = SplitLedger.database(ApplicationProvider.getApplicationContext()).rawQuery(
+                "SELECT COUNT(*) FROM transaction_splits WHERE " + selection, null)) {
+            assertTrue(cursor.moveToFirst());
+            return cursor.getLong(0);
+        }
+    }
+
+    private long longOf(long transactionId, String column) {
+        Uri uri = ContentUris.withAppendedId(DataContentProvider.CONTENT_TRANSACTIONS, transactionId);
+        try (Cursor cursor = mResolver.query(uri, new String[] {column}, null, null, null)) {
+            assertTrue(cursor.moveToFirst());
+            return cursor.getLong(0);
+        }
+    }
+
+    private long newestId() {
+        try (Cursor cursor = newestTransaction()) {
+            return cursor.getLong(0);
+        }
+    }
+
+    private static List<String> sortedOf(String... rows) {
+        List<String> list = new ArrayList<>(Arrays.asList(rows));
+        Collections.sort(list);
+        return list;
+    }
+
+    @Test
+    public void anAddTransactionRequestFillsTheEditorAndOnlyTheSaveTapWritesIt() {
+        PreferenceManager.setDefaultWallet(mDollarWallet);
+        long work = insertCategory("Work", Contract.CategoryType.INCOME, null);
+        long salary = insertCategory("Salary", Contract.CategoryType.INCOME, work);
+        int before = countTransactions();
+        Intent intent = addTransactionIntent();
+        intent.putExtra(NewEditTransactionActivity.EXTRA_WALLET, "cASH");
+        intent.putExtra(NewEditTransactionActivity.EXTRA_AMOUNT, "-1,234.56");
+        intent.putExtra(NewEditTransactionActivity.EXTRA_CATEGORY, "salary");
+        intent.putExtra(NewEditTransactionActivity.EXTRA_DESCRIPTION, "June pay");
+        intent.putExtra(NewEditTransactionActivity.EXTRA_NOTE, "Paid early");
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(intent)) {
+            scenario.onActivity(activity -> {
+                assertEquals("Cash", walletField(activity));
+                assertEquals(123456L, moneyPicker(activity).getCurrentMoney());
+                assertEquals(salary, categoryPicker(activity).getCurrentCategory().getId());
+                assertEquals("Salary", categoryField(activity));
+                assertEquals("June pay", descriptionField(activity));
+                assertEquals("Paid early", noteField(activity));
+                assertEquals(before, countTransactions());
+                save(activity);
+                assertTrue(activity.isFinishing());
+            });
+        }
+        assertEquals(before + 1, countTransactions());
+        Cursor row = newestTransaction();
+        assertEquals(123456L, row.getLong(row.getColumnIndex(Contract.Transaction.MONEY)));
+        assertEquals(mEuroWallet, row.getLong(row.getColumnIndex(Contract.Transaction.WALLET_ID)));
+        assertEquals(salary, row.getLong(row.getColumnIndex(Contract.Transaction.CATEGORY_ID)));
+        assertEquals(Contract.Direction.INCOME, row.getInt(row.getColumnIndex(Contract.Transaction.DIRECTION)));
+        row.close();
+    }
+
+    @Test
+    public void aFloatAmountLandsTheSameAsAStringAmount() {
+        Intent asFloat = addTransactionIntent();
+        asFloat.putExtra(NewEditTransactionActivity.EXTRA_WALLET, "Cash");
+        asFloat.putExtra(NewEditTransactionActivity.EXTRA_AMOUNT, 12.5f);
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(asFloat)) {
+            scenario.onActivity(activity -> assertEquals(1250L, moneyPicker(activity).getCurrentMoney()));
+        }
+        Intent asString = addTransactionIntent();
+        asString.putExtra(NewEditTransactionActivity.EXTRA_WALLET, "Cash");
+        asString.putExtra(NewEditTransactionActivity.EXTRA_AMOUNT, "12.50");
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(asString)) {
+            scenario.onActivity(activity -> assertEquals(1250L, moneyPicker(activity).getCurrentMoney()));
+        }
+    }
+
+    @Test
+    public void aRequestAmountIsRoundedToTheDecimalsOfTheWalletItNames() {
+        PreferenceManager.setDefaultWallet(mDollarWallet);
+        insertWallet("Yen", "JPY");
+        Intent intent = addTransactionIntent();
+        intent.putExtra(NewEditTransactionActivity.EXTRA_WALLET, "Yen");
+        intent.putExtra(NewEditTransactionActivity.EXTRA_AMOUNT, "1234.6");
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(intent)) {
+            scenario.onActivity(activity -> {
+                assertEquals("Yen", walletField(activity));
+                assertEquals(1235L, moneyPicker(activity).getCurrentMoney());
+            });
+        }
+    }
+
+    @Test
+    public void aNameSeveralRowsCarryLeavesTheDefaultWalletAndNoCategory() {
+        PreferenceManager.setDefaultWallet(mDollarWallet);
+        insertWallet("CASH", "EUR");
+        Intent intent = addTransactionIntent();
+        intent.putExtra(NewEditTransactionActivity.EXTRA_WALLET, "Cash");
+        intent.putExtra(NewEditTransactionActivity.EXTRA_CATEGORY, "Groceries");
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(intent)) {
+            scenario.onActivity(activity -> {
+                assertEquals("Bank", walletField(activity));
+                assertNull(categoryPicker(activity).getCurrentCategory());
+            });
+        }
+    }
+
+    @Test
+    public void aNameNoRowCarriesLeavesTheDefaultWalletAndNoCategory() {
+        PreferenceManager.setDefaultWallet(mDollarWallet);
+        Intent intent = addTransactionIntent();
+        intent.putExtra(NewEditTransactionActivity.EXTRA_WALLET, "Purse");
+        intent.putExtra(NewEditTransactionActivity.EXTRA_CATEGORY, "Travel");
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(intent)) {
+            scenario.onActivity(activity -> {
+                assertEquals("Bank", walletField(activity));
+                assertNull(categoryPicker(activity).getCurrentCategory());
+            });
+        }
+    }
+
+    @Test
+    public void aSystemCategoryNameIsIgnored() {
+        Intent intent = addTransactionIntent();
+        intent.putExtra(NewEditTransactionActivity.EXTRA_CATEGORY,
+                categoryName(systemCategory(Contract.CategoryTag.SAVING_DEPOSIT)));
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(intent)) {
+            scenario.onActivity(activity -> assertNull(categoryPicker(activity).getCurrentCategory()));
+        }
+    }
+
+    @Test
+    public void anAmountThatDoesNotReadLeavesZeroAndTheKeypadOpens() {
+        PreferenceManager.setAutoOpenCalculatorEnabled(true);
+        Intent intent = addTransactionIntent();
+        intent.putExtra(NewEditTransactionActivity.EXTRA_WALLET, "Cash");
+        intent.putExtra(NewEditTransactionActivity.EXTRA_AMOUNT, "twelve");
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(intent)) {
+            scenario.onActivity(activity -> {
+                assertEquals("Cash", walletField(activity));
+                assertEquals(0L, moneyPicker(activity).getCurrentMoney());
+                assertStartedCalculator(activity);
+            });
+        }
+    }
+
+    @Test
+    public void anArchivedWalletNameIsIgnored() {
+        PreferenceManager.setDefaultWallet(mDollarWallet);
+        insertArchivedWallet("Old", "EUR");
+        Intent intent = addTransactionIntent();
+        intent.putExtra(NewEditTransactionActivity.EXTRA_WALLET, "Old");
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(intent)) {
+            scenario.onActivity(activity -> assertEquals("Bank", walletField(activity)));
+        }
+    }
+
+    @Test
+    public void aDeletedRowThatSharesItsNameWithALiveOneIsIgnored() {
+        PreferenceManager.setDefaultWallet(mDollarWallet);
+        long salary = insertCategory("Salary", Contract.CategoryType.INCOME, null);
+        SQLiteDatabase db = SplitLedger.database(ApplicationProvider.getApplicationContext());
+        db.execSQL("UPDATE wallets SET deleted = 1 WHERE wallet_id = " + insertWallet("Cash", "EUR"));
+        db.execSQL("UPDATE categories SET deleted = 1 WHERE category_id = " +
+                insertCategory("Salary", Contract.CategoryType.INCOME, null));
+        Intent intent = addTransactionIntent();
+        intent.putExtra(NewEditTransactionActivity.EXTRA_WALLET, "Cash");
+        intent.putExtra(NewEditTransactionActivity.EXTRA_CATEGORY, "Salary");
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(intent)) {
+            scenario.onActivity(activity -> {
+                assertEquals("Cash", walletField(activity));
+                assertEquals(salary, categoryPicker(activity).getCurrentCategory().getId());
+            });
+        }
+    }
+
+    @Test
+    public void theExtrasAreIgnoredWithoutTheAction() {
+        PreferenceManager.setDefaultWallet(mDollarWallet);
+        insertCategory("Salary", Contract.CategoryType.INCOME, null);
+        Intent intent = newItemIntent();
+        intent.putExtra(NewEditTransactionActivity.EXTRA_WALLET, "Cash");
+        intent.putExtra(NewEditTransactionActivity.EXTRA_AMOUNT, "12.50");
+        intent.putExtra(NewEditTransactionActivity.EXTRA_CATEGORY, "Salary");
+        intent.putExtra(NewEditTransactionActivity.EXTRA_DESCRIPTION, "June pay");
+        intent.putExtra(NewEditTransactionActivity.EXTRA_NOTE, "Paid early");
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(intent)) {
+            scenario.onActivity(activity -> {
+                assertEquals("Bank", walletField(activity));
+                assertEquals(0L, moneyPicker(activity).getCurrentMoney());
+                assertNull(categoryPicker(activity).getCurrentCategory());
+                assertEquals("", descriptionField(activity));
+                assertEquals("", noteField(activity));
+            });
+        }
+    }
+
+    @Test
+    public void anAddTransactionRequestWithNoExtrasOpensLikeANewTransaction() {
+        PreferenceManager.setDefaultWallet(mDollarWallet);
+        try (ActivityScenario<NewEditTransactionActivity> scenario =
+                     ActivityScenario.launch(addTransactionIntent())) {
+            scenario.onActivity(activity -> {
+                assertEquals("Bank", walletField(activity));
+                assertEquals(0L, moneyPicker(activity).getCurrentMoney());
+                assertNull(categoryPicker(activity).getCurrentCategory());
+            });
+        }
+    }
+
+    @Test
+    public void aRequestAmountIsLeftAtZeroWhenNoWalletLoads() {
+        Intent intent = addTransactionIntent();
+        intent.putExtra(NewEditTransactionActivity.WALLET_ID, 999L);
+        intent.putExtra(NewEditTransactionActivity.EXTRA_AMOUNT, "12.50");
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(intent)) {
+            scenario.onActivity(activity -> {
+                assertEquals("", walletField(activity));
+                assertEquals(0L, moneyPicker(activity).getCurrentMoney());
+            });
+        }
+    }
+
+    @Test
+    public void aRequestAmountIsLeftAtZeroOnAWalletWhoseCurrencyIsUnknown() {
+        insertWallet("Odd", "ZZZ");
+        Intent intent = addTransactionIntent();
+        intent.putExtra(NewEditTransactionActivity.EXTRA_WALLET, "Odd");
+        intent.putExtra(NewEditTransactionActivity.EXTRA_AMOUNT, "12.50");
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(intent)) {
+            scenario.onActivity(activity -> {
+                assertEquals("Odd", walletField(activity));
+                assertEquals(0L, moneyPicker(activity).getCurrentMoney());
+            });
+        }
+    }
+
+    @Test
+    public void aRequestDescriptionARuleMatchesOpensOnTheRulesCategory() {
+        long cafe = insertCategory("Cafe", Contract.CategoryType.EXPENSE, null);
+        insertRule("coffee", cafe);
+        Intent intent = addTransactionIntent();
+        intent.putExtra(NewEditTransactionActivity.EXTRA_DESCRIPTION, "Morning coffee");
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(intent)) {
+            scenario.onActivity(activity -> {
+                assertEquals(cafe, categoryPicker(activity).getCurrentCategory().getId());
+                assertEquals("Cafe", categoryField(activity));
+            });
+        }
+    }
+
+    @Test
+    public void theRuleFillAtOpenDoesNotRunAgainAfterARecreate() {
+        long cafe = insertCategory("Cafe", Contract.CategoryType.EXPENSE, null);
+        insertRule("coffee", cafe);
+        Intent intent = addTransactionIntent();
+        intent.putExtra(NewEditTransactionActivity.EXTRA_DESCRIPTION, "Lunch");
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(intent)) {
+            scenario.onActivity(activity -> {
+                assertNull(categoryPicker(activity).getCurrentCategory());
+                ((EditText) activity.findViewById(R.id.description_edit_text)).setText("Morning coffee");
+            });
+            scenario.recreate();
+            scenario.onActivity(activity -> {
+                assertEquals("Morning coffee", descriptionField(activity));
+                assertNull(categoryPicker(activity).getCurrentCategory());
+            });
+        }
+    }
+
+    @Test
+    public void aRuleFilledCategoryStillFollowsTheDescriptionAfterARecreate() {
+        long cafe = insertCategory("Cafe", Contract.CategoryType.EXPENSE, null);
+        insertRule("coffee", cafe);
+        Intent intent = addTransactionIntent();
+        intent.putExtra(NewEditTransactionActivity.EXTRA_DESCRIPTION, "Morning coffee");
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(intent)) {
+            scenario.onActivity(activity -> assertEquals(cafe, categoryPicker(activity).getCurrentCategory().getId()));
+            scenario.recreate();
+            scenario.onActivity(activity -> {
+                EditText description = activity.findViewById(R.id.description_edit_text);
+                description.setText("Lunch");
+                description.getOnFocusChangeListener().onFocusChange(description, false);
+                assertNull(categoryPicker(activity).getCurrentCategory());
+            });
+        }
+    }
+
+    // fixtures
+
+    private long insertCategory() {
+        return insertCategory("Groceries", Contract.CategoryType.EXPENSE, null);
+    }
+
+    private long insertCategory(String name, Contract.CategoryType type, Long parent) {
+        ContentValues category = new ContentValues();
+        category.put(Contract.Category.NAME, name);
+        category.put(Contract.Category.ICON, ICON);
+        category.put(Contract.Category.TYPE, type.getValue());
+        category.put(Contract.Category.PARENT, parent);
+        category.put(Contract.Category.SHOW_REPORT, true);
+        return ContentUris.parseId(mResolver.insert(DataContentProvider.CONTENT_CATEGORIES, category));
+    }
+
+    private void insertRule(String pattern, long category) {
+        ContentValues rule = new ContentValues();
+        rule.put(Contract.CategoryRule.PATTERN, pattern);
+        rule.put(Contract.CategoryRule.CATEGORY_ID, category);
+        mResolver.insert(DataContentProvider.CONTENT_CATEGORY_RULES, rule);
+    }
+
+    private String categoryName(long category) {
+        Cursor cursor = mResolver.query(ContentUris.withAppendedId(DataContentProvider.CONTENT_CATEGORIES, category),
+                new String[] {Contract.Category.NAME}, null, null, null);
+        assertTrue(cursor.moveToFirst());
+        String name = cursor.getString(0);
+        cursor.close();
+        return name;
+    }
+
+    private long insertPerson(String name) {
+        ContentValues person = new ContentValues();
+        person.put(Contract.Person.NAME, name);
+        person.put(Contract.Person.ICON, ICON);
+        return ContentUris.parseId(mResolver.insert(DataContentProvider.CONTENT_PEOPLE, person));
+    }
+
+    private long insertAttachment() {
+        ContentValues attachment = new ContentValues();
+        attachment.put(Contract.Attachment.FILE, "receipt.jpg");
+        attachment.put(Contract.Attachment.NAME, "receipt.jpg");
+        attachment.put(Contract.Attachment.TYPE, "image/jpeg");
+        attachment.put(Contract.Attachment.SIZE, 1234L);
+        return ContentUris.parseId(mResolver.insert(DataContentProvider.CONTENT_ATTACHMENTS, attachment));
+    }
+
+    private long insertPlace() {
+        ContentValues place = new ContentValues();
+        place.put(Contract.Place.NAME, "Market");
+        place.put(Contract.Place.ICON, ICON);
+        return ContentUris.parseId(mResolver.insert(DataContentProvider.CONTENT_PLACES, place));
+    }
+
+    private long insertEvent() {
+        ContentValues event = new ContentValues();
+        event.put(Contract.Event.NAME, "Fair");
+        event.put(Contract.Event.ICON, ICON);
+        event.put(Contract.Event.START_DATE, DateUtils.getSQLDateString(daysFromNow(-30)));
+        event.put(Contract.Event.END_DATE, DateUtils.getSQLDateString(daysFromNow(30)));
+        return ContentUris.parseId(mResolver.insert(DataContentProvider.CONTENT_EVENTS, event));
+    }
+
+    private long insertModel(long money, long walletId) {
+        return insertModel(money, walletId, insertCategory(), null, null);
+    }
+
+    private long insertModel(long money, long walletId, long categoryId, Long placeId, Long eventId) {
+        ContentValues values = new ContentValues();
+        values.put(Contract.TransactionModel.MONEY, money);
+        values.put(Contract.TransactionModel.DESCRIPTION, "Weekly shop");
+        values.put(Contract.TransactionModel.CATEGORY_ID, categoryId);
+        values.put(Contract.TransactionModel.DIRECTION, Contract.Direction.EXPENSE);
+        values.put(Contract.TransactionModel.WALLET_ID, walletId);
+        values.put(Contract.TransactionModel.PLACE_ID, placeId);
+        values.put(Contract.TransactionModel.EVENT_ID, eventId);
+        values.put(Contract.TransactionModel.CONFIRMED, true);
+        values.put(Contract.TransactionModel.COUNT_IN_TOTAL, true);
+        return ContentUris.parseId(
+                mResolver.insert(DataContentProvider.CONTENT_TRANSACTION_MODELS, values));
+    }
+
+    private long insertWallet(String name, String currency) {
+        ContentValues values = new ContentValues();
+        values.put(Contract.Wallet.NAME, name);
+        values.put(Contract.Wallet.ICON, ICON);
+        values.put(Contract.Wallet.CURRENCY, currency);
+        values.put(Contract.Wallet.START_MONEY, 0L);
+        values.put(Contract.Wallet.COUNT_IN_TOTAL, true);
+        values.put(Contract.Wallet.ARCHIVED, false);
+        return ContentUris.parseId(mResolver.insert(DataContentProvider.CONTENT_WALLETS, values));
+    }
+
+    private long insertArchivedWallet(String name, String currency) {
+        ContentValues values = new ContentValues();
+        values.put(Contract.Wallet.NAME, name);
+        values.put(Contract.Wallet.ICON, ICON);
+        values.put(Contract.Wallet.CURRENCY, currency);
+        values.put(Contract.Wallet.START_MONEY, 0L);
+        values.put(Contract.Wallet.COUNT_IN_TOTAL, true);
+        values.put(Contract.Wallet.ARCHIVED, true);
+        return ContentUris.parseId(mResolver.insert(DataContentProvider.CONTENT_WALLETS, values));
+    }
+
+    private long insertSaving(long startMoney, long endMoney, long walletId) {
+        ContentValues values = new ContentValues();
+        values.put(Contract.Saving.DESCRIPTION, "Trip");
+        values.put(Contract.Saving.ICON, ICON);
+        values.put(Contract.Saving.START_MONEY, startMoney);
+        values.put(Contract.Saving.END_MONEY, endMoney);
+        values.put(Contract.Saving.WALLET_ID, walletId);
+        values.put(Contract.Saving.COMPLETE, false);
+        return ContentUris.parseId(mResolver.insert(DataContentProvider.CONTENT_SAVINGS, values));
+    }
+
+    private long insertSavingRow(long money, Date date, String tag, boolean confirmed, long walletId) {
+        return insertSavingRow(mSaving, money, date, tag, confirmed, walletId);
+    }
+
+    private long insertSavingRow(long saving, long money, Date date, String tag, boolean confirmed,
+                                 long walletId) {
+        ContentValues values = new ContentValues();
+        values.put(Contract.Transaction.MONEY, money);
+        values.put(Contract.Transaction.DATE, DateUtils.getSQLDateTimeString(date));
+        values.put(Contract.Transaction.DESCRIPTION, tag);
+        values.put(Contract.Transaction.CATEGORY_ID, systemCategory(tag));
+        values.put(Contract.Transaction.DIRECTION, Contract.CategoryTag.SAVING_WITHDRAW.equals(tag)
+                ? Contract.Direction.INCOME : Contract.Direction.EXPENSE);
+        values.put(Contract.Transaction.TYPE, NewEditTransactionActivity.TYPE_SAVING);
+        values.put(Contract.Transaction.WALLET_ID, walletId);
+        values.put(Contract.Transaction.SAVING_ID, saving);
+        values.put(Contract.Transaction.CONFIRMED, confirmed);
+        values.put(Contract.Transaction.COUNT_IN_TOTAL, true);
+        return ContentUris.parseId(mResolver.insert(DataContentProvider.CONTENT_TRANSACTIONS, values));
+    }
+
+    private long insertDebt(long walletId) {
+        return insertDebt(walletId, null, null);
+    }
+
+    private long insertDebt(long walletId, Long personId) {
+        return insertDebt(walletId, personId, null);
+    }
+
+    /** A debt of 10000 named Rent with one confirmed payment of 2500 made yesterday. */
+    private long insertPartlyPaidDebt() {
+        ContentValues values = new ContentValues();
+        values.put(Contract.Debt.TYPE, Contract.DebtType.DEBT.getValue());
+        values.put(Contract.Debt.ICON, ICON);
+        values.put(Contract.Debt.DESCRIPTION, "Rent");
+        values.put(Contract.Debt.DATE, DateUtils.getSQLDateString(daysFromNow(-3)));
+        values.put(Contract.Debt.WALLET_ID, mEuroWallet);
+        values.put(Contract.Debt.MONEY, 10000L);
+        values.put(Contract.Debt.ARCHIVED, false);
+        values.put(Contract.Debt.INSERT_MASTER_TRANSACTION, true);
+        long debt = ContentUris.parseId(mResolver.insert(DataContentProvider.CONTENT_DEBTS, values));
+        ContentValues payment = new ContentValues();
+        payment.put(Contract.Transaction.MONEY, 2500L);
+        payment.put(Contract.Transaction.DATE, DateUtils.getSQLDateTimeString(daysFromNow(-1)));
+        payment.put(Contract.Transaction.DESCRIPTION, "Rent");
+        payment.put(Contract.Transaction.CATEGORY_ID, systemCategory(Contract.CategoryTag.PAID_DEBT));
+        payment.put(Contract.Transaction.DIRECTION, Contract.Direction.EXPENSE);
+        payment.put(Contract.Transaction.TYPE, NewEditTransactionActivity.TYPE_DEBT);
+        payment.put(Contract.Transaction.WALLET_ID, mEuroWallet);
+        payment.put(Contract.Transaction.DEBT_ID, debt);
+        payment.put(Contract.Transaction.CONFIRMED, true);
+        payment.put(Contract.Transaction.COUNT_IN_TOTAL, true);
+        mResolver.insert(DataContentProvider.CONTENT_TRANSACTIONS, payment);
+        return debt;
+    }
+
+    private long insertDebt(long walletId, Long personId, Long placeId) {
+        ContentValues values = new ContentValues();
+        if (personId != null) {
+            values.put(Contract.Debt.PEOPLE_IDS,
+                    Contract.getObjectIds(new Person[] {new Person(personId, "Bob", null)}));
+        }
+        values.put(Contract.Debt.PLACE_ID, placeId);
+        values.put(Contract.Debt.TYPE, Contract.DebtType.DEBT.getValue());
+        values.put(Contract.Debt.ICON, ICON);
+        values.put(Contract.Debt.DESCRIPTION, "Loan");
+        values.put(Contract.Debt.DATE, DateUtils.getSQLDateString(daysFromNow(-3)));
+        values.put(Contract.Debt.WALLET_ID, walletId);
+        values.put(Contract.Debt.MONEY, 20000L);
+        values.put(Contract.Debt.ARCHIVED, false);
+        values.put(Contract.Debt.INSERT_MASTER_TRANSACTION, true);
+        return ContentUris.parseId(mResolver.insert(DataContentProvider.CONTENT_DEBTS, values));
+    }
+
+    private long systemCategory(String tag) {
+        Cursor cursor = mResolver.query(DataContentProvider.CONTENT_CATEGORIES,
+                new String[] {Contract.Category.ID}, Contract.Category.TAG + " = ?",
+                new String[] {tag}, null);
+        assertTrue("no system category tagged " + tag, cursor.moveToFirst());
+        long id = cursor.getLong(0);
+        cursor.close();
+        return id;
+    }
+
+    private long masterTransactionOf(long debt) {
+        Cursor cursor = mResolver.query(DataContentProvider.CONTENT_TRANSACTIONS,
+                new String[] {Contract.Transaction.ID},
+                Contract.Transaction.DEBT_ID + " = ? AND " + Contract.Transaction.CATEGORY_TAG + " = ?",
+                new String[] {String.valueOf(debt), Contract.CategoryTag.DEBT}, null);
+        assertTrue("the debt has no row of its own", cursor.moveToFirst());
+        long id = cursor.getLong(0);
+        cursor.close();
+        return id;
+    }
+
+    private static Date daysFromNow(int days) {
+        return new Date(System.currentTimeMillis() + days * DAY);
+    }
+
+    // intents
+
+    @Test
+    public void aNewTransactionOpensTheCalculatorOnlyWhenTheSettingIsOn() {
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(newItemIntent())) {
+            scenario.onActivity(activity -> assertNull(shadowOf(activity).getNextStartedActivity()));
+        }
+        PreferenceManager.setAutoOpenCalculatorEnabled(true);
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(newItemIntent())) {
+            scenario.onActivity(activity -> assertStartedCalculator(activity));
+        }
+    }
+
+    @Test
+    public void theCalculatorOpensOnceAndNotAgainAfterARecreate() {
+        PreferenceManager.setAutoOpenCalculatorEnabled(true);
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(newItemIntent())) {
+            scenario.onActivity(activity -> assertStartedCalculator(activity));
+            scenario.recreate();
+            scenario.onActivity(activity -> assertNull(shadowOf(activity).getNextStartedActivity()));
+        }
+    }
+
+    @Test
+    public void theCalculatorDoesNotOpenAgainWhenTheEditorComesBack() {
+        PreferenceManager.setAutoOpenCalculatorEnabled(true);
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(newItemIntent())) {
+            scenario.onActivity(activity -> assertStartedCalculator(activity));
+            // the calculator closing brings the editor back through onResume
+            scenario.moveToState(Lifecycle.State.STARTED);
+            scenario.moveToState(Lifecycle.State.RESUMED);
+            scenario.onActivity(activity -> assertNull(shadowOf(activity).getNextStartedActivity()));
+        }
+    }
+
+    @Test
+    public void theCalculatorStaysClosedWhenTheAmountIsAlreadyThere() {
+        PreferenceManager.setAutoOpenCalculatorEnabled(true);
+        long debt = insertPartlyPaidDebt();
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(
+                debtIntent(debt, NewEditTransactionActivity.DEBT_PAY_IN_FULL))) {
+            scenario.onActivity(activity -> assertNull(shadowOf(activity).getNextStartedActivity()));
+        }
+        long empty = insertSavingRow(0L, daysFromNow(-1), Contract.CategoryTag.SAVING_DEPOSIT, true, mEuroWallet);
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(editIntent(empty))) {
+            scenario.onActivity(activity -> assertNull(shadowOf(activity).getNextStartedActivity()));
+        }
+    }
+
+    @Test
+    public void theCalculatorStillOpensAfterTheUnlockWhenTheEditorWasRecreatedUnderTheLock() {
+        PreferenceManager.setAutoOpenCalculatorEnabled(true);
+        PreferenceManager.setCurrentLockMode(LockMode.PIN);
+        PreferenceManager.setLastLockTime(0L);
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(newItemIntent())) {
+            scenario.onActivity(activity -> assertEquals(LockActivity.class.getName(),
+                    shadowOf(activity).getNextStartedActivity().getComponent().getClassName()));
+            scenario.recreate();
+            scenario.onActivity(activity -> assertEquals(LockActivity.class.getName(),
+                    shadowOf(activity).getNextStartedActivity().getComponent().getClassName()));
+            PreferenceManager.setLastLockTime(System.currentTimeMillis());
+            scenario.moveToState(Lifecycle.State.STARTED);
+            scenario.moveToState(Lifecycle.State.RESUMED);
+            scenario.onActivity(activity -> assertStartedCalculator(activity));
+        }
+    }
+
+    @Test
+    public void theCalculatorWaitsForTheLockScreenAndOpensAfterTheUnlock() {
+        PreferenceManager.setAutoOpenCalculatorEnabled(true);
+        PreferenceManager.setCurrentLockMode(LockMode.PIN);
+        PreferenceManager.setLastLockTime(0L);
+        try (ActivityScenario<NewEditTransactionActivity> scenario = ActivityScenario.launch(newItemIntent())) {
+            scenario.onActivity(activity -> {
+                Intent lock = shadowOf(activity).getNextStartedActivity();
+                assertEquals(LockActivity.class.getName(), lock.getComponent().getClassName());
+                assertNull(shadowOf(activity).getNextStartedActivity());
+            });
+            // what the lock screen records on a correct pin, then the editor comes back
+            PreferenceManager.setLastLockTime(System.currentTimeMillis());
+            scenario.moveToState(Lifecycle.State.STARTED);
+            scenario.moveToState(Lifecycle.State.RESUMED);
+            scenario.onActivity(activity -> assertStartedCalculator(activity));
+        }
+    }
+
+    private static void assertStartedCalculator(NewEditTransactionActivity activity) {
+        Intent started = shadowOf(activity).getNextStartedActivity();
+        assertEquals(CalculatorActivity.class.getName(), started.getComponent().getClassName());
+        assertNull(shadowOf(activity).getNextStartedActivity());
+    }
+
+    private static Intent newItemIntent() {
+        Intent intent = new Intent(ApplicationProvider.getApplicationContext(),
+                NewEditTransactionActivity.class);
+        intent.putExtra(NewEditItemActivity.MODE, NewEditItemActivity.Mode.NEW_ITEM);
+        return intent;
+    }
+
+    private static Intent addTransactionIntent() {
+        Intent intent = new Intent(NewEditTransactionActivity.ACTION_ADD_TRANSACTION);
+        intent.setClass(ApplicationProvider.getApplicationContext(), NewEditTransactionActivity.class);
+        return intent;
+    }
+
+    private Intent savingIntent(int action) {
+        Intent intent = newItemIntent();
+        intent.putExtra(NewEditTransactionActivity.TYPE, NewEditTransactionActivity.TYPE_SAVING);
+        intent.putExtra(NewEditTransactionActivity.SAVING_ID, mSaving);
+        intent.putExtra(NewEditTransactionActivity.SAVING_ACTION, action);
+        return intent;
+    }
+
+    private static Intent debtIntent(long debt, int action) {
+        Intent intent = newItemIntent();
+        intent.putExtra(NewEditTransactionActivity.TYPE, NewEditTransactionActivity.TYPE_DEBT);
+        intent.putExtra(NewEditTransactionActivity.DEBT_ID, debt);
+        intent.putExtra(NewEditTransactionActivity.DEBT_ACTION, action);
+        return intent;
+    }
+
+    private static Intent editIntent(long transactionId) {
+        Intent intent = new Intent(ApplicationProvider.getApplicationContext(),
+                NewEditTransactionActivity.class);
+        intent.putExtra(NewEditItemActivity.MODE, NewEditItemActivity.Mode.EDIT_ITEM);
+        intent.putExtra(NewEditItemActivity.ID, transactionId);
+        return intent;
+    }
+
+    // driving the screen
+
+    private static MoneyPicker moneyPicker(NewEditTransactionActivity activity) {
+        return (MoneyPicker) activity.getSupportFragmentManager().findFragmentByTag(MONEY_PICKER);
+    }
+
+    private static DateTimePicker dateTimePicker(NewEditTransactionActivity activity) {
+        return (DateTimePicker) activity.getSupportFragmentManager().findFragmentByTag(DATETIME_PICKER);
+    }
+
+    private static CategoryPicker categoryPicker(NewEditTransactionActivity activity) {
+        return (CategoryPicker) activity.getSupportFragmentManager().findFragmentByTag(CATEGORY_PICKER);
+    }
+
+    private static PersonPicker personPicker(NewEditTransactionActivity activity) {
+        return (PersonPicker) activity.getSupportFragmentManager().findFragmentByTag(PERSON_PICKER);
+    }
+
+    private static AttachmentPicker attachmentPicker(NewEditTransactionActivity activity) {
+        return (AttachmentPicker) activity.getSupportFragmentManager().findFragmentByTag(ATTACHMENT_PICKER);
+    }
+
+    /** The wallet names the open picker dialog lists, read off its rows once the loader lands. */
+    private static List<String> walletPickerNames(NewEditTransactionActivity activity) {
+        WalletPicker picker = (WalletPicker) activity.getSupportFragmentManager().findFragmentByTag(WALLET_PICKER);
+        WalletPickerDialog dialog = (WalletPickerDialog) picker.getChildFragmentManager()
+                .findFragmentByTag(WALLET_PICKER + "::DialogFragment");
+        RecyclerView list = dialog.getDialog().findViewById(R.id.recycler_view);
+        // the wallets arrive through a cursor loader on a background thread
+        for (int i = 0; i < 200 && list.getVisibility() != View.VISIBLE; i++) {
+            shadowOf(Looper.getMainLooper()).idle();
+            try {
+                Thread.sleep(25);
+            } catch (InterruptedException e) {
+                throw new AssertionError(e);
+            }
+        }
+        assertEquals("the wallets never loaded", View.VISIBLE, list.getVisibility());
+        View decor = dialog.getDialog().getWindow().getDecorView();
+        DisplayMetrics metrics = decor.getResources().getDisplayMetrics();
+        decor.measure(View.MeasureSpec.makeMeasureSpec(metrics.widthPixels, View.MeasureSpec.AT_MOST),
+                View.MeasureSpec.makeMeasureSpec(metrics.heightPixels, View.MeasureSpec.AT_MOST));
+        decor.layout(0, 0, decor.getMeasuredWidth(), decor.getMeasuredHeight());
+        assertEquals(list.getAdapter().getItemCount(), list.getChildCount());
+        List<String> names = new ArrayList<>();
+        for (int i = 0; i < list.getChildCount(); i++) {
+            names.add(((TextView) list.getChildAt(i).findViewById(R.id.name_text_view)).getText().toString());
+        }
+        return names;
+    }
+
+    /** The category names the picker lists, read off its rows once the loader lands. */
+    private static List<String> categoryPickerNames(CategoryPickerActivity activity) {
+        RecyclerView list = activity.findViewById(R.id.recycler_view);
+        for (int i = 0; i < 200 && (list.getAdapter() == null || list.getAdapter().getItemCount() == 0); i++) {
+            shadowOf(Looper.getMainLooper()).idle();
+            try {
+                Thread.sleep(25);
+            } catch (InterruptedException e) {
+                throw new AssertionError(e);
+            }
+        }
+        shadowOf(Looper.getMainLooper()).idle();
+        assertEquals("the categories never loaded", View.VISIBLE, list.getVisibility());
+        View decor = activity.getWindow().getDecorView();
+        DisplayMetrics metrics = decor.getResources().getDisplayMetrics();
+        decor.measure(View.MeasureSpec.makeMeasureSpec(metrics.widthPixels, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(metrics.heightPixels, View.MeasureSpec.EXACTLY));
+        decor.layout(0, 0, decor.getMeasuredWidth(), decor.getMeasuredHeight());
+        List<String> names = new ArrayList<>();
+        for (int i = 0; i < list.getChildCount(); i++) {
+            names.add(((TextView) list.getChildAt(i).findViewById(R.id.name_text_view)).getText().toString());
+        }
+        return names;
+    }
+
+    private static String walletField(NewEditTransactionActivity activity) {
+        return ((MaterialEditText) activity.findViewById(R.id.wallet_edit_text)).getTextAsString();
+    }
+
+    private static String descriptionField(NewEditTransactionActivity activity) {
+        return ((MaterialEditText) activity.findViewById(R.id.description_edit_text)).getTextAsString();
+    }
+
+    private static String categoryField(NewEditTransactionActivity activity) {
+        return ((MaterialEditText) activity.findViewById(R.id.category_edit_text)).getTextAsString();
+    }
+
+    private static String noteField(NewEditTransactionActivity activity) {
+        return ((MaterialEditText) activity.findViewById(R.id.note_edit_text)).getTextAsString();
+    }
+
+    private static void save(NewEditTransactionActivity activity) {
+        Toolbar toolbar = activity.findViewById(R.id.primary_toolbar);
+        activity.onMenuItemClick(toolbar.getMenu().findItem(R.id.action_save_changes));
+    }
+
+    // reading back
+
+    private int countTransactions() {
+        Cursor cursor = mResolver.query(DataContentProvider.CONTENT_TRANSACTIONS,
+                new String[] {Contract.Transaction.ID}, null, null, null);
+        int count = cursor.getCount();
+        cursor.close();
+        return count;
+    }
+
+    private Cursor newestTransaction() {
+        Cursor cursor = mResolver.query(DataContentProvider.CONTENT_TRANSACTIONS, new String[] {
+                Contract.Transaction.ID, Contract.Transaction.MONEY, Contract.Transaction.DATE,
+                Contract.Transaction.WALLET_ID, Contract.Transaction.SAVING_ID,
+                Contract.Transaction.DEBT_ID, Contract.Transaction.TYPE, Contract.Transaction.DIRECTION,
+                Contract.Transaction.CATEGORY_TAG, Contract.Transaction.CATEGORY_ID,
+                Contract.Transaction.PLACE_ID, Contract.Transaction.EVENT_ID
+        }, null, null, Contract.Transaction.ID + " DESC");
+        assertTrue(cursor.moveToFirst());
+        return cursor;
+    }
+
+    private long moneyOf(long transactionId) {
+        Uri uri = ContentUris.withAppendedId(DataContentProvider.CONTENT_TRANSACTIONS, transactionId);
+        Cursor cursor = mResolver.query(uri, new String[] {Contract.Transaction.MONEY}, null, null, null);
+        assertTrue(cursor.moveToFirst());
+        long money = cursor.getLong(0);
+        cursor.close();
+        return money;
+    }
+
+    private String dateOf(long transactionId) {
+        Uri uri = ContentUris.withAppendedId(DataContentProvider.CONTENT_TRANSACTIONS, transactionId);
+        Cursor cursor = mResolver.query(uri, new String[] {Contract.Transaction.DATE}, null, null, null);
+        assertTrue(cursor.moveToFirst());
+        String date = cursor.getString(0);
+        cursor.close();
+        return date;
+    }
+
+    private boolean savingIsComplete() {
+        Uri uri = ContentUris.withAppendedId(DataContentProvider.CONTENT_SAVINGS, mSaving);
+        Cursor cursor = mResolver.query(uri, new String[] {Contract.Saving.COMPLETE}, null, null, null);
+        assertTrue(cursor.moveToFirst());
+        boolean complete = cursor.getInt(0) == 1;
+        cursor.close();
+        return complete;
+    }
+
+}

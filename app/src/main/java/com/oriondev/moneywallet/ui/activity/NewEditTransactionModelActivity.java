@@ -51,6 +51,7 @@ import com.oriondev.moneywallet.ui.view.text.MaterialEditText;
 import com.oriondev.moneywallet.ui.view.text.Validator;
 import com.oriondev.moneywallet.utils.CurrencyManager;
 import com.oriondev.moneywallet.utils.DateUtils;
+import com.oriondev.moneywallet.utils.DefaultWallet;
 import com.oriondev.moneywallet.utils.IconLoader;
 import com.oriondev.moneywallet.utils.MoneyFormatter;
 
@@ -304,11 +305,13 @@ public class NewEditTransactionModelActivity extends NewEditItemActivity impleme
                         Contract.Wallet.START_MONEY,
                         Contract.Wallet.TOTAL_MONEY
                 };
-                long currentWallet = PreferenceManager.getCurrentWallet();
+                long currentWallet = DefaultWallet.resolveNewItemWallet(contentResolver);
                 Cursor cursor;
                 if (currentWallet == PreferenceManager.TOTAL_WALLET_ID) {
                     Uri uri = DataContentProvider.CONTENT_WALLETS;
-                    cursor = contentResolver.query(uri, projection, null, null, null);
+                    cursor = contentResolver.query(uri, projection,
+                            Contract.Wallet.ARCHIVED + " = 0", null,
+                            Contract.Wallet.INDEX + " ASC, " + Contract.Wallet.NAME + " ASC");
                 } else {
                     Uri uri = ContentUris.withAppendedId(DataContentProvider.CONTENT_WALLETS, currentWallet);
                     cursor = contentResolver.query(uri, projection, null, null, null);

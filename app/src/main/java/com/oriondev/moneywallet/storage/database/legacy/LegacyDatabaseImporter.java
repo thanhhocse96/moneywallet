@@ -30,8 +30,8 @@ import android.text.TextUtils;
 import com.oriondev.moneywallet.model.ColorIcon;
 import com.oriondev.moneywallet.model.CurrencyUnit;
 import com.oriondev.moneywallet.model.Icon;
+import com.oriondev.moneywallet.model.MoneyScale;
 import com.oriondev.moneywallet.model.RecurrenceSetting;
-import com.oriondev.moneywallet.picker.IconPicker;
 import com.oriondev.moneywallet.storage.database.Contract;
 import com.oriondev.moneywallet.storage.database.DataContentProvider;
 import com.oriondev.moneywallet.storage.database.DatabaseImporter;
@@ -51,7 +51,7 @@ import com.oriondev.moneywallet.storage.database.model.Transfer;
 import com.oriondev.moneywallet.storage.database.model.Wallet;
 import com.oriondev.moneywallet.utils.CurrencyManager;
 import com.oriondev.moneywallet.utils.DateUtils;
-import com.oriondev.moneywallet.utils.MoneyFormatter;
+import com.oriondev.moneywallet.utils.IconLoader;
 import com.oriondev.moneywallet.utils.Utils;
 
 import java.io.File;
@@ -401,6 +401,7 @@ public class LegacyDatabaseImporter implements DatabaseImporter {
                     budget.mLastEdit = getLongSafely(cursor, LegacyDatabaseSchema.Budget.LAST_EDIT);
                     try {
                         long id = SQLDatabaseImporter.insert(contentResolver, budget);
+                        SQLDatabaseImporter.insertBudgetCategory(contentResolver, id, budget.mCategory);
                         // for each linked wallet, insert a link in the new database
                         for (Long legacyId : legacyIds) {
                             BudgetWallet budgetWallet = new BudgetWallet();
@@ -447,6 +448,17 @@ public class LegacyDatabaseImporter implements DatabaseImporter {
 
     @Override
     public void importBudgetWallets(ContentResolver contentResolver) throws ImportException {
+        // not supported in legacy database
+    }
+
+    @Override
+    public void importBudgetCategories(ContentResolver contentResolver) throws ImportException {
+        // a legacy budget names one category on its own row, and importBudgets above puts that
+        // into the join table as it goes, so there is nothing left to read here
+    }
+
+    @Override
+    public void importCategoryRules(ContentResolver contentResolver) throws ImportException {
         // not supported in legacy database
     }
 
@@ -701,6 +713,11 @@ public class LegacyDatabaseImporter implements DatabaseImporter {
     }
 
     @Override
+    public void importTransactionSplits(ContentResolver contentResolver) throws ImportException {
+        // not supported in legacy database
+    }
+
+    @Override
     public void importTransactionPeople(ContentResolver contentResolver) throws ImportException {
         // not supported in legacy database
     }
@@ -777,13 +794,13 @@ public class LegacyDatabaseImporter implements DatabaseImporter {
                 String legacyIcon = cursor.getString(index);
                 Icon icon = LegacyIconMapper.getLegacyIcon(legacyIcon, name);
                 if (icon == null) {
-                    icon = new ColorIcon(Utils.getRandomMDColor(), IconPicker.getColorIconString(name));
+                    icon = new ColorIcon(Utils.getRandomMDColor(), IconLoader.getColorIconString(name));
                 }
                 return icon.toString();
             }
         }*/
         int randomColor = Utils.getRandomMDColor();
-        String iconText = IconPicker.getColorIconString(name);
+        String iconText = IconLoader.getColorIconString(name);
         Icon icon = new ColorIcon(randomColor, iconText);
         return icon.toString();
     }
@@ -841,7 +858,7 @@ public class LegacyDatabaseImporter implements DatabaseImporter {
     private static long normalize(String currency, long money) {
         CurrencyUnit currencyUnit = CurrencyManager.getCurrency(currency);
         if (currencyUnit != null && currencyUnit.getDecimals() != LEGACY_DECIMALS) {
-            return MoneyFormatter.normalize(money, LEGACY_DECIMALS, currencyUnit.getDecimals());
+            return MoneyScale.toMinorUnitsRounded(MoneyScale.toHumanAmount(money, LEGACY_DECIMALS), currencyUnit.getDecimals());
         }
         return money;
     }

@@ -99,6 +99,11 @@ public class OverviewSinglePanelFragment extends SinglePanelFragment implements 
         return R.string.menu_overview;
     }
 
+    @Override
+    protected boolean showsCurrentWallet() {
+        return true;
+    }
+
     @MenuRes
     protected int onInflateMenu() {
         return R.menu.menu_overview_fragment;
@@ -119,7 +124,7 @@ public class OverviewSinglePanelFragment extends SinglePanelFragment implements 
 
     @Override
     public void onOverviewSettingChanged(String tag, OverviewSetting overviewSetting) {
-        getLoaderManager().restartLoader(LOADER_OVERVIEW_DATA, null, this);
+        LoaderManager.getInstance(this).restartLoader(LOADER_OVERVIEW_DATA, null, this);
     }
 
     @NonNull
@@ -150,6 +155,6 @@ public class OverviewSinglePanelFragment extends SinglePanelFragment implements 
 
     @Override
     public void onCurrentWalletChanged(long walletId) {
-        getLoaderManager().restartLoader(LOADER_OVERVIEW_DATA, null, this);
+        LoaderManager.getInstance(this).restartLoader(LOADER_OVERVIEW_DATA, null, this);
     }
 }

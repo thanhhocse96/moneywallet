@@ -23,6 +23,8 @@ import android.app.Activity;
 import android.content.ContentResolver;
 import android.content.ContentUris;
 import android.content.Context;
+import android.content.DialogInterface;
+import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
@@ -39,14 +41,14 @@ import android.view.ViewGroup;
 import android.widget.CheckBox;
 import android.widget.TextView;
 
-import com.afollestad.materialdialogs.DialogAction;
-import com.afollestad.materialdialogs.MaterialDialog;
 import com.oriondev.moneywallet.R;
 import com.oriondev.moneywallet.broadcast.RecurrenceBroadcastReceiver;
 import com.oriondev.moneywallet.model.CurrencyUnit;
 import com.oriondev.moneywallet.model.RecurrenceSetting;
 import com.oriondev.moneywallet.storage.database.Contract;
 import com.oriondev.moneywallet.storage.database.DataContentProvider;
+import com.oriondev.moneywallet.ui.activity.NewEditItemActivity;
+import com.oriondev.moneywallet.ui.activity.NewEditRecurrentTransferActivity;
 import com.oriondev.moneywallet.ui.fragment.base.SecondaryPanelFragment;
 import com.oriondev.moneywallet.ui.view.theme.ThemedDialog;
 import com.oriondev.moneywallet.utils.CurrencyManager;
@@ -114,29 +116,31 @@ public class RecurrentTransferItemFragment extends SecondaryPanelFragment implem
 
     @Override
     protected int onInflateMenu() {
-        return R.menu.menu_delete_item;
+        return R.menu.menu_edit_delete_item;
     }
 
     @Override
     public boolean onMenuItemClick(MenuItem item) {
-        switch (item.getItemId()) {
-            case R.id.action_delete_item:
-                showDeleteDialog(getActivity());
-                break;
+        int itemId = item.getItemId();
+        if (itemId == R.id.action_edit_item) {
+            Intent intent = new Intent(getActivity(), NewEditRecurrentTransferActivity.class);
+            intent.putExtra(NewEditItemActivity.MODE, NewEditItemActivity.Mode.EDIT_ITEM);
+            intent.putExtra(NewEditItemActivity.ID, getItemId());
+            startActivity(intent);
+        } else if (itemId == R.id.action_delete_item) {
+            showDeleteDialog(getActivity());
         }
         return false;
     }
 
     private void showDeleteDialog(Context context) {
         ThemedDialog.buildMaterialDialog(context)
-                .title(R.string.title_warning)
-                .content(R.string.message_delete_recurrent_transfer)
-                .positiveText(android.R.string.ok)
-                .negativeText(android.R.string.cancel)
-                .onPositive(new MaterialDialog.SingleButtonCallback() {
+                .setTitle(R.string.title_warning)
+                .setMessage(R.string.message_delete_recurrent_transfer)
+                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
 
                     @Override
-                    public void onClick(@NonNull MaterialDialog dialog, @NonNull DialogAction which) {
+                    public void onClick(DialogInterface dialog, int which) {
                         Activity activity = getActivity();
                         if (activity != null) {
                             Uri uri = ContentUris.withAppendedId(DataContentProvider.CONTENT_RECURRENT_TRANSFERS, getItemId());
@@ -149,13 +153,14 @@ public class RecurrentTransferItemFragment extends SecondaryPanelFragment implem
                     }
 
                 })
+                .setNegativeButton(android.R.string.cancel, null)
                 .show();
     }
 
     @Override
     protected void onShowItemId(long itemId) {
         setLoadingScreen(true);
-        getLoaderManager().restartLoader(RECURRENT_TRANSFER_LOADER_ID, null, this);
+        LoaderManager.getInstance(this).restartLoader(RECURRENT_TRANSFER_LOADER_ID, null, this);
     }
 
     private void setLoadingScreen(boolean loading) {

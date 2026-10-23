@@ -20,35 +20,61 @@
 package com.oriondev.moneywallet;
 
 import android.app.Application;
-import android.content.Context;
+import android.content.res.Configuration;
+import android.os.LocaleList;
 
-import androidx.multidex.MultiDex;
+import androidx.annotation.NonNull;
 
 import com.oriondev.moneywallet.broadcast.AutoBackupBroadcastReceiver;
 import com.oriondev.moneywallet.broadcast.DailyBroadcastReceiver;
 import com.oriondev.moneywallet.broadcast.RecurrenceBroadcastReceiver;
+import com.oriondev.moneywallet.storage.database.SystemCategoryLocalizer;
 import com.oriondev.moneywallet.storage.preference.BackendManager;
 import com.oriondev.moneywallet.storage.preference.PreferenceManager;
 import com.oriondev.moneywallet.ui.notification.NotificationContract;
 import com.oriondev.moneywallet.ui.view.theme.ThemeEngine;
+import com.oriondev.moneywallet.ui.widget.WalletWidgetObserver;
 import com.oriondev.moneywallet.utils.CurrencyManager;
-
-import me.weishu.reflection.Reflection;
 
 /**
  * Created by andrea on 17/01/18.
  */
 public class App extends Application {
 
+    private LocaleList mLocales;
+
     @Override
     public void onCreate() {
         super.onCreate();
+        mLocales = getResources().getConfiguration().getLocales();
         PreferenceManager.initialize(this);
         BackendManager.initialize(this);
         ThemeEngine.initialize(this);
         CurrencyManager.initialize(this);
         NotificationContract.initializeNotificationChannels(this);
+        // startup, not only onConfigurationChanged, for two reasons: every install made before
+        // this existed needs one repair whether or not its language ever changes again, and a
+        // system language changed while the process was dead delivers no configuration callback
+        SystemCategoryLocalizer.relocalize(this);
+        // Registered here because a balance is moved by writes from all over the app, and this
+        // is the one place every one of them has already started. It gets its own thread and
+        // folds a burst of writes into one redraw, so an import does not pay for this per row.
+        WalletWidgetObserver.register(this);
         initializeScheduledTimers();
+    }
+
+    @Override
+    public void onConfigurationChanged(@NonNull Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        // both sides come from getResources rather than from newConfig, since that is the
+        // configuration the channel names resolve against
+        LocaleList locales = getResources().getConfiguration().getLocales();
+        if (locales.equals(mLocales)) {
+            return;
+        }
+        NotificationContract.initializeNotificationChannels(this);
+        SystemCategoryLocalizer.relocalize(this);
+        mLocales = locales;
     }
 
     private void initializeScheduledTimers() {
@@ -57,13 +83,6 @@ public class App extends Application {
         // canceled by the OS. This is the best place where all those things can be scheduled again.
         DailyBroadcastReceiver.scheduleDailyNotification(this);
         RecurrenceBroadcastReceiver.scheduleRecurrenceTask(this);
-        AutoBackupBroadcastReceiver.scheduleAutoBackupTask(this);
-    }
-
-    @Override
-    protected void attachBaseContext(Context base) {
-        super.attachBaseContext(base);
-        MultiDex.install(this);
-        Reflection.unseal(base);
+        AutoBackupBroadcastReceiver.ensureAutoBackupTaskScheduled(this);
     }
 }

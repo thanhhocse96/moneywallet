@@ -38,6 +38,7 @@ import com.github.mikephil.charting.interfaces.datasets.ILineDataSet;
 import com.github.mikephil.charting.interfaces.datasets.IRadarDataSet;
 import com.oriondev.moneywallet.model.CurrencyUnit;
 import com.oriondev.moneywallet.model.Money;
+import com.oriondev.moneywallet.model.MoneyScale;
 import com.oriondev.moneywallet.model.OverviewData;
 import com.oriondev.moneywallet.model.OverviewSetting;
 import com.oriondev.moneywallet.model.PeriodMoney;
@@ -74,10 +75,15 @@ public class OverviewDataLoader extends AbstractGenericLoader<OverviewData> {
     }
 
     @Override
+    protected Uri getObservedUri() {
+        return DataContentProvider.CONTENT_ALL;
+    }
+
+    @Override
     public OverviewData loadInBackground() {
         Money totalNetIncomes = new Money();
         List<PeriodMoney> periodMoneyList = new ArrayList<>();
-        Uri uri = DataContentProvider.CONTENT_TRANSACTIONS;
+        Uri uri = DataContentProvider.CONTENT_CATEGORY_LINES;
         String[] projection = new String[] {
                 Contract.Transaction.DATE,
                 Contract.Transaction.DIRECTION,
@@ -95,19 +101,21 @@ public class OverviewDataLoader extends AbstractGenericLoader<OverviewData> {
             selectionArgs = new String[] {String.valueOf(currentWallet)};
         }
         selection += " AND " + Contract.Transaction.CONFIRMED + " = '1' AND " + Contract.Transaction.COUNT_IN_TOTAL + " = '1'";
-        selection += " AND " + Contract.Transaction.CATEGORY_SHOW_REPORT + " = '1'";
+        selection += " AND " + Contract.Transaction.REPORT_FILTER;
         selection += " AND DATETIME(" + Contract.Transaction.DATE + ") <= DATETIME('now', 'localtime')";
         selection += " AND DATETIME(" + Contract.Transaction.DATE + ") >= DATETIME('" + DateUtils.getSQLDateTimeString(mOverviewSetting.getStartDate()) + "')";
         selection += " AND DATETIME(" + Contract.Transaction.DATE + ") <= DATETIME('" + DateUtils.getSQLDateTimeString(mOverviewSetting.getEndDate()) + "')";
         switch (mOverviewSetting.getType()) {
             case CASH_FLOW:
                 switch (mOverviewSetting.getCashFlow()) {
+                    // Both of these chart one direction on its own, so transfers stay out of
+                    // them. NET_INCOMES keeps them, because it charts a net.
                     case INCOMES:
-                        selection += " AND " + Contract.Transaction.DIRECTION + " = ?";
+                        selection += " AND " + Contract.Transaction.DIRECTION + " = ? AND " + Contract.Transaction.NOT_TRANSFER;
                         selectionArgs = appendSelectionArgs(selectionArgs, String.valueOf(Contract.Direction.INCOME));
                         break;
                     case EXPENSES:
-                        selection += " AND " + Contract.Transaction.DIRECTION + " = ?";
+                        selection += " AND " + Contract.Transaction.DIRECTION + " = ? AND " + Contract.Transaction.NOT_TRANSFER;
                         selectionArgs = appendSelectionArgs(selectionArgs, String.valueOf(Contract.Direction.EXPENSE));
                         break;
                 }
@@ -159,11 +167,13 @@ public class OverviewDataLoader extends AbstractGenericLoader<OverviewData> {
             List<RadarEntry> radarEntryList = new ArrayList<>();
             // iterate period money items
             CurrencyUnit currencyUnit = CurrencyManager.getCurrency(currency);
-            double divider = Math.pow(10, currencyUnit.getDecimals());
             for (int i = 0; i < periodMoneyList.size(); i++) {
                 PeriodMoney periodMoney = periodMoneyList.get(i);
                 long money = periodMoney.getNetIncomes().getMoney(currency);
-                float value = (float) ((double) money / divider);
+                // getDecimals and not getDecimals() on the unit. A row can name a currency this
+                // installation does not have, which a restore from another one leaves behind, and
+                // getCurrency answers null for it
+                float value = MoneyScale.toHumanAmount(money, CurrencyManager.getDecimals(currencyUnit)).floatValue();
                 barEntryList.add(new BarEntry(i, value));
                 lineEntryList.add(new Entry(i, value));
                 radarEntryList.add(new RadarEntry(value));

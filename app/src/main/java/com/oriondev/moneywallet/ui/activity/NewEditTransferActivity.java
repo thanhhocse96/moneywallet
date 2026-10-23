@@ -42,6 +42,7 @@ import com.oriondev.moneywallet.R;
 import com.oriondev.moneywallet.model.Attachment;
 import com.oriondev.moneywallet.model.CurrencyUnit;
 import com.oriondev.moneywallet.model.Event;
+import com.oriondev.moneywallet.model.MoneyScale;
 import com.oriondev.moneywallet.model.Person;
 import com.oriondev.moneywallet.model.Place;
 import com.oriondev.moneywallet.model.Wallet;
@@ -55,6 +56,7 @@ import com.oriondev.moneywallet.picker.PlacePicker;
 import com.oriondev.moneywallet.picker.WalletPicker;
 import com.oriondev.moneywallet.storage.database.Contract;
 import com.oriondev.moneywallet.storage.database.DataContentProvider;
+import com.oriondev.moneywallet.storage.database.TransferContentValuesBuilder;
 import com.oriondev.moneywallet.storage.preference.PreferenceManager;
 import com.oriondev.moneywallet.ui.view.AttachmentView;
 import com.oriondev.moneywallet.ui.view.text.MaterialEditText;
@@ -63,6 +65,7 @@ import com.oriondev.moneywallet.ui.view.theme.ThemedDialog;
 import com.oriondev.moneywallet.utils.CurrencyManager;
 import com.oriondev.moneywallet.utils.DateFormatter;
 import com.oriondev.moneywallet.utils.DateUtils;
+import com.oriondev.moneywallet.utils.DefaultWallet;
 import com.oriondev.moneywallet.utils.IconLoader;
 import com.oriondev.moneywallet.utils.MoneyFormatter;
 
@@ -404,7 +407,9 @@ public class NewEditTransferActivity extends NewEditItemActivity  implements Cur
                                     DateUtils.getDateFromSQLDateString(cursor.getString(cursor.getColumnIndex(Contract.Transfer.EVENT_END_DATE)))
                             );
                         }
-                        conversionRate = (double) moneyTo / moneyFrom;
+                        conversionRate = MoneyScale.deriveRate(moneyFrom, moneyTo,
+                                CurrencyManager.getDecimals(walletFrom.getCurrency()),
+                                CurrencyManager.getDecimals(walletTo.getCurrency()));
                         mConfirmedCheckBox.setChecked(cursor.getInt(cursor.getColumnIndex(Contract.Transfer.CONFIRMED)) == 1);
                         mCountInTotalCheckBox.setChecked(cursor.getInt(cursor.getColumnIndex(Contract.Transfer.COUNT_IN_TOTAL)) == 1);
                     }
@@ -533,7 +538,9 @@ public class NewEditTransferActivity extends NewEditItemActivity  implements Cur
                                         DateUtils.getDateFromSQLDateString(cursor.getString(cursor.getColumnIndex(Contract.TransferModel.EVENT_END_DATE)))
                                 );
                             }
-                            conversionRate = (double) moneyTo / moneyFrom;
+                            conversionRate = MoneyScale.deriveRate(moneyFrom, moneyTo,
+                                    CurrencyManager.getDecimals(walletFrom.getCurrency()),
+                                    CurrencyManager.getDecimals(walletTo.getCurrency()));
                             mConfirmedCheckBox.setChecked(cursor.getInt(cursor.getColumnIndex(Contract.TransferModel.CONFIRMED)) == 1);
                             mCountInTotalCheckBox.setChecked(cursor.getInt(cursor.getColumnIndex(Contract.TransferModel.COUNT_IN_TOTAL)) == 1);
                         }
@@ -548,11 +555,13 @@ public class NewEditTransferActivity extends NewEditItemActivity  implements Cur
                             Contract.Wallet.START_MONEY,
                             Contract.Wallet.TOTAL_MONEY
                     };
-                    long currentWallet = PreferenceManager.getCurrentWallet();
+                    long currentWallet = DefaultWallet.resolveNewItemWallet(contentResolver);
                     Cursor cursor;
                     if (currentWallet == PreferenceManager.TOTAL_WALLET_ID) {
                         Uri uri = DataContentProvider.CONTENT_WALLETS;
-                        cursor = contentResolver.query(uri, projection, null, null, null);
+                        cursor = contentResolver.query(uri, projection,
+                                Contract.Wallet.ARCHIVED + " = 0", null,
+                                Contract.Wallet.INDEX + " ASC, " + Contract.Wallet.NAME + " ASC");
                     } else {
                         Uri uri = ContentUris.withAppendedId(DataContentProvider.CONTENT_WALLETS, currentWallet);
                         cursor = contentResolver.query(uri, projection, null, null, null);
@@ -609,12 +618,12 @@ public class NewEditTransferActivity extends NewEditItemActivity  implements Cur
 
     @Override
     public boolean onMenuItemClick(MenuItem item) {
-        switch (item.getItemId()) {
-            case R.id.action_attach_file:
-                mAttachmentPicker.showPicker();
-                return false;
-            default:
-                return super.onMenuItemClick(item);
+        int itemId = item.getItemId();
+        if (itemId == R.id.action_attach_file) {
+            mAttachmentPicker.showPicker();
+            return false;
+        } else {
+            return super.onMenuItemClick(item);
         }
     }
 
@@ -638,22 +647,23 @@ public class NewEditTransferActivity extends NewEditItemActivity  implements Cur
     @Override
     protected void onSaveChanges(Mode mode) {
         if (validate()) {
-            ContentValues contentValues = new ContentValues();
-            contentValues.put(Contract.Transfer.DESCRIPTION, mDescriptionEditText.getTextAsString());
-            contentValues.put(Contract.Transfer.DATE, DateUtils.getSQLDateTimeString(mDateTimePicker.getCurrentDateTime()));
-            contentValues.put(Contract.Transfer.TRANSACTION_FROM_WALLET_ID, mWalletFromPicker.getCurrentWallet().getId());
-            contentValues.put(Contract.Transfer.TRANSACTION_TO_WALLET_ID, mWalletToPicker.getCurrentWallet().getId());
-            contentValues.put(Contract.Transfer.TRANSACTION_TAX_WALLET_ID, mWalletFromPicker.getCurrentWallet().getId());
-            contentValues.put(Contract.Transfer.TRANSACTION_FROM_MONEY, mMoneyPicker.getCurrentMoney());
-            contentValues.put(Contract.Transfer.TRANSACTION_TO_MONEY, mConverterPicker.convert(mMoneyPicker.getCurrentMoney()));
-            contentValues.put(Contract.Transfer.TRANSACTION_TAX_MONEY, mTaxPicker.getCurrentMoney());
-            contentValues.put(Contract.Transfer.NOTE, mNoteEditText.getTextAsString());
-            contentValues.put(Contract.Transfer.PLACE_ID, mPlacePicker.isSelected() ? mPlacePicker.getCurrentPlace().getId() : null);
-            contentValues.put(Contract.Transfer.EVENT_ID, mEventPicker.isSelected() ? mEventPicker.getCurrentEvent().getId() : null);
-            contentValues.put(Contract.Transfer.CONFIRMED, mConfirmedCheckBox.isChecked());
-            contentValues.put(Contract.Transfer.COUNT_IN_TOTAL, mCountInTotalCheckBox.isChecked());
-            contentValues.put(Contract.Transfer.PEOPLE_IDS, Contract.getObjectIds(mPersonPicker.getCurrentPeople()));
-            contentValues.put(Contract.Transfer.ATTACHMENT_IDS, Contract.getObjectIds(mAttachmentPicker.getCurrentAttachments()));
+            ContentValues contentValues = new TransferContentValuesBuilder()
+                    .description(mDescriptionEditText.getTextAsString())
+                    .date(DateUtils.getSQLDateTimeString(mDateTimePicker.getCurrentDateTime()))
+                    .fromWalletId(mWalletFromPicker.getCurrentWallet().getId())
+                    .toWalletId(mWalletToPicker.getCurrentWallet().getId())
+                    .taxWalletId(mWalletFromPicker.getCurrentWallet().getId())
+                    .fromMoney(mMoneyPicker.getCurrentMoney())
+                    .toMoney(mConverterPicker.convert(mMoneyPicker.getCurrentMoney()))
+                    .taxMoney(mTaxPicker.getCurrentMoney())
+                    .note(mNoteEditText.getTextAsString())
+                    .placeId(mPlacePicker.isSelected() ? mPlacePicker.getCurrentPlace().getId() : null)
+                    .eventId(mEventPicker.isSelected() ? mEventPicker.getCurrentEvent().getId() : null)
+                    .confirmed(mConfirmedCheckBox.isChecked())
+                    .countInTotal(mCountInTotalCheckBox.isChecked())
+                    .peopleIds(Contract.getObjectIds(mPersonPicker.getCurrentPeople()))
+                    .attachmentIds(Contract.getObjectIds(mAttachmentPicker.getCurrentAttachments()))
+                    .build();
             ContentResolver contentResolver = getContentResolver();
             switch (mode) {
                 case NEW_ITEM:
@@ -666,7 +676,7 @@ public class NewEditTransferActivity extends NewEditItemActivity  implements Cur
             }
             mAttachmentPicker.cleanUp(false);
             setResult(RESULT_OK);
-            finish();
+            finishSaveDatedAt(mDateTimePicker.getCurrentDateTime());
         }
     }
 
@@ -690,20 +700,21 @@ public class NewEditTransferActivity extends NewEditItemActivity  implements Cur
         if (cursor != null) {
             Uri resultUri = null;
             if (cursor.moveToFirst()) {
-                ContentValues contentValues = new ContentValues();
-                contentValues.put(Contract.Transfer.DESCRIPTION, cursor.getString(cursor.getColumnIndex(Contract.TransferModel.DESCRIPTION)));
-                contentValues.put(Contract.Transfer.DATE, DateUtils.getSQLDateTimeString(new Date()));
-                contentValues.put(Contract.Transfer.TRANSACTION_FROM_WALLET_ID, cursor.getLong(cursor.getColumnIndex(Contract.TransferModel.WALLET_FROM_ID)));
-                contentValues.put(Contract.Transfer.TRANSACTION_TO_WALLET_ID, cursor.getLong(cursor.getColumnIndex(Contract.TransferModel.WALLET_TO_ID)));
-                contentValues.put(Contract.Transfer.TRANSACTION_TAX_WALLET_ID, cursor.getLong(cursor.getColumnIndex(Contract.TransferModel.WALLET_FROM_ID)));
-                contentValues.put(Contract.Transfer.TRANSACTION_FROM_MONEY, cursor.getLong(cursor.getColumnIndex(Contract.TransferModel.MONEY_FROM)));
-                contentValues.put(Contract.Transfer.TRANSACTION_TO_MONEY, cursor.getLong(cursor.getColumnIndex(Contract.TransferModel.MONEY_TO)));
-                contentValues.put(Contract.Transfer.TRANSACTION_TAX_MONEY, cursor.getLong(cursor.getColumnIndex(Contract.TransferModel.MONEY_TAX)));
-                contentValues.put(Contract.Transfer.NOTE, cursor.getString(cursor.getColumnIndex(Contract.TransferModel.NOTE)));
-                contentValues.put(Contract.Transfer.PLACE_ID, cursor.isNull(cursor.getColumnIndex(Contract.TransferModel.PLACE_ID)) ? null : cursor.getLong(cursor.getColumnIndex(Contract.TransferModel.PLACE_ID)));
-                contentValues.put(Contract.Transfer.EVENT_ID, cursor.isNull(cursor.getColumnIndex(Contract.TransferModel.EVENT_ID)) ? null : cursor.getLong(cursor.getColumnIndex(Contract.TransferModel.EVENT_ID)));
-                contentValues.put(Contract.Transfer.CONFIRMED, cursor.getInt(cursor.getColumnIndex(Contract.TransferModel.CONFIRMED)));
-                contentValues.put(Contract.Transfer.COUNT_IN_TOTAL, cursor.getInt(cursor.getColumnIndex(Contract.TransferModel.COUNT_IN_TOTAL)));
+                ContentValues contentValues = new TransferContentValuesBuilder()
+                        .description(cursor.getString(cursor.getColumnIndex(Contract.TransferModel.DESCRIPTION)))
+                        .date(DateUtils.getSQLDateTimeString(new Date()))
+                        .fromWalletId(cursor.getLong(cursor.getColumnIndex(Contract.TransferModel.WALLET_FROM_ID)))
+                        .toWalletId(cursor.getLong(cursor.getColumnIndex(Contract.TransferModel.WALLET_TO_ID)))
+                        .taxWalletId(cursor.getLong(cursor.getColumnIndex(Contract.TransferModel.WALLET_FROM_ID)))
+                        .fromMoney(cursor.getLong(cursor.getColumnIndex(Contract.TransferModel.MONEY_FROM)))
+                        .toMoney(cursor.getLong(cursor.getColumnIndex(Contract.TransferModel.MONEY_TO)))
+                        .taxMoney(cursor.getLong(cursor.getColumnIndex(Contract.TransferModel.MONEY_TAX)))
+                        .note(cursor.getString(cursor.getColumnIndex(Contract.TransferModel.NOTE)))
+                        .placeId(cursor.isNull(cursor.getColumnIndex(Contract.TransferModel.PLACE_ID)) ? null : cursor.getLong(cursor.getColumnIndex(Contract.TransferModel.PLACE_ID)))
+                        .eventId(cursor.isNull(cursor.getColumnIndex(Contract.TransferModel.EVENT_ID)) ? null : cursor.getLong(cursor.getColumnIndex(Contract.TransferModel.EVENT_ID)))
+                        .confirmed(cursor.getInt(cursor.getColumnIndex(Contract.TransferModel.CONFIRMED)))
+                        .countInTotal(cursor.getInt(cursor.getColumnIndex(Contract.TransferModel.COUNT_IN_TOTAL)))
+                        .build();
                 resultUri = contentResolver.insert(DataContentProvider.CONTENT_TRANSFERS, contentValues);
             }
             cursor.close();
@@ -717,7 +728,7 @@ public class NewEditTransferActivity extends NewEditItemActivity  implements Cur
         if (currencyUnit1 != null && currencyUnit2 != null && !currencyUnit1.equals(currencyUnit2)) {
             // we have two different currencies, its time to show the secondary currency line and do
             // a conversion on the fly with the provided conversion rate.
-            mExchangeRateTextView.setText(String.format(Locale.getDefault(), "%s ➡ %s: %.2f", currencyUnit1.getSymbol(), currencyUnit2.getSymbol(), conversionRate));
+            mExchangeRateTextView.setText(String.format(Locale.getDefault(), "%s -> %s: %.2f", currencyUnit1.getSymbol(), currencyUnit2.getSymbol(), conversionRate));
             long convertedAmount = mConverterPicker.convert(mMoneyPicker.getCurrentMoney());
             mMoneyFormatter.applyNotTinted(mSecondaryMoneyTextView, currencyUnit2, convertedAmount);
             mExchangeRateTextView.setVisibility(View.VISIBLE);
@@ -831,9 +842,9 @@ public class NewEditTransferActivity extends NewEditItemActivity  implements Cur
             startActivity(attachment.getActionViewIntent(this));
         } catch (ActivityNotFoundException e) {
             ThemedDialog.buildMaterialDialog(this)
-                    .title(R.string.title_error)
-                    .content(R.string.message_error_activity_not_found)
-                    .positiveText(android.R.string.ok)
+                    .setTitle(R.string.title_error)
+                    .setMessage(R.string.message_error_activity_not_found)
+                    .setPositiveButton(android.R.string.ok, null)
                     .show();
         }
     }

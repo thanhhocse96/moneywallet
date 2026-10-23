@@ -97,7 +97,7 @@ public class LegacyBackupImporter extends AbstractBackupImporter {
             if (header.isEncrypted()) {
                 header.setPassword(LEGACY_BACKUP_PASSWORD);
             }
-            notifyImportStarted();
+            beginStagedImport();
             // extract the database file inside the temporary folder
             zipFile.extractFile(header, temporaryFolder.getPath(), null, TEMPORARY_DATABASE_FILE);
             // import everything from the legacy database
@@ -113,10 +113,13 @@ public class LegacyBackupImporter extends AbstractBackupImporter {
             mDatabaseImporter.importDebtPeople(contentResolver);
             mDatabaseImporter.importBudgets(contentResolver);
             mDatabaseImporter.importBudgetWallets(contentResolver);
+            mDatabaseImporter.importBudgetCategories(contentResolver);
+            mDatabaseImporter.importCategoryRules(contentResolver);
             mDatabaseImporter.importSavings(contentResolver);
             mDatabaseImporter.importRecurrentTransactions(contentResolver);
             mDatabaseImporter.importRecurrentTransfers(contentResolver);
             mDatabaseImporter.importTransactions(contentResolver);
+            mDatabaseImporter.importTransactionSplits(contentResolver);
             mDatabaseImporter.importTransactionPeople(contentResolver);
             mDatabaseImporter.importTransactionModels(contentResolver);
             mDatabaseImporter.importTransfers(contentResolver);

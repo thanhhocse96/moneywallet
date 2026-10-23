@@ -26,6 +26,7 @@ import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
+import androidx.annotation.Nullable;
 import android.text.TextUtils;
 
 import com.oriondev.moneywallet.BuildConfig;
@@ -33,8 +34,12 @@ import com.oriondev.moneywallet.broadcast.DailyBroadcastReceiver;
 import com.oriondev.moneywallet.broadcast.LocalAction;
 import com.oriondev.moneywallet.model.Group;
 import com.oriondev.moneywallet.model.LockMode;
+import com.oriondev.moneywallet.ui.widget.WalletWidgetObserver;
 
 import java.util.Calendar;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * Created by andrea on 24/01/18.
@@ -44,8 +49,12 @@ public class PreferenceManager {
     private static final String FILE_NAME = "preferences";
 
     private static final String CURRENT_WALLET = "current_wallet_id";
+    private static final String DEFAULT_WALLET = "default_wallet";
+    private static final String ASKED_NOTIFICATION_PERMISSION = "asked_notification_permission";
     private static final String CURRENT_LOCK_MODE = "current_lock_mode";
     private static final String CURRENT_LOCK_CODE = "current_lock_code";
+    private static final String AUTOMATION_SAVE = "automation_save";
+    private static final String AUTOMATION_CODE = "automation_code";
     private static final String LAST_LOCK_TIMESTAMP = "last_lock_timestamp";
     private static final String COLOR_INCOME = "color_income";
     private static final String COLOR_EXPENSE = "color_expense";
@@ -53,6 +62,9 @@ public class PreferenceManager {
     private static final String GROUP_DIGITS = "group_digits";
     private static final String ROUND_DECIMALS = "round_decimals";
     private static final String SHOW_PLUS_MINUS_SYMBOL = "show_plus_minus_symbol";
+    private static final String DEBT_FINISHED_ONLY = "debt_finished_only";
+    private static final String AUTO_OPEN_CALCULATOR = "auto_open_calculator";
+    private static final String DOT_MATRIX_ICONS = "dot_matrix_icons";
     private static final String DATE_FORMAT = "date_format";
     private static final String FIRST_DAY_OF_WEEK = "first_day_of_week";
     private static final String FIRST_DAY_OF_MONTH = "first_day_of_month";
@@ -64,6 +76,12 @@ public class PreferenceManager {
     private static final String SERVICE_API_KEY = "user_api_key_";
     private static final String CONVERTER_LAST_CURRENCY_1 = "converter_currency_iso_1";
     private static final String CONVERTER_LAST_CURRENCY_2 = "converter_currency_iso_2";
+    private static final String CSV_IMPORT_MAPPING = "csv_import_mapping_";
+
+    private static final String MAP_TILE_SERVER = "map_tile_server";
+    private static final String COLLAPSED_CATEGORIES = "collapsed_categories";
+    private static final String COLLAPSED_PERIODS = "collapsed_periods";
+    private static final String HIDDEN_DRAWER_ENTRIES = "hidden_drawer_entries";
 
     private static final String LAST_DATA_CHANGE_TIME = "last_data_change_time";
 
@@ -93,49 +111,162 @@ public class PreferenceManager {
 
     public static final long NO_CURRENT_WALLET = -1L;
     public static final long TOTAL_WALLET_ID = 0L;
+    public static final long NO_DEFAULT_WALLET = -1L;
 
-    private static final int DEFAULT_COLOR_INCOME = Color.BLUE;
+    // Color.BLUE is 1.17:1 on a card, unreadable in both dark modes. These two are what a color
+    // that cannot be seen falls back to, and getVisibleColor returns a fallback unchecked, so
+    // each has to clear every surface an amount is drawn on by itself.
+    private static final int DEFAULT_COLOR_INCOME = 0xFF2196F3;
     private static final int DEFAULT_COLOR_EXPENSE = Color.RED;
 
     private static SharedPreferences mPreferences;
+    private static Context mApplicationContext;
 
     public static void initialize(Context context) {
+        mApplicationContext = context.getApplicationContext();
         mPreferences = context.getSharedPreferences(FILE_NAME, Context.MODE_PRIVATE);
     }
 
+    public static Context getApplicationContext() {
+        return mApplicationContext;
+    }
+
+    /**
+     * @return the address the user chose for tiles, either a base address or a full template,
+     *          or null to use the map library's own default. Not a promise that tiles come from
+     *          there: the map re checks it and falls back if it no longer passes.
+     */
+    public static String getMapTileServer() {
+        return mPreferences.getString(MAP_TILE_SERVER, null);
+    }
+
+    public static void setMapTileServer(String url) {
+        if (TextUtils.isEmpty(url)) {
+            mPreferences.edit().remove(MAP_TILE_SERVER).apply();
+        } else {
+            mPreferences.edit().putString(MAP_TILE_SERVER, url).apply();
+        }
+    }
+
+    /**
+     * @return the ids, as text, of the categories whose children the user has hidden in the
+     *          category list and the category picker. Nothing stored means nothing hidden,
+     *          which is how the list has always been drawn. Stored once rather than held per
+     *          list, so that two lists cannot write each other's hiding away. Each list still
+     *          has to re-read it to redraw, which CategoryListFragment does when it resumes.
+     */
+    public static Set<String> getCollapsedCategories() {
+        // A copy, because getStringSet is documented as returning a set the caller must not
+        // modify, and the callers here are building the next value out of this one.
+        return new HashSet<>(mPreferences.getStringSet(COLLAPSED_CATEGORIES, Collections.<String>emptySet()));
+    }
+
+    public static void setCollapsedCategories(Set<String> categoryIds) {
+        mPreferences.edit().putStringSet(COLLAPSED_CATEGORIES, categoryIds).apply();
+    }
+
+    /**
+     * @return the keys of the periods whose transactions the user has hidden on the transactions
+     *          list and on a filtered transactions list. A key is the group type number, a colon,
+     *          and the header's start date exactly as the list's header cursor reports it, so a
+     *          folded month and a folded day that begin on the same date are two different keys.
+     *          Nothing stored means nothing hidden, which is how the list has always been drawn.
+     *          Stored once, not held per list, so that two lists cannot write each other's hiding
+     *          away. Each list still has to read it again to redraw, which
+     *          TransactionListFragment does when it resumes.
+     */
+    public static Set<String> getCollapsedPeriods() {
+        // A copy, because getStringSet is documented as returning a set the caller must not
+        // modify, and the callers here are building the next value out of this one.
+        return new HashSet<>(mPreferences.getStringSet(COLLAPSED_PERIODS, Collections.<String>emptySet()));
+    }
+
+    public static void setCollapsedPeriods(Set<String> periodKeys) {
+        mPreferences.edit().putStringSet(COLLAPSED_PERIODS, periodKeys).apply();
+    }
+
+    /**
+     * @return the ids, as text, of the drawer entries the user has hidden. The hidden ones are
+     *          stored and not the shown ones, so an entry added in a later version shows.
+     */
+    public static Set<String> getHiddenDrawerEntries() {
+        return new HashSet<>(mPreferences.getStringSet(HIDDEN_DRAWER_ENTRIES, Collections.<String>emptySet()));
+    }
+
+    public static void setHiddenDrawerEntries(Set<String> entryIds) {
+        mPreferences.edit().putStringSet(HIDDEN_DRAWER_ENTRIES, entryIds).apply();
+    }
+
     public static void setCurrentWallet(Context context, long walletId) {
+        setCurrentWallet(context, walletId, null);
+    }
+
+    /**
+     * @param walletName the name of the wallet being selected, when the caller has it, so a
+     *                   toolbar can show it at once instead of waiting for its loader.
+     */
+    public static void setCurrentWallet(Context context, long walletId, @Nullable String walletName) {
         if (getCurrentWallet() != walletId) {
             mPreferences.edit().putLong(CURRENT_WALLET, walletId).apply();
-            notifyCurrentWalletIsChanged(context, walletId);
+            notifyCurrentWalletIsChanged(context, walletId, walletName);
         }
     }
 
     public static void setCurrentLockMode(LockMode lockMode) {
         mPreferences.edit().putInt(CURRENT_LOCK_MODE, lockMode.getValue()).apply();
+        // A wallet balance sitting on the home screen is hidden while the app is locked, and
+        // turning the lock on writes no transaction, so nothing else would tell the widgets to
+        // stop showing it. Here and not at the ten call sites in LockActivity, which is also
+        // what setCurrentDailyReminder below does with its alarm.
+        WalletWidgetObserver.requestUpdate();
     }
 
     public static void setCurrentLockCode(String code) {
         mPreferences.edit().putString(CURRENT_LOCK_CODE, code).apply();
     }
 
+    public static void setAutomationSaveEnabled(boolean enabled) {
+        mPreferences.edit().putBoolean(AUTOMATION_SAVE, enabled).apply();
+    }
+
+    public static void setAutomationCode(String code) {
+        mPreferences.edit().putString(AUTOMATION_CODE, code).apply();
+    }
+
     public static void setLastLockTime(long time) {
         mPreferences.edit().putLong(LAST_LOCK_TIMESTAMP, time).apply();
     }
 
+    // These four decide how MoneyFormatter writes an amount, so each of them changes the figure a
+    // wallet widget is showing without anything being written to the ledger. Same reason as the
+    // lock above, and the same answer.
+
     public static void setCurrencyEnabled(boolean enabled) {
         mPreferences.edit().putBoolean(SHOW_CURRENCY, enabled).apply();
+        WalletWidgetObserver.requestUpdate();
     }
 
     public static void setGroupDigitsEnabled(boolean enabled) {
         mPreferences.edit().putBoolean(GROUP_DIGITS, enabled).apply();
+        WalletWidgetObserver.requestUpdate();
     }
 
     public static void setRoundDecimalsEnabled(boolean enabled) {
         mPreferences.edit().putBoolean(ROUND_DECIMALS, enabled).apply();
+        WalletWidgetObserver.requestUpdate();
     }
 
     public static void setShowPlusMinusSymbolEnabled(boolean enabled) {
         mPreferences.edit().putBoolean(SHOW_PLUS_MINUS_SYMBOL, enabled).apply();
+        WalletWidgetObserver.requestUpdate();
+    }
+
+    public static void setAutoOpenCalculatorEnabled(boolean enabled) {
+        mPreferences.edit().putBoolean(AUTO_OPEN_CALCULATOR, enabled).apply();
+    }
+
+    public static void setDotMatrixIconsEnabled(boolean enabled) {
+        mPreferences.edit().putBoolean(DOT_MATRIX_ICONS, enabled).apply();
     }
 
     public static void setCurrentDateFormatIndex(int index) {
@@ -211,12 +342,28 @@ public class PreferenceManager {
         return mPreferences.getLong(CURRENT_WALLET, NO_CURRENT_WALLET);
     }
 
+    public static long getDefaultWallet() {
+        return mPreferences.getLong(DEFAULT_WALLET, NO_DEFAULT_WALLET);
+    }
+
+    public static void setDefaultWallet(long walletId) {
+        mPreferences.edit().putLong(DEFAULT_WALLET, walletId).apply();
+    }
+
     public static LockMode getCurrentLockMode() {
         return LockMode.get(mPreferences.getInt(CURRENT_LOCK_MODE, LOCK_MODE_NONE));
     }
 
     public static String getCurrentLockCode() {
         return mPreferences.getString(CURRENT_LOCK_CODE, null);
+    }
+
+    public static boolean isAutomationSaveEnabled() {
+        return mPreferences.getBoolean(AUTOMATION_SAVE, false);
+    }
+
+    public static String getAutomationCode() {
+        return mPreferences.getString(AUTOMATION_CODE, null);
     }
 
     public static long getLastLockTime() {
@@ -237,6 +384,26 @@ public class PreferenceManager {
 
     public static boolean isShowPlusMinusSymbolEnabled() {
         return mPreferences.getBoolean(SHOW_PLUS_MINUS_SYMBOL, false);
+    }
+
+    public static boolean isAutoOpenCalculatorEnabled() {
+        return mPreferences.getBoolean(AUTO_OPEN_CALCULATOR, false);
+    }
+
+    public static boolean isDotMatrixIconsEnabled() {
+        return mPreferences.getBoolean(DOT_MATRIX_ICONS, false);
+    }
+
+    /**
+     * Whether the debt lists are showing only the debts that are finished. Stored once rather
+     * than held per tab, so the two debt tabs cannot disagree about it.
+     */
+    public static boolean isDebtFinishedOnlyEnabled() {
+        return mPreferences.getBoolean(DEBT_FINISHED_ONLY, false);
+    }
+
+    public static void setDebtFinishedOnlyEnabled(boolean enabled) {
+        mPreferences.edit().putBoolean(DEBT_FINISHED_ONLY, enabled).apply();
     }
 
     public static int getCurrentDateFormatIndex() {
@@ -261,6 +428,14 @@ public class PreferenceManager {
         return Group.fromType(index);
     }
 
+    public static int getDefaultColorIncome() {
+        return DEFAULT_COLOR_INCOME;
+    }
+
+    public static int getDefaultColorExpense() {
+        return DEFAULT_COLOR_EXPENSE;
+    }
+
     public static int getCurrentIncomeColor() {
         return mPreferences.getInt(COLOR_INCOME, DEFAULT_COLOR_INCOME);
     }
@@ -271,6 +446,14 @@ public class PreferenceManager {
 
     public static int getCurrentDailyReminder() {
         return mPreferences.getInt(DAILY_REMINDER, DAILY_REMINDER_DISABLED);
+    }
+
+    public static boolean hasAskedNotificationPermission() {
+        return mPreferences.getBoolean(ASKED_NOTIFICATION_PERMISSION, false);
+    }
+
+    public static void setAskedNotificationPermission() {
+        mPreferences.edit().putBoolean(ASKED_NOTIFICATION_PERMISSION, true).apply();
     }
 
     public static int getCurrentExchangeRateService() {
@@ -302,6 +485,18 @@ public class PreferenceManager {
         return mPreferences.getString(SERVICE_API_KEY + String.valueOf(service), null);
     }
 
+    /**
+     * @return the column settings last used to import a file whose header has this signature, as
+     *          CsvImportMapping encoded them, or null when no file with that header was imported.
+     */
+    public static String getCsvImportMapping(String headerSignature) {
+        return mPreferences.getString(CSV_IMPORT_MAPPING + headerSignature, null);
+    }
+
+    public static void setCsvImportMapping(String headerSignature, String encodedMapping) {
+        mPreferences.edit().putString(CSV_IMPORT_MAPPING + headerSignature, encodedMapping).apply();
+    }
+
     public static String getCurrencyConverterLastCurrency1() {
         return mPreferences.getString(CONVERTER_LAST_CURRENCY_1, null);
     }
@@ -314,10 +509,13 @@ public class PreferenceManager {
         return mPreferences.getLong(LAST_DATA_CHANGE_TIME, 0L);
     }
 
-    private static void notifyCurrentWalletIsChanged(Context context, long walletId) {
+    private static void notifyCurrentWalletIsChanged(Context context, long walletId, @Nullable String walletName) {
         LocalBroadcastManager localBroadcastManager = LocalBroadcastManager.getInstance(context);
         Intent intent = new Intent(LocalAction.ACTION_CURRENT_WALLET_CHANGED);
         intent.putExtra(LocalAction.ARGUMENT_WALLET_ID, walletId);
+        if (walletName != null) {
+            intent.putExtra(LocalAction.ARGUMENT_WALLET_NAME, walletName);
+        }
         localBroadcastManager.sendBroadcast(intent);
     }
 
@@ -330,7 +528,8 @@ public class PreferenceManager {
             public void onReceive(Context context, Intent intent) {
                 if (intent != null && TextUtils.equals(intent.getAction(), LocalAction.ACTION_CURRENT_WALLET_CHANGED)) {
                     long currentWalletId = intent.getLongExtra(LocalAction.ARGUMENT_WALLET_ID, -1L);
-                    controller.onCurrentWalletChanged(currentWalletId);
+                    String currentWalletName = intent.getStringExtra(LocalAction.ARGUMENT_WALLET_NAME);
+                    controller.onCurrentWalletChanged(currentWalletId, currentWalletName);
                 }
             }
 

@@ -20,6 +20,216 @@
 
 <changelog>
 
+    <version versionName="1.14.0" versionDate="Oct 21, 2026">
+        <change>[b]New![/b] Split one transaction across several categories. Split into categories in the transaction editor gives each part its own category, amount and note.</change>
+        <change>[b]New![/b] The app moves to Material 3. Under Settings, User interface, Appearance, Use system colors takes the colors from the wallpaper on phones that offer it.</change>
+        <change>[b]New![/b] Deep dark is true black, the header and keypads included, and its dialogs and menus get an outline.</change>
+        <change>[b]New![/b] Unconfirmed transactions show a clock mark in the list.</change>
+        <change>[b]New![/b] Russian and Spanish translations, taken from contributions to the original MoneyWallet.</change>
+        <change>The wallet, category and automatic category sort screens can be reordered with a screen reader or Switch Access, through Move up, Move down, Move to top and Move to bottom.</change>
+        <change>A phone held sideways uses the full width of the screen instead of a card in the middle.</change>
+        <change>With a screen reader or Switch Access on, opening People crashed the app.</change>
+        <change>A budget's transaction list now shows the transactions of every wallet the budget covers.</change>
+        <change>A budget's Used amount no longer counts unconfirmed transactions.</change>
+        <change>A transaction saved from a model's edit screen offered neither Duplicate nor Split. Ones saved before this release are fixed by the upgrade.</change>
+        <change>Saving any edit to an archived savings goal moved it out of the archive.</change>
+        <change>Changing a wallet's currency is refused while a savings goal and some of its deposits sit in two different wallets and it is one of them.</change>
+        <change>Deleting a recurring transaction asked about deleting a model. It now says the transactions it already added stay.</change>
+        <change>Some error messages could not be shown in Turkish.</change>
+        <change>About could come back blank after a split screen resize or a fold.</change>
+        <change>Before the first exchange rate download, the last update read 1 January 1970. It now reads Not updated yet.</change>
+        <change>Several screen reader labels named the wrong thing, such as Debt icon on a budget card.</change>
+        <change>At large font sizes, dates in the editors were cut short. They now wrap.</change>
+        <change>On a sort screen, leaving the app after dragging a row and then tapping Save kept the old order.</change>
+    </version>
+
+    <version versionName="1.13.0" versionDate="Oct 7, 2026">
+        <change>[b]New![/b] Search has a row of filter chips for text, category, people, status, wallet, amount and date, and the results can be sorted. Category, date and amount are no longer matched as typed text, use their chips.</change>
+        <change>[b]New![/b] Choose a default wallet for new items, under Settings, User interface, Default wallet.</change>
+        <change>A new item started from the Total view no longer opens on an archived wallet.</change>
+        <change>A debt or credit repayment can be saved to any wallet in the debt's currency. Changing a wallet's currency is refused while a repayment and its debt sit in two different wallets and it is one of them.</change>
+        <change>The theme settings now sit at the top of Appearance.</change>
+        <change>Automatic backup set to WiFi only could skip a backup while the phone was on WiFi.</change>
+        <change>New installs start with the classic icons. An existing install keeps its setting.</change>
+    </version>
+
+    <version versionName="1.12.0" versionDate="Sep 27, 2026">
+        <change>After a different Local folder was connected, automatic backup kept the old folder and every scheduled backup failed. The old folder now shows as not available until a new one is picked.</change>
+        <change>[b]New![/b] A notification when a recurring transaction or transfer comes due and is added. On Android 13 and later, adding one may ask for the notification permission.</change>
+        <change>[b]New![/b] Choose which entries the drawer shows, under Settings, User interface, Drawer entries.</change>
+        <change>ATM and bank search are removed from the drawer. They only passed the typed text to a maps app, which can search on its own.</change>
+        <change>Other apps can no longer reach Tallybook's data.</change>
+    </version>
+
+    <version versionName="1.11.0" versionDate="Sep 24, 2026">
+        <change>If a Local folder backup lost access to its folder, for example after the app holding it was removed, tapping OK to disconnect froze Tallybook and the prompt came back on every visit. Disconnecting now works.</change>
+        <change>[b]New![/b] Local folder offers Change folder in place of Disconnect. Automatic backup moves to the new folder with it.</change>
+        <change>[b]New![/b] Wallets can go in named groups. Set a group in the wallet editor, and the drawer lists each group under a heading with its subtotal.</change>
+        <change>[b]New![/b] A dot matrix icon style, under Settings, User interface.</change>
+        <change>[b]New![/b] Search the icon picker from the toolbar.</change>
+        <change>[b]New![/b] Transaction search finds an amount typed as 6.47, 6,47 or with a currency symbol.</change>
+        <change>[b]New![/b] A setting under Settings, User interface opens the calculator first on a new transaction.</change>
+        <change>Tapping the icon in an editor opens the icon list directly. Changing the color or removing the icon moved to its menu.</change>
+        <change>Backups are listed newest first.</change>
+        <change>A figure holding several currencies shows one currency per line on the month header, the period summary and Overview, where it used to be cut off.</change>
+        <change>The transactions list header shows a chart icon for the period report in place of a chevron.</change>
+        <change>A space after the search text, which keyboards add after a suggested word, no longer empties the category and currency searches or the transaction search.</change>
+    </version>
+
+    <version versionName="1.10.0" versionDate="Sep 21, 2026">
+        <change>[b]New![/b] A category can be filled in from the description. Settings, Utility, Automatic categories pairs the text to look for with the category to use.</change>
+        <change>[b]New![/b] Import a CSV file another app wrote by mapping its columns, so a bank statement or an export from another finance app can come in.</change>
+        <change>[b]New![/b] Automatic backup can save a CSV of your transactions beside each backup. It is off by default, and the CSV is not password protected.</change>
+        <change>[b]New![/b] Search the currency list and the category picker from the toolbar. A currency is found by its code as well as by its name.</change>
+        <change>[b]New![/b] Tap the star on a currency to pin it to the top of the list.</change>
+        <change>Transfers are no longer counted as income or expense on the transactions list header and the period summary. They have their own figure on both rows, shown when the period holds one.</change>
+        <change>The period summary's header and the row under it no longer disagree about the sign of the same total.</change>
+        <change>Importing the same CSV file twice no longer saves every row a second time.</change>
+        <change>A mapped CSV import reads a negative written in parentheses, a trailing minus, a currency symbol, and a two digit year.</change>
+        <change>Restoring a legacy backup, or upgrading from the legacy edition, keeps the cents on currencies without 2 decimals, where it used to cut them away.</change>
+        <change>The drawer no longer prints a wallet balance on the rows of its section list.</change>
+        <change>On screens 600dp and wider the panel card no longer sits under a tall toolbar.</change>
+        <change>A folder listing that fails while a backup destination is set up now says so, where the spinner used to run forever.</change>
+        <change>In a right to left layout the transfer arrows point at the destination instead of back at the source, and the first day of month setting and the recurrence counts show the digits of the app's language.</change>
+        <change>Switching wallets from the drawer no longer makes the app bar shrink and grow back.</change>
+        <change>Importing data no longer crashes when an older import screen is open underneath.</change>
+        <change>The Overview bar and line charts no longer label periods that do not exist.</change>
+        <change>The Overview radar page numbers its spokes from 1, like the bar and line pages.</change>
+    </version>
+    <version versionName="1.9.0" versionDate="Sep 15, 2026">
+        <change>[b]New![/b] Long press a transaction to select it, tap others to add them, then delete them together or move them to another wallet or category.</change>
+        <change>[b]New![/b] A debt card offers Pay in full and a credit card Receive in full, opening the editor on what is left, and every debt payment opens with the debt's description filled in.</change>
+        <change>[b]New![/b] The month row above the calendar day strip follows the strip as you scroll it, and tapping the marked month sends the strip to the first of that month.</change>
+        <change>[b]New![/b] A theme color shows on the screen while it is being picked, before OK.</change>
+        <change>The app draws behind the status and navigation bars on every Android version, and scrolling content stays reachable under them.</change>
+        <change>The calendar strip, the chart axes and the pie chart percentages write their numbers in the digits of the app's language.</change>
+        <change>The wallet name under the title on the calendar and on a category's transaction list is no longer cut off.</change>
+        <change>Deleting the open item on the wide two panel layout and then rotating no longer shows an empty panel full screen.</change>
+        <change>Nine currencies that stored no decimals now store two: AMD, CRC, ETB, GYD, MNT, MUR, RSD, TZS and UZS. Amounts already stored keep their value.</change>
+        <change>A settings row no longer loses its title after its color or the theme type changes in a dark theme.</change>
+        <change>A subcategory under a category kept out of the reports now says so, since none of its money reaches a report.</change>
+        <change>The Overview and the period screens update after a transaction is edited or deleted from inside them.</change>
+        <change>A budget no longer hides a transfer into a wallet that was removed from it.</change>
+    </version>
+    <version versionName="1.8.0" versionDate="Sep 9, 2026">
+        <change>[b]New![/b] Tap into the amount on the keypad to put a cursor there, then type or delete at that spot.</change>
+        <change>[b]New![/b] A period's transactions fold under their header on the transactions list, so a long list reads as a column of period totals.</change>
+        <change>External Memory can be set up as a backup destination on Android 13 and newer, where it never connected before.</change>
+        <change>Setting up a backup destination no longer closes the app.</change>
+        <change>Deleting a wallet, a transaction or a transfer no longer freezes the screen while it runs.</change>
+        <change>A restore that fails leaves your ledger exactly as it was, and an import that fails part way leaves nothing of it behind.</change>
+        <change>A row the app refuses during an import now stops the import and says so, where it used to be skipped in silence.</change>
+        <change>A budget save the app refused no longer closes the editor as if it had saved, an edited past period keeps its start day, and a budget takes its currency from its wallets.</change>
+        <change>A wallet in a currency this installation does not know stores a typed 12.50 as 12.50, where it stored 12.</change>
+        <change>The currency converter keeps updating while rates download.</change>
+        <change>A backup restored from another installation no longer leaves the app with no currency to offer.</change>
+        <change>Saving a budget, opening a wallet or the Overview no longer crashes on a currency the app cannot resolve.</change>
+        <change>An import can no longer lock up against a currency reload.</change>
+    </version>
+    <version versionName="1.7.0" versionDate="Aug 30, 2026">
+        <change>[b]New![/b] A home screen widget that shows one wallet's balance.</change>
+        <change>[b]New![/b] A budget can cover more than one category.</change>
+        <change>[b]New![/b] A category's total in the Overview opens into the subcategories it is made of.</change>
+        <change>[b]New![/b] 73 more category icons, filling the six picker groups that had none.</change>
+        <change>Back from a section you opened in the drawer returns to Transactions instead of closing the app.</change>
+        <change>The status bar follows the theme color on Android 15 and later, where it used to stay the window background.</change>
+        <change>A withdrawal dated before the deposit that funds it no longer takes a savings goal below zero.</change>
+        <change>A debt payment can no longer be filed against a wallet in another currency.</change>
+        <change>A savings goal or a debt stays in the currency its money is in.</change>
+        <change>A debt keeps the time of day on its own transaction.</change>
+        <change>The Overview and the screen it opens agree when a category is hidden from the reports.</change>
+    </version>
+    <version versionName="1.6.0" versionDate="Aug 26, 2026">
+        <change>[b]New![/b] A budget can repeat, opening its next period on its own when the one before it ends.</change>
+        <change>[b]New![/b] A transactions list says what came in and what went out over the period it is showing.</change>
+        <change>[b]New![/b] The calendar day strip marks the days that have transactions.</change>
+        <change>Opening a search result shows the transaction, where before it opened the editor.</change>
+        <change>The calendar keeps the day you picked, and shows which day that is when it is not today.</change>
+        <change>The calendar no longer lands on 1 January of the year before the one you asked for.</change>
+        <change>A detail panel survives a rotation on a screen wide enough to change how many panels fit.</change>
+        <change>Editing a debt's master transaction moves the debt with it.</change>
+        <change>A saving's deposit or withdraw no longer lets you move it to another wallet.</change>
+        <change>A saving refuses a withdraw larger than what the goal will hold, not just larger than what it holds today.</change>
+        <change>Restoring a backup opens the app on your ledger instead of the welcome screen.</change>
+        <change>Text is mirrored in a right to left layout in the places it was still left aligned.</change>
+        <change>Corrected the French wording shown after an import and in the two backup success messages.</change>
+    </version>
+
+    <version versionName="1.5.0" versionDate="Aug 22, 2026">
+        <change>[b]New![/b] Start a transaction from a person's screen with that person already attached.</change>
+        <change>Android's own backup stored nothing, so a restore brought back an empty app. It now carries the ledger.</change>
+        <change>Automatic backup says when a failure is what turned it off.</change>
+        <change>An income or expense color that would vanish into the page is drawn readable instead.</change>
+        <change>A debt's master transaction takes the debt's date, not the day it was typed.</change>
+        <change>A saving refuses a withdraw larger than it holds.</change>
+        <change>The child category arrow points at the child in a right to left layout.</change>
+        <change>CSV import reads a file that starts with a byte order mark.</change>
+    </version>
+
+    <version versionName="1.4.0" versionDate="Aug 15, 2026">
+        <change>[b]New![/b] Open a transaction and duplicate it.</change>
+        <change>[b]New![/b] Hide a category's child categories behind an arrow on its row.</change>
+        <change>The calculator divides correctly. 10 divided by 4 is 2.50.</change>
+        <change>The calculator will not hand back a negative amount, except for a wallet's Initial amount.</change>
+        <change>A Deposit or Withdraw on a saving opens with the wallet already filled in.</change>
+        <change>Save a transaction or transfer dated in the future and the app says the balance does not count it yet.</change>
+        <change>A list that looks empty now says when its rows are in other wallets or dated in the future.</change>
+        <change>A CSV import reads the whole file before writing any of it, so a bad row no longer leaves a half done import.</change>
+        <change>A CSV date with no time of day is accepted.</change>
+        <change>Transfers are left out of a CSV export, because a CSV cannot record them in a way the app can read back.</change>
+        <change>Deleting a transaction, a transfer or a wallet deletes the attachments that belonged to it, so they stop being carried in every backup.</change>
+        <change>A Local folder backup is written to the folder you picked, and a failed backup or restore no longer erases the folder and password you set.</change>
+    </version>
+
+    <version versionName="1.3.0" versionDate="Aug 10, 2026">
+        <change>[b]New![/b] Point the map at a tile server of your choosing.</change>
+        <change>[b]New![/b] Edit a recurrence after saving it.</change>
+        <change>[b]New![/b] Filter the debt lists down to the finished ones.</change>
+        <change>[b]New![/b] Tap a person to open their transactions.</change>
+        <change>A screen showing only one wallet names that wallet under its title.</change>
+        <change>Deleting the wallet you had selected no longer leaves every list empty. The app falls back to the total.</change>
+        <change>Automatic backup runs again, and no longer takes the app down at startup.</change>
+        <change>Automatic backup no longer keeps a notification on screen while it runs.</change>
+        <change>Calendar day and month labels no longer collapse to the same letters in several languages.</change>
+        <change>System category names follow the app language.</change>
+        <change>A transfer between currencies with different decimal counts keeps the rate you set.</change>
+    </version>
+
+    <version versionName="1.2.0" versionDate="Aug 07, 2026">
+        <change>[b]New![/b] Set the app language separately from the device, through Android's per app language setting.</change>
+        <change>In the dark themes the overview chart and the debt cards no longer show up white.</change>
+        <change>Percentages on the pie chart are centered and rounded correctly.</change>
+        <change>The Categories screen opens on Expenses.</change>
+        <change>The app no longer crashes on some language choices.</change>
+        <change>Debts paid off in full group with the finished ones and no longer inflate the amount still to pay.</change>
+        <change>Wallet notes are kept in backups.</change>
+        <change>Times follow the device 12 or 24 hour setting.</change>
+        <change>Recurring transfers open the right record.</change>
+    </version>
+
+    <version versionName="1.1.0" versionDate="Aug 01, 2026">
+        <change>[b]New![/b] Back up to your own WebDAV server, such as Nextcloud, ownCloud or a NAS, with no third party account and nothing sent to anyone else.</change>
+    </version>
+
+    <version versionName="1.0.2" versionDate="Jul 01, 2026">
+        <change>Build-system update for F-Droid binary transparency checks. No user-facing feature changes.</change>
+    </version>
+
+    <version versionName="1.0.1" versionDate="Jul 01, 2026">
+        <change>Build-system update to support F-Droid reproducible builds. No user-facing feature changes.</change>
+    </version>
+
+    <version versionName="1.0.0" versionDate="Jul 01, 2026">
+        <change>[b]New![/b] First Tallybook release, a maintained fork of MoneyWallet.</change>
+        <change>Tallybook is a separate app with its own application id and installs side by side with MoneyWallet.</change>
+        <change>Move your data across manually with backup and restore. See MIGRATION.md in the project for the verified steps.</change>
+        <change>Android 14 and 15 compatibility, including a fix for the startup crash on recent Android.</change>
+        <change>Import and export fixed under scoped storage.</change>
+        <change>Local folder backup option that works with file sync tools such as Syncthing.</change>
+        <change>Android 15 edge-to-edge UI polish so toolbars and controls are not covered by the system bars.</change>
+        <change>Original Tallybook launcher and welcome artwork.</change>
+    </version>
+
     <version versionName="4.0.5" versionDate="Jan 25, 2019">
         <change>[b]New![/b] You can now sort the wallets.</change>
         <change>[b]New![/b] You can now sort the categories.</change>

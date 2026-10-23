@@ -26,6 +26,7 @@ import android.widget.TextView;
 
 import com.oriondev.moneywallet.model.CurrencyUnit;
 import com.oriondev.moneywallet.model.Money;
+import com.oriondev.moneywallet.model.MoneyScale;
 import com.oriondev.moneywallet.storage.preference.PreferenceManager;
 import com.oriondev.moneywallet.ui.view.theme.ThemeEngine;
 
@@ -49,13 +50,11 @@ public class MoneyFormatter {
     private final static String EMPTY_TEXT = " --- ";
     private final static String DIVIDER_TEXT = " - ";
 
-    private int mColorIn;
-    private int mColorOut;
-    private int mColorNeutral;
     private boolean mCurrencyEnabled;
     private boolean mGroupDigitEnabled;
     private boolean mRoundDecimalsEnabled;
     private boolean mShowSymbolEnabled;
+    private String mDivider = DIVIDER_TEXT;
     private NumberFormat mFormatter;
 
     public enum CurrencyMode {
@@ -86,20 +85,26 @@ public class MoneyFormatter {
     }
 
     public static long normalize(long money, int decimalOffset) {
-        double exponential = Math.pow(10d, decimalOffset);
-        return (long) (money * exponential);
+        return MoneyScale.rescale(money, decimalOffset);
     }
 
     private MoneyFormatter() {
-        mColorIn = PreferenceManager.getCurrentIncomeColor();
-        mColorOut = PreferenceManager.getCurrentExpenseColor();
-        mColorNeutral = ThemeEngine.getTheme().getTextColorPrimary();
         mCurrencyEnabled = PreferenceManager.isCurrencyEnabled();
         mGroupDigitEnabled = PreferenceManager.isGroupDigitEnabled();
         mRoundDecimalsEnabled = PreferenceManager.isRoundDecimalsEnabled();
         mShowSymbolEnabled = PreferenceManager.isShowPlusMinusSymbolEnabled();
         mFormatter = DecimalFormat.getInstance();
         mFormatter.setMinimumIntegerDigits(DEFAULT_MIN_INTEGER_DIGITS);
+    }
+
+    private int colorIn() {
+        return ThemeEngine.getTheme().getVisibleColor(PreferenceManager.getCurrentIncomeColor(),
+                PreferenceManager.getDefaultColorIncome());
+    }
+
+    private int colorOut() {
+        return ThemeEngine.getTheme().getVisibleColor(PreferenceManager.getCurrentExpenseColor(),
+                PreferenceManager.getDefaultColorExpense());
     }
 
     public void setCurrencyEnabled(boolean enabled) {
@@ -116,6 +121,13 @@ public class MoneyFormatter {
 
     public void setShowSymbolEnabled(boolean enabled) {
         mShowSymbolEnabled = enabled;
+    }
+
+    /**
+     * What goes between the currencies of an amount that holds more than one.
+     */
+    public void setDivider(String divider) {
+        mDivider = divider;
     }
 
     public boolean isCurrencyEnabled() {
@@ -143,7 +155,7 @@ public class MoneyFormatter {
             CurrencyMode currencyMode = money.getNumberOfCurrencies() > 1 ? CurrencyMode.ALWAYS_SHOWN : CurrencyMode.USER_PREFERENCE;
             for (Map.Entry<String, Long> entry : money.getCurrencyMoneys().entrySet()) {
                 if (builder.length() > 0) {
-                    builder.append(DIVIDER_TEXT);
+                    builder.append(mDivider);
                 }
                 CurrencyUnit currencyUnit = CurrencyManager.getCurrency(entry.getKey());
                 long currencyMoney = entry.getValue();
@@ -201,14 +213,14 @@ public class MoneyFormatter {
         int numberOfCurrencies = money.getNumberOfCurrencies();
         if (numberOfCurrencies == 0) {
             SpannableString emptyString = new SpannableString(EMPTY_TEXT);
-            emptyString.setSpan(new ForegroundColorSpan(mColorNeutral), 0, emptyString.length(), 0);
+            emptyString.setSpan(new ForegroundColorSpan(ThemeEngine.getTheme().getTextColorPrimary()), 0, emptyString.length(), 0);
             builder.append(emptyString);
         } else {
             CurrencyMode currencyMode = money.getNumberOfCurrencies() > 1 ? CurrencyMode.ALWAYS_SHOWN : CurrencyMode.USER_PREFERENCE;
             for (Map.Entry<String, Long> entry : money.getCurrencyMoneys().entrySet()) {
                 if (builder.length() > 0) {
-                    SpannableString divider = new SpannableString(DIVIDER_TEXT);
-                    divider.setSpan(new ForegroundColorSpan(mColorNeutral), 0, divider.length(), 0);
+                    SpannableString divider = new SpannableString(mDivider);
+                    divider.setSpan(new ForegroundColorSpan(ThemeEngine.getTheme().getTextColorPrimary()), 0, divider.length(), 0);
                     builder.append(divider);
                 }
                 CurrencyUnit currencyUnit = CurrencyManager.getCurrency(entry.getKey());
@@ -232,11 +244,11 @@ public class MoneyFormatter {
         String notTinted = getNotTintedString(currencyUnit, money, currencyMode, flowMode);
         SpannableString spannableString = new SpannableString(notTinted);
         if (tintMode == TintMode.AUTO_DETECT) {
-            spannableString.setSpan(new ForegroundColorSpan(money < 0L ? mColorOut : mColorIn), 0, notTinted.length(), 0);
+            spannableString.setSpan(new ForegroundColorSpan(money < 0L ? colorOut() : colorIn()), 0, notTinted.length(), 0);
         } else if (tintMode == TintMode.INCOME) {
-            spannableString.setSpan(new ForegroundColorSpan(mColorIn), 0, notTinted.length(), 0);
+            spannableString.setSpan(new ForegroundColorSpan(colorIn()), 0, notTinted.length(), 0);
         } else if (tintMode == TintMode.EXPENSE) {
-            spannableString.setSpan(new ForegroundColorSpan(mColorOut), 0, notTinted.length(), 0);
+            spannableString.setSpan(new ForegroundColorSpan(colorOut()), 0, notTinted.length(), 0);
         }
         return spannableString;
     }

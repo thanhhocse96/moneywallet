@@ -19,7 +19,12 @@
 
 package com.oriondev.moneywallet.ui.fragment.base;
 
+import android.content.ContentResolver;
+import android.content.Context;
+import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import androidx.annotation.MenuRes;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -32,7 +37,13 @@ import android.view.View;
 import android.view.ViewGroup;
 
 import com.oriondev.moneywallet.R;
+import com.oriondev.moneywallet.ui.activity.base.ThemedActivity;
+import com.oriondev.moneywallet.storage.database.SQLiteDataException;
 import com.oriondev.moneywallet.utils.Utils;
+
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
+import java.util.function.Consumer;
 
 /**
  * Created by andrea on 01/04/18.
@@ -41,11 +52,17 @@ public abstract class SecondaryPanelFragment extends Fragment implements Toolbar
 
     private static final String SS_ITEM_ID = "SecondaryPanelFragment::SavedState::ItemId";
 
+    private static final Executor sDeleteExecutor = Executors.newSingleThreadExecutor(
+            r -> new Thread(r, "SecondaryPanelDelete"));
+    private static final Handler sMainHandler = new Handler(Looper.getMainLooper());
+
     private ViewGroup mEmptyLayout;
     private ViewGroup mMainLayout;
     private Toolbar mToolbar;
 
     private long mCurrentId;
+
+    private boolean mDeleting = false;
 
     private boolean mIsCreated = false;
     private long mCachedId = 0;
@@ -63,9 +80,14 @@ public abstract class SecondaryPanelFragment extends Fragment implements Toolbar
         ViewGroup bodyLayout = view.findViewById(R.id.body_secondary_panel_layout);
         onCreateHeaderView(inflater, headerLayout, savedInstanceState);
         onCreateBodyView(inflater, bodyLayout, savedInstanceState);
+        if (getActivity() instanceof ThemedActivity) {
+            ((ThemedActivity) getActivity()).followScrollForStatusBarIcons(
+                    view.findViewById(R.id.main_screen_secondary_panel_scroll_view), headerLayout);
+        }
         if (mToolbar != null) {
             if (getParentFragment() instanceof MultiPanelController && !((MultiPanelController) getParentFragment()).isExtendedLayout()) {
                 mToolbar.setNavigationIcon(R.drawable.ic_arrow_back_black_24dp);
+                mToolbar.setNavigationContentDescription(R.string.hint_navigate_up);
                 mToolbar.setNavigationOnClickListener(new View.OnClickListener() {
 
                     @Override
@@ -79,7 +101,7 @@ public abstract class SecondaryPanelFragment extends Fragment implements Toolbar
             int menuRes = onInflateMenu();
             if (menuRes > 0) {
                 mToolbar.inflateMenu(menuRes);
-                mToolbar.setOnMenuItemClickListener(this);
+                mToolbar.setOnMenuItemClickListener(item -> mDeleting || onMenuItemClick(item));
             }
         }
         mIsCreated = true;
@@ -110,9 +132,57 @@ public abstract class SecondaryPanelFragment extends Fragment implements Toolbar
         outState.putLong(SS_ITEM_ID, mCurrentId);
     }
 
+    /**
+     * Deletes a row through the content provider on one worker thread that every panel shares.
+     * The toolbar menu ignores taps until the delete comes back, whichever item the panel shows
+     * in the meantime, so the row cannot be edited, archived or deleted again and no second
+     * delete can be queued from the panel. The result is dropped when the fragment has no view
+     * left. A delete that went through is dropped when the panel has since been pointed at
+     * another item, since the same fragment is reused for every item the list selects, and a
+     * refused delete is reported whichever item the panel shows. With no error callback the
+     * failure is rethrown on the main thread.
+     */
+    protected void deleteItemInBackground(Uri uri, @Nullable Consumer<SQLiteDataException> onError) {
+        Context context = getContext();
+        if (context == null) {
+            return;
+        }
+        ContentResolver resolver = context.getApplicationContext().getContentResolver();
+        long itemId = getItemId();
+        mDeleting = true;
+        sDeleteExecutor.execute(() -> {
+            SQLiteDataException failure = null;
+            try {
+                resolver.delete(uri, null, null);
+            } catch (SQLiteDataException e) {
+                failure = e;
+            }
+            SQLiteDataException error = failure;
+            sMainHandler.post(() -> {
+                if (getView() == null) {
+                    return;
+                }
+                mDeleting = false;
+                if (error != null) {
+                    if (onError != null) {
+                        onError.accept(error);
+                    } else {
+                        throw error;
+                    }
+                    return;
+                }
+                if (getItemId() != itemId) {
+                    return;
+                }
+                navigateBackSafely();
+                showItemId(0L);
+            });
+        });
+    }
+
     protected void navigateBackSafely() {
         if (getParentFragment() instanceof MultiPanelController) {
-            ((MultiPanelController) getParentFragment()).navigateBack();
+            ((MultiPanelController) getParentFragment()).closeSecondaryPanel();
         }
     }
 
@@ -126,6 +196,8 @@ public abstract class SecondaryPanelFragment extends Fragment implements Toolbar
             } else {
                 mEmptyLayout.setVisibility(View.VISIBLE);
                 mMainLayout.setVisibility(View.GONE);
+                // a panel with nothing to show must not stay full screen on the one panel layout
+                navigateBackSafely();
             }
         } else {
             mCachedId = itemId;

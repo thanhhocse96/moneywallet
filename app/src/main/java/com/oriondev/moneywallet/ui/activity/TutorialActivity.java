@@ -26,8 +26,11 @@ import android.content.Intent;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
+import android.view.View;
 import androidx.annotation.DrawableRes;
 import androidx.annotation.StringRes;
+import androidx.core.view.ViewGroupCompat;
+import androidx.core.view.WindowCompat;
 import androidx.fragment.app.Fragment;
 
 import com.github.paolorotolo.appintro.AppIntro2;
@@ -37,9 +40,10 @@ import com.oriondev.moneywallet.R;
 import com.oriondev.moneywallet.model.Category;
 import com.oriondev.moneywallet.model.ColorIcon;
 import com.oriondev.moneywallet.model.Icon;
-import com.oriondev.moneywallet.picker.IconPicker;
 import com.oriondev.moneywallet.storage.database.Contract;
 import com.oriondev.moneywallet.storage.database.DataContentProvider;
+import com.oriondev.moneywallet.utils.IconLoader;
+import com.oriondev.moneywallet.utils.SystemBars;
 import com.oriondev.moneywallet.utils.Utils;
 
 import java.util.ArrayList;
@@ -55,6 +59,7 @@ public class TutorialActivity extends AppIntro2 {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        WindowCompat.enableEdgeToEdge(getWindow());
         addSlide(R.drawable.ic_intro_slide_1, R.string.activity_intro_title_slide_1, R.string.activity_intro_description_slide_1, Color.parseColor("#76bec0"));
         addSlide(R.drawable.ic_intro_slide_2, R.string.activity_intro_title_slide_2, R.string.activity_intro_description_slide_2, Color.parseColor("#8464a9"));
         addSlide(R.drawable.ic_intro_slide_3, R.string.activity_intro_title_slide_3, R.string.activity_intro_description_slide_3, Color.parseColor("#19beed"));
@@ -62,6 +67,26 @@ public class TutorialActivity extends AppIntro2 {
         addSlide(R.drawable.ic_intro_slide_5, R.string.activity_intro_title_slide_5, R.string.activity_intro_description_slide_5, Color.parseColor("#4CAF50"));
         showStatusBar(false);
         setColorTransitionsEnabled(true);
+        applySystemBarInsets();
+    }
+
+    // This intro screen does not go through ThemedActivity, it extends the AppIntro base class, so it
+    // asks for edge to edge itself. Only the bar holding Skip, Next and Done is held clear of the
+    // navigation bar; the slides keep their full bleed colors, which is what the color transition
+    // between them is for. The status bar is hidden here, so nothing is owed at the top.
+    private void applySystemBarInsets() {
+        View content = findViewById(android.R.id.content);
+        if (content != null) {
+            // Below Android 11 the first child to consume an inset stops its siblings from seeing
+            // it, and something in the intro's own layout does. Without this the bar below never
+            // hears about the navigation bar at all, which is what it looked like on Android 7.
+            ViewGroupCompat.installCompatInsetsDispatch(content);
+        }
+        View bottomBar = findViewById(com.github.paolorotolo.appintro.R.id.bottom);
+        if (bottomBar == null) {
+            return;
+        }
+        SystemBars.pad(bottomBar, false, true, true);
     }
 
     private void addSlide(@DrawableRes int drawable, @StringRes int title, @StringRes int description, int backgroundColor) {
@@ -131,7 +156,7 @@ public class TutorialActivity extends AppIntro2 {
 
     private static Category getDefaultCategory(Context context, int nameRes, Contract.CategoryType type, String tag, int color) {
         String name = context.getString(nameRes);
-        String label = IconPicker.getColorIconString(name);
+        String label = IconLoader.getColorIconString(name);
         Icon icon = new ColorIcon(Utils.getHexColor(color), label);
         return new Category(-1L, context.getString(nameRes), icon, type, tag);
     }

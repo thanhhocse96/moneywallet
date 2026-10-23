@@ -23,6 +23,7 @@ import android.app.Activity;
 import android.content.ContentResolver;
 import android.content.ContentUris;
 import android.content.ContentValues;
+import android.content.DialogInterface;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
@@ -34,8 +35,6 @@ import android.view.ViewGroup;
 import android.widget.ImageView;
 import android.widget.TextView;
 
-import com.afollestad.materialdialogs.DialogAction;
-import com.afollestad.materialdialogs.MaterialDialog;
 import com.oriondev.moneywallet.R;
 import com.oriondev.moneywallet.model.CurrencyUnit;
 import com.oriondev.moneywallet.model.Icon;
@@ -50,6 +49,7 @@ import com.oriondev.moneywallet.picker.PlacePicker;
 import com.oriondev.moneywallet.picker.WalletPicker;
 import com.oriondev.moneywallet.storage.database.Contract;
 import com.oriondev.moneywallet.storage.database.DataContentProvider;
+import com.oriondev.moneywallet.storage.database.SQLiteDataException;
 import com.oriondev.moneywallet.storage.preference.PreferenceManager;
 import com.oriondev.moneywallet.ui.view.text.MaterialEditText;
 import com.oriondev.moneywallet.ui.view.text.NonEmptyTextValidator;
@@ -58,6 +58,7 @@ import com.oriondev.moneywallet.ui.view.theme.ThemedDialog;
 import com.oriondev.moneywallet.utils.CurrencyManager;
 import com.oriondev.moneywallet.utils.DateFormatter;
 import com.oriondev.moneywallet.utils.DateUtils;
+import com.oriondev.moneywallet.utils.DefaultWallet;
 import com.oriondev.moneywallet.utils.IconLoader;
 import com.oriondev.moneywallet.utils.MoneyFormatter;
 
@@ -358,11 +359,13 @@ public class NewEditDebtActivity extends NewEditItemActivity implements IconPick
                         Contract.Wallet.START_MONEY,
                         Contract.Wallet.TOTAL_MONEY
                 };
-                long currentWallet = PreferenceManager.getCurrentWallet();
+                long currentWallet = DefaultWallet.resolveNewItemWallet(contentResolver);
                 Cursor cursor;
                 if (currentWallet == PreferenceManager.TOTAL_WALLET_ID) {
                     Uri uri = DataContentProvider.CONTENT_WALLETS;
-                    cursor = contentResolver.query(uri, projection, null, null, null);
+                    cursor = contentResolver.query(uri, projection,
+                            Contract.Wallet.ARCHIVED + " = 0", null,
+                            Contract.Wallet.INDEX + " ASC, " + Contract.Wallet.NAME + " ASC");
                 } else {
                     Uri uri = ContentUris.withAppendedId(DataContentProvider.CONTENT_WALLETS, currentWallet);
                     cursor = contentResolver.query(uri, projection, null, null, null);
@@ -424,21 +427,23 @@ public class NewEditDebtActivity extends NewEditItemActivity implements IconPick
     protected void onSaveChanges(final Mode mode) {
         if (validate()) {
             if (mode == Mode.NEW_ITEM) {
+                // yes and no both save, and the answer only decides whether a master transaction
+                // comes with it, as the onAny callback this replaces did
+                DialogInterface.OnClickListener listener = new DialogInterface.OnClickListener() {
+
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        updateDatabase(mode, which == DialogInterface.BUTTON_POSITIVE);
+                        setResult(Activity.RESULT_OK);
+                        finish();
+                    }
+
+                };
                 ThemedDialog.buildMaterialDialog(this)
-                        .title(R.string.title_debt_insert_master_transaction)
-                        .content(R.string.message_debt_insert_master_transaction)
-                        .positiveText(android.R.string.yes)
-                        .negativeText(android.R.string.no)
-                        .onAny(new MaterialDialog.SingleButtonCallback() {
-
-                            @Override
-                            public void onClick(@NonNull MaterialDialog dialog, @NonNull DialogAction which) {
-                                updateDatabase(mode, which == DialogAction.POSITIVE);
-                                setResult(Activity.RESULT_OK);
-                                finish();
-                            }
-
-                        })
+                        .setTitle(R.string.title_debt_insert_master_transaction)
+                        .setMessage(R.string.message_debt_insert_master_transaction)
+                        .setPositiveButton(android.R.string.yes, listener)
+                        .setNegativeButton(android.R.string.no, listener)
                         .show();
             } else {
                 updateDatabase(mode, false);
@@ -462,14 +467,26 @@ public class NewEditDebtActivity extends NewEditItemActivity implements IconPick
         contentValues.put(Contract.Debt.PEOPLE_IDS, Contract.getObjectIds(mPersonPicker.getCurrentPeople()));
         contentValues.put(Contract.Debt.INSERT_MASTER_TRANSACTION, addMasterTransaction);
         ContentResolver contentResolver = getContentResolver();
-        switch (mode) {
-            case NEW_ITEM:
-                contentResolver.insert(DataContentProvider.CONTENT_DEBTS, contentValues);
-                break;
-            case EDIT_ITEM:
-                Uri uri = ContentUris.withAppendedId(DataContentProvider.CONTENT_DEBTS, getItemId());
-                contentResolver.update(uri, contentValues, null, null);
-                break;
+        try {
+            switch (mode) {
+                case NEW_ITEM:
+                    contentResolver.insert(DataContentProvider.CONTENT_DEBTS, contentValues);
+                    break;
+                case EDIT_ITEM:
+                    Uri uri = ContentUris.withAppendedId(DataContentProvider.CONTENT_DEBTS, getItemId());
+                    contentResolver.update(uri, contentValues, null, null);
+                    break;
+            }
+        } catch (SQLiteDataException e) {
+            if (e.getErrorCode() != Contract.ErrorCode.WALLETS_NOT_CONSISTENT) {
+                throw e;
+            }
+            ThemedDialog.buildMaterialDialog(this)
+                    .setTitle(R.string.title_error)
+                    .setMessage(R.string.error_wallet_currency_not_consistent)
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show();
+            return;
         }
         setResult(Activity.RESULT_OK);
         finish();

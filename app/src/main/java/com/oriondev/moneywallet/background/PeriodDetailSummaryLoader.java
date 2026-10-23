@@ -34,6 +34,8 @@ import com.oriondev.moneywallet.model.PeriodMoney;
 import com.oriondev.moneywallet.storage.database.Contract;
 import com.oriondev.moneywallet.storage.database.DataContentProvider;
 import com.oriondev.moneywallet.storage.preference.PreferenceManager;
+import com.oriondev.moneywallet.ui.view.theme.ITheme;
+import com.oriondev.moneywallet.ui.view.theme.ThemeEngine;
 import com.oriondev.moneywallet.utils.CurrencyManager;
 import com.oriondev.moneywallet.utils.DateUtils;
 
@@ -65,15 +67,21 @@ public class PeriodDetailSummaryLoader extends AbstractGenericLoader<PeriodDetai
     }
 
     @Override
+    protected Uri getObservedUri() {
+        return DataContentProvider.CONTENT_ALL;
+    }
+
+    @Override
     public PeriodDetailSummaryData loadInBackground() {
         Money totalNetIncomes = new Money();
         List<PeriodMoney> periodMoneyList = new ArrayList<>();
-        Uri uri = DataContentProvider.CONTENT_TRANSACTIONS;
+        Uri uri = DataContentProvider.CONTENT_CATEGORY_LINES;
         String[] projection = new String[] {
                 Contract.Transaction.DATE,
                 Contract.Transaction.DIRECTION,
                 Contract.Transaction.WALLET_CURRENCY,
-                Contract.Transaction.MONEY
+                Contract.Transaction.MONEY,
+                Contract.Transaction.CATEGORY_TAG
         };
         String selection;
         String[] selectionArgs;
@@ -86,6 +94,7 @@ public class PeriodDetailSummaryLoader extends AbstractGenericLoader<PeriodDetai
             selectionArgs = new String[] {String.valueOf(currentWallet)};
         }
         selection += " AND " + Contract.Transaction.CONFIRMED + " = '1' AND " + Contract.Transaction.COUNT_IN_TOTAL + " = '1'";
+        selection += " AND " + Contract.Transaction.REPORT_FILTER;
         selection += " AND DATETIME(" + Contract.Transaction.DATE + ") <= DATETIME('now', 'localtime')";
         selection += " AND DATETIME(" + Contract.Transaction.DATE + ") >= DATETIME('" + DateUtils.getSQLDateTimeString(mStartDate) + "')";
         selection += " AND DATETIME(" + Contract.Transaction.DATE + ") <= DATETIME('" + DateUtils.getSQLDateTimeString(mEndDate) + "')";
@@ -103,11 +112,25 @@ public class PeriodDetailSummaryLoader extends AbstractGenericLoader<PeriodDetai
                             int direction = cursor.getInt(cursor.getColumnIndex(Contract.Transaction.DIRECTION));
                             String currency = cursor.getString(cursor.getColumnIndex(Contract.Transaction.WALLET_CURRENCY));
                             long money = cursor.getLong(cursor.getColumnIndex(Contract.Transaction.MONEY));
-                            if (direction == Contract.Direction.INCOME) {
+                            String categoryTag = cursor.getString(cursor.getColumnIndexOrThrow(Contract.Transaction.CATEGORY_TAG));
+                            boolean incoming = direction == Contract.Direction.INCOME;
+                            // Money moved between two of the user's own wallets is neither
+                            // earned nor spent, so it stays out of the two bar series while
+                            // still reaching both net figures. The header on the transactions
+                            // list holds it apart the same way, so the two screens agree. The
+                            // tag is what tells a transfer apart and not the transaction type,
+                            // since a transfer fee is written with the same type and is money
+                            // genuinely spent.
+                            if (Contract.CategoryTag.TRANSFER.equals(categoryTag)) {
+                                currentPeriod.addTransfer(currency, money, incoming);
+                            } else if (incoming) {
                                 currentPeriod.addIncome(currency, money);
-                                totalNetIncomes.addMoney(currency, money);
                             } else if (direction == Contract.Direction.EXPENSE) {
                                 currentPeriod.addExpense(currency, money);
+                            }
+                            if (incoming) {
+                                totalNetIncomes.addMoney(currency, money);
+                            } else if (direction == Contract.Direction.EXPENSE) {
                                 totalNetIncomes.removeMoney(currency, money);
                             }
                         } else {
@@ -122,6 +145,11 @@ public class PeriodDetailSummaryLoader extends AbstractGenericLoader<PeriodDetai
         // the total net income contains all the available currencies
         List<BarData> barDataList = new ArrayList<>();
         List<CurrencyUnit> barDataCurrencies = new ArrayList<>();
+        ITheme theme = ThemeEngine.getTheme();
+        int incomeColor = theme.getVisibleColor(PreferenceManager.getCurrentIncomeColor(),
+                PreferenceManager.getDefaultColorIncome());
+        int expenseColor = theme.getVisibleColor(PreferenceManager.getCurrentExpenseColor(),
+                PreferenceManager.getDefaultColorExpense());
         for (String currency : totalNetIncomes.getCurrencies()) {
             // for each currency we have to iterate the period money items and generate
             // the chart data set composed by two sub data sets:
@@ -137,8 +165,8 @@ public class PeriodDetailSummaryLoader extends AbstractGenericLoader<PeriodDetai
             }
             BarDataSet incomeDataSet = new BarDataSet(incomeBarEntries, getContext().getString(R.string.hint_incomes));
             BarDataSet expenseDataSet = new BarDataSet(expenseBarEntries, getContext().getString(R.string.hint_expenses));
-            incomeDataSet.setColor(PreferenceManager.getCurrentIncomeColor());
-            expenseDataSet.setColor(PreferenceManager.getCurrentExpenseColor());
+            incomeDataSet.setColor(incomeColor);
+            expenseDataSet.setColor(expenseColor);
             barDataList.add(new BarData(incomeDataSet, expenseDataSet));
             barDataCurrencies.add(currencyUnit);
         }

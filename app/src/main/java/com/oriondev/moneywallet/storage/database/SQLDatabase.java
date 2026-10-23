@@ -19,19 +19,26 @@
 
 package com.oriondev.moneywallet.storage.database;
 
+import android.annotation.SuppressLint;
 import android.content.ContentValues;
 import android.content.Context;
 import android.database.Cursor;
+import android.database.sqlite.SQLiteConstraintException;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteException;
 import android.database.sqlite.SQLiteOpenHelper;
-import android.os.Build;
 import android.text.TextUtils;
+import android.util.Log;
 import android.util.SparseLongArray;
 
+import com.oriondev.moneywallet.model.Attachment;
+import com.oriondev.moneywallet.model.ColorIcon;
 import com.oriondev.moneywallet.model.CurrencyUnit;
+import com.oriondev.moneywallet.model.Icon;
+import com.oriondev.moneywallet.model.RecurrenceSetting;
 import com.oriondev.moneywallet.utils.CurrencyManager;
 import com.oriondev.moneywallet.utils.DateUtils;
+import com.oriondev.moneywallet.utils.IconLoader;
 import com.oriondev.moneywallet.utils.MoneyFormatter;
 
 import org.dmfs.rfc5545.DateTime;
@@ -43,16 +50,22 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.Function;
+import java.util.function.Supplier;
 
 /**
  * This class implements the default SQLite helper class of the Android Framework.
@@ -60,28 +73,285 @@ import java.util.UUID;
  */
 /*package-local*/ class SQLDatabase extends SQLiteOpenHelper {
 
-    /*package-local*/ static final String DATABASE_NAME = "database.db";
-    private static final int DATABASE_VERSION = 3;
+    private static final String TAG = "SQLDatabase";
 
-    private static final String ENABLE_FOREIGN_KEYS = "PRAGMA foreign_keys=ON";
+    /*package-local*/ static final String DATABASE_NAME = "database.db";
+    private static final int DATABASE_VERSION = 10;
+
+    /**
+     * The currencies whose shipped decimals were taken from the number of digits a country
+     * uses in cash, where it circulates no minor coin. A ledger records bank statements,
+     * cards and transfers, so the count used in a formal setting is the right one, and
+     * ISO 4217 puts all nine at two as well.
+     */
+    /*package-local*/ static final String[] CURRENCIES_MOVED_TO_TWO_DECIMALS = new String[] {
+            "AMD", "CRC", "ETB", "GYD", "MNT", "MUR", "RSD", "TZS", "UZS"
+    };
+
+    /**
+     * The helper a restore builds its import in, set only on the thread running that import.
+     *
+     * It is per thread and not per process so that the live database keeps its name for everyone
+     * else while a restore runs, which is what makes the swap safe without any lock on readers.
+     * The name a thread outside the restore resolves is always DATABASE_NAME, that file always
+     * exists, and a caller still holding an older helper after the promote reopens it and gets
+     * the file the restore just put there. Pointing the whole app at the staging file instead
+     * would make the live name movable, and a caller holding a helper across the promote would
+     * then reopen a name that had been renamed away, which SQLiteOpenHelper creates empty.
+     *
+     * What it costs is that a write from another thread during a restore goes into the live
+     * database and is replaced with it, so that write is lost. That is what this app already
+     * did. The alternative was not keeping the write, it was landing it in a half imported
+     * database whose ids name different rows, with foreign keys on.
+     */
+    private static final ThreadLocal<SQLDatabase> sStaging = new ThreadLocal<>();
 
     private final Context mContext;
-    private boolean mCacheDeletedObjects;
 
-    /*package-local*/ SQLDatabase(Context context) {
-        super(context, DATABASE_NAME, null, DATABASE_VERSION);
-        mContext = context;
-        mCacheDeletedObjects = true;
+    @SuppressLint("StaticFieldLeak")
+    private static SQLDatabase sShared;
+
+    /**
+     * The one helper both content providers use. Two helpers over the same file are two connection
+     * pools, so a transaction opened through one of them would not enclose a write made through
+     * the other, which is the whole point of having a transaction.
+     *
+     * The application context, and not the caller's. A service reaches resetShared below, and this
+     * field outlives any service, so holding that context would keep a destroyed one alive.
+     *
+     * The context reaches three things here. getDatabasePath, through SQLiteOpenHelper, and
+     * getExternalFilesDir at the attachment folder, which answer the same on the application
+     * context as on a service or a provider. And getString, through the system category names
+     * seeded by onCreate and onUpgrade, which is a resource lookup and so the one place the
+     * choice of context could read differently. It does not here, a provider's own context is
+     * already the application context, so this normalization changes nothing about which strings
+     * a fresh database is seeded with.
+     *
+     * That normalization is also what a test has to defeat to reach this at all. ContextWrapper
+     * answers getApplicationContext from the context it wraps, so a wrapper redirecting the
+     * database and the attachment folder is discarded on this line and the real ledger opens
+     * instead. SQLDatabaseTest's own wrapper overrides getApplicationContext to return itself for
+     * that reason, and its setUp asserts which file this actually opened, which is what catches
+     * that override being dropped before a case reaches the real ledger.
+     */
+    /*package-local*/ static synchronized SQLDatabase getShared(Context context) {
+        SQLDatabase staging = sStaging.get();
+        if (staging != null) {
+            // a restore is running on this thread and its rows belong in the file it is building,
+            // not in the ledger it is about to replace. Every other thread falls through to the
+            // shared helper and keeps reading and writing the live database while that happens
+            return staging;
+        }
+        if (sShared == null) {
+            sShared = new SQLDatabase(context.getApplicationContext(), DATABASE_NAME);
+        }
+        return sShared;
     }
 
     /**
-     * The delete cache is used to correctly sync deleted objects with a remote backend.
-     * If the sync is not enabled, the database will permanently remove deleted objects
-     * and not simply flag them as deleted.
-     * @param cacheEnabled true if cache is enabled, false otherwise.
+     * Closes the shared helper and opens a new one, for after a restore has replaced the file on
+     * disk. It has to be safe to call twice in a row, and one restore does exactly that. The
+     * promote comes through here, and the announcement BackupHandlerIntentService makes once
+     * importDatabase returns comes through here again. A file delete and a preference write run
+     * in between, so the helper the first call installed has normally opened nothing by the time
+     * the second discards it, SQLiteOpenHelper opening on first use. A thread that did reach it
+     * in that window has its connection closed under it, which is the same thing every query on
+     * this database already risks, since queries take no lock.
+     *
+     * Why the close has to happen. A restore renames its staged file over the live one. A write
+     * that STARTS after that rename, on a connection opened before it, is refused; checked on the
+     * emulator and not reasoned about. It fails with "attempt to write a readonly database", the
+     * row does not land, and the journal is left behind at the path the new database has taken
+     * over. Closing releases that connection and truncates the journal it left.
+     *
+     * Why no write may be in flight while it happens. A transaction belongs to the SQLiteDatabase,
+     * and every write method here asks the helper for it again per statement, nine times in
+     * deleteWallet alone. Closing under one would send the rest of that write to a newly opened
+     * second connection with no transaction on it, so the first half rolls back and the second
+     * half is already committed. That is what the lock makes unreachable, and it is the only
+     * thing the lock makes unreachable.
+     *
+     * What it does NOT cover, stated because it is easy to read the lock as wider than it is.
+     * SyncContentProvider's own writes do not come through inSharedTransaction, so they are
+     * outside the lock. A restore's rows travel that path too, and they are not what this leaves
+     * open, since they go into its own staging file and it closes that before any rename here.
      */
-    /*package-local*/ void setDeletedObjectCacheEnabled(boolean cacheEnabled) {
-        mCacheDeletedObjects = cacheEnabled;
+    /*package-local*/ static void resetShared(Context context) {
+        resetShared(context, null);
+    }
+
+    /**
+     * The same swap, with the caller's own work run in the slot where the file is closed. That
+     * slot is what a restore needs. Renaming the database aside outside it leaves a window where
+     * a transaction opens on the old file and commits into it, since SQLite tests for a moved
+     * database when a transaction opens and not per statement.
+     *
+     * The runnable runs under the write lock, so no DataContentProvider write is in flight, and
+     * under the class monitor, so a thread inside getShared cannot be handed the closed helper
+     * while the file is moving. Those are the only two it excludes. SyncContentProvider's writes
+     * and every query take no lock at all, so they can be running while the file moves. The
+     * runnable must not touch the database or call back into this class, and it must be short,
+     * since every thread that enters getShared blocks behind it.
+     */
+    /*package-local*/ static void resetShared(Context context, Runnable whileClosed) {
+        if (sSwapLock.getReadHoldCount() > 0) {
+            // this thread is inside inSharedTransaction and a read hold cannot be upgraded, so
+            // asking for the write lock here would wait on itself forever, holding an open
+            // transaction and wedging every later write and every later reset in the process.
+            // An import holds that read hold for all of its rows, so this is further within reach
+            // than it was when the longest hold was one provider write
+            throw new IllegalStateException("resetShared called from inside a transaction");
+        }
+        sSwapLock.writeLock().lock();
+        try {
+            synchronized (SQLDatabase.class) {
+                try {
+                    if (sShared != null) {
+                        sShared.close();
+                    }
+                    if (whileClosed != null) {
+                        whileClosed.run();
+                    }
+                } finally {
+                    // the close is inside the try for the same reason the finally is here at all.
+                    // Either of them throwing would otherwise leave sShared naming a helper that
+                    // is closed or half closed, and every later getShared would hand that out for
+                    // the rest of the process
+                    sShared = new SQLDatabase(context.getApplicationContext(), DATABASE_NAME);
+                }
+            }
+        } finally {
+            sSwapLock.writeLock().unlock();
+        }
+    }
+
+    /**
+     * Sends this thread database work to a file of its own, from here until closeStaging. A
+     * restore calls this before its first row, and every row it then writes through either
+     * provider goes into that file instead of into the ledger.
+     *
+     * No lock is taken and none is needed. Nothing outside this thread can reach this helper,
+     * and opening it does not touch the live database, so the rest of the app carries on
+     * against the ledger as if no restore were running.
+     */
+    /*package-local*/ static void openStaging(Context context, String name) {
+        if (sStaging.get() != null) {
+            throw new IllegalStateException("a staging database is already open on this thread");
+        }
+        SQLDatabase staging = new SQLDatabase(context.getApplicationContext(), name);
+        // opened here instead of being left to the first row. SQLiteOpenHelper creates the file on
+        // first use, so an import that writes no rows at all would leave nothing on disk to put in
+        // place, and the promote would report a failure for a backup with nothing wrong with it. A
+        // legacy backup of an empty install is the reachable one, since that importer reads no
+        // currencies and so has no table that is always written
+        staging.getWritableDatabase();
+        // set last. A helper that failed to open must not be left on this thread
+        sStaging.set(staging);
+    }
+
+    /**
+     * Closes this thread staging helper and sends its work back to the live database. Safe to
+     * call when there is none, so it belongs in a finally.
+     *
+     * A restore calls it before putting the staged file in place, and again on the way out of a
+     * failure. Neither call affects any other thread. The rename would succeed with the file
+     * still open, since it only replaces a directory entry; what has to be avoided is a
+     * connection that survives INTO the new file, which resetShared describes.
+     */
+    /*package-local*/ static void closeStaging() {
+        SQLDatabase staging = sStaging.get();
+        if (staging != null) {
+            // cleared before the close. A close that threw would otherwise leave this thread
+            // pointed at a helper it can no longer use, for as long as the thread lives
+            sStaging.remove();
+            staging.close();
+        }
+    }
+
+    /**
+     * Held for the whole of one provider write, and exclusively while the shared helper is
+     * swapped. Resolving the helper and running the transaction have to be under the same hold,
+     * or a swap landing between the two would run the transaction on a helper that has just been
+     * closed.
+     */
+    private static final ReentrantReadWriteLock sSwapLock = new ReentrantReadWriteLock();
+
+    /**
+     * Resolves the shared helper and runs the body inside one transaction on it. This is how
+     * DataContentProvider starts every write. SyncContentProvider does not come through here, its
+     * three writes are one statement each, which SQLite already runs atomically, so they take no
+     * transaction and no lock.
+     */
+    /*package-local*/ static <T> T inSharedTransaction(Context context, Function<SQLDatabase, T> body) {
+        sSwapLock.readLock().lock();
+        try {
+            SQLDatabase database = getShared(context);
+            return database.inTransaction(() -> body.apply(database));
+        } finally {
+            sSwapLock.readLock().unlock();
+        }
+    }
+
+    /**
+     * Attachment file names removed by the body of the transaction currently running on this
+     * thread. Null when this thread is not inside one.
+     */
+    private final ThreadLocal<List<String>> mPendingAttachmentFiles = new ThreadLocal<>();
+
+    /*package-local*/ SQLDatabase(Context context, String name) {
+        super(context, name, null, DATABASE_VERSION);
+        mContext = context;
+    }
+
+    /**
+     * Runs a body inside one SQLite transaction and returns what it returned.
+     *
+     * Attachment files the body removed are deleted only once the transaction has committed. A
+     * rollback would otherwise restore rows that point at files already gone from the volume.
+     *
+     * A body already inside one on this thread runs straight through instead of opening a second.
+     * That is what lets an import hold one transaction across every row while each row still goes
+     * in through the provider, which opens one of these per write. Joining and not nesting is the
+     * point. SQLite would reference count a nested pair, but Android rolls the whole transaction
+     * back when an inner frame ends without being marked successful, silently, with no exception
+     * at the outer endTransaction. So an outer body that caught an inner failure and carried on
+     * would leave here believing it had committed. Running inline never opens an inner frame, so
+     * that cannot happen.
+     *
+     * What an outer body still has to answer, since the throw that used to stand here made the
+     * question moot. A provider write is several statements, nine of them in deleteWallet, and
+     * one that fails part way now leaves its earlier statements in the outer transaction. An
+     * outer body that swallows that failure and returns normally commits a half applied write.
+     * Nothing does today, and the first caller that swallows a failure from a DataContentProvider
+     * write has to answer it.
+     *
+     * The attachment names an inline body collects belong to the outer transaction and are
+     * deleted when that one commits, which is the same rule one level up.
+     */
+    /*package-local*/ <T> T inTransaction(Supplier<T> body) {
+        if (mPendingAttachmentFiles.get() != null) {
+            return body.get();
+        }
+        SQLiteDatabase database = getWritableDatabase();
+        mPendingAttachmentFiles.set(new ArrayList<>());
+        T result;
+        try {
+            database.beginTransaction();
+            try {
+                result = body.get();
+                database.setTransactionSuccessful();
+            } finally {
+                database.endTransaction();
+            }
+        } catch (RuntimeException | Error e) {
+            // nothing committed, so the names collected on the way here name live rows
+            mPendingAttachmentFiles.remove();
+            throw e;
+        }
+        List<String> pending = mPendingAttachmentFiles.get();
+        mPendingAttachmentFiles.remove();
+        deleteAttachmentFiles(pending);
+        return result;
     }
 
     @Override
@@ -90,6 +360,7 @@ import java.util.UUID;
         db.execSQL(Schema.CREATE_TABLE_CURRENCY);
         db.execSQL(Schema.CREATE_TABLE_WALLET);
         db.execSQL(Schema.CREATE_TABLE_CATEGORY);
+        db.execSQL(Schema.CREATE_TABLE_CATEGORY_RULE);
         db.execSQL(Schema.CREATE_TABLE_EVENT);
         db.execSQL(Schema.CREATE_TABLE_PLACE);
         db.execSQL(Schema.CREATE_TABLE_PERSON);
@@ -98,9 +369,11 @@ import java.util.UUID;
         db.execSQL(Schema.CREATE_TABLE_DEBT_PEOPLE);
         db.execSQL(Schema.CREATE_TABLE_BUDGET);
         db.execSQL(Schema.CREATE_TABLE_BUDGET_WALLET);
+        db.execSQL(Schema.CREATE_TABLE_BUDGET_CATEGORY);
         db.execSQL(Schema.CREATE_TABLE_SAVING);
         db.execSQL(Schema.CREATE_TABLE_TRANSACTION);
         db.execSQL(Schema.CREATE_TABLE_TRANSACTION_PEOPLE);
+        db.execSQL(Schema.CREATE_TABLE_TRANSACTION_SPLIT);
         db.execSQL(Schema.CREATE_TABLE_TRANSFER);
         db.execSQL(Schema.CREATE_TABLE_TRANSFER_PEOPLE);
         db.execSQL(Schema.CREATE_TABLE_TRANSACTION_MODEL);
@@ -119,11 +392,7 @@ import java.util.UUID;
     @Override
     public void onConfigure(SQLiteDatabase db) {
         super.onConfigure(db);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
-            db.setForeignKeyConstraintsEnabled(true);
-        } else {
-            db.execSQL(ENABLE_FOREIGN_KEYS);
-        }
+        db.setForeignKeyConstraintsEnabled(true);
     }
 
     @Override
@@ -146,6 +415,137 @@ import java.util.UUID;
             db.execSQL(Schema.CREATE_WALLET_INDEX_COLUMN);
             db.execSQL(Schema.CREATE_CATEGORY_INDEX_COLUMN);
         }
+        if (oldVersion < 4) {
+            // a budget can now repeat: the column holds the recurrence rule of the budget that is
+            // currently running, and is null on every budget that does not repeat.
+            if (!hasColumn(db, Schema.Budget.TABLE, Schema.Budget.RULE)) {
+                db.execSQL(Schema.CREATE_BUDGET_RULE_COLUMN);
+            }
+            if (!hasColumn(db, Schema.Budget.TABLE, Schema.Budget.RULE_START)) {
+                db.execSQL(Schema.CREATE_BUDGET_RULE_START_COLUMN);
+            }
+        }
+        if (oldVersion < 5) {
+            // a budget can now cover more than one category, and the join table is what the
+            // queries match on. This runs a second time whenever a release that predates the
+            // table is installed over this database and then upgraded again, because onDowngrade
+            // leaves the schema alone and only stamps the version back. The table survives that
+            // round trip, so the create is guarded and the fill covers only the budgets that hold
+            // no live row. Anything the older release wrote to the single column of a budget
+            // that already covers categories is therefore ignored, which is the safe direction,
+            // the older release could only ever see one of them and reading its column would
+            // drop the rest. The align then puts that column back on the first category the
+            // budget covers, so no live budget comes out of an upgrade carrying a column its own
+            // categories do not name.
+            db.execSQL(Schema.CREATE_TABLE_BUDGET_CATEGORY);
+            db.execSQL(Schema.FILL_BUDGET_CATEGORY_FROM_COLUMN);
+            db.execSQL(Schema.ALIGN_BUDGET_CATEGORY_COLUMN);
+            db.execSQL(Schema.CLEAR_BUDGET_CATEGORY_OF_OTHER_TYPES);
+            db.execSQL(Schema.CLEAR_BUDGET_COLUMN_OF_OTHER_TYPES);
+        }
+        if (oldVersion < 6) {
+            // the nine currencies named above move to two decimals, and every amount
+            // already stored in one of them is rescaled to match, so what the ledger says
+            // does not change. A row is moved only while it still reads zero, which is what
+            // lets this run twice without doubling the scale. It can run twice, because
+            // onDowngrade leaves the schema alone and only stamps the version back, so an
+            // older release installed over this database and upgraded again arrives here a
+            // second time.
+            for (String iso : CURRENCIES_MOVED_TO_TWO_DECIMALS) {
+                if (readCurrencyDecimals(db, iso) == 0) {
+                    ContentValues currency = new ContentValues();
+                    currency.put(Schema.Currency.DECIMALS, 2);
+                    currency.put(Schema.Currency.LAST_EDIT, System.currentTimeMillis());
+                    db.update(Schema.Currency.TABLE, currency,
+                            Schema.Currency.ISO + " = ?", new String[] {iso});
+                    fixCurrencyAmounts(db, iso, 2);
+                }
+            }
+        }
+        if (oldVersion < 7) {
+            // the rules that name a category from a transaction description. The create is
+            // guarded, because this runs a second time whenever a release that predates the
+            // table is installed over this database and then upgraded again, onDowngrade leaves
+            // the schema alone and only stamps the version back. There is nothing to fill from,
+            // no column and no preference held these before.
+            db.execSQL(Schema.CREATE_TABLE_CATEGORY_RULE);
+        }
+        if (oldVersion < 8) {
+            // the name of the group a wallet belongs to, null on a wallet the user has not put in
+            // one. The add is guarded for the same reason the budget rule columns are, onDowngrade
+            // leaves the schema alone and only stamps the version back, so an older release
+            // installed over this database and upgraded again arrives here a second time.
+            if (!hasColumn(db, Schema.Wallet.TABLE, Schema.Wallet.GROUP)) {
+                db.execSQL(Schema.CREATE_WALLET_GROUP_COLUMN);
+            }
+        }
+        if (oldVersion < 9) {
+            // the parts a transaction is split into. The create is guarded for the same reason the
+            // rules table is, an older release installed over this database and upgraded again
+            // arrives here a second time with the table and its rows still there.
+            db.execSQL(Schema.CREATE_TABLE_TRANSACTION_SPLIT);
+        }
+        if (oldVersion < 10) {
+            // a transaction saved from a model's edit screen was stored as type model, so it never
+            // offered a split or a copy. It is a plain transaction like the rest.
+            ContentValues transaction = new ContentValues();
+            transaction.put(Schema.Transaction.TYPE, Contract.TransactionType.STANDARD);
+            db.update(Schema.Transaction.TABLE, transaction, Schema.Transaction.TYPE + " = ?",
+                    new String[] {String.valueOf(Contract.TransactionType.MODEL)});
+        }
+    }
+
+    /**
+     * How many decimals a currency is stored at, or -1 when the database holds no row for
+     * it. A database that has never been opened by the app carries an empty currency
+     * table, since the default set is seeded on the first read and not by onCreate.
+     *
+     * @param db database being upgraded.
+     * @param iso currency to read.
+     * @return the decimals held, or -1 when there is no such row.
+     */
+    private int readCurrencyDecimals(SQLiteDatabase db, String iso) {
+        Cursor cursor = db.query(Schema.Currency.TABLE, new String[] {Schema.Currency.DECIMALS},
+                Schema.Currency.ISO + " = ?", new String[] {iso}, null, null, null);
+        if (cursor != null) {
+            try {
+                if (cursor.moveToFirst()) {
+                    return cursor.getInt(0);
+                }
+            } finally {
+                cursor.close();
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Whether a table already carries a column. An upgrade has to ask, because a downgrade leaves
+     * the schema alone and only stamps the version back: installing an older release over a newer
+     * database and then upgrading again brings the upgrade back to a column that is already there,
+     * and the ALTER that adds it would throw out of {@link #onUpgrade} and take every read of the
+     * database with it.
+     *
+     * @param db database being upgraded.
+     * @param table table to look in.
+     * @param column column to look for.
+     * @return true when the column is already present.
+     */
+    private boolean hasColumn(SQLiteDatabase db, String table, String column) {
+        Cursor cursor = db.rawQuery("PRAGMA table_info(" + table + ")", null);
+        if (cursor != null) {
+            try {
+                int nameIndex = cursor.getColumnIndex("name");
+                while (cursor.moveToNext()) {
+                    if (TextUtils.equals(column, cursor.getString(nameIndex))) {
+                        return true;
+                    }
+                }
+            } finally {
+                cursor.close();
+            }
+        }
+        return false;
     }
 
     @Override
@@ -260,8 +660,50 @@ import java.util.UUID;
         cv.put(Schema.Currency.UUID, "currency_" + contentValues.getAsString(Contract.Currency.ISO));
         cv.put(Schema.Currency.LAST_EDIT, System.currentTimeMillis());
         cv.put(Schema.Currency.DELETED, false);
+        String iso = contentValues.getAsString(Contract.Currency.ISO);
         if (getWritableDatabase().insert(Schema.Currency.TABLE, null, cv) > 0) {
-            return contentValues.getAsString(Contract.Currency.ISO);
+            return iso;
+        }
+        // The insert is refused when the iso is already there, and it answers -1 without raising,
+        // so nothing above here can tell that apart from any other failure. A row that is present
+        // and deleted is one getCurrencies will not return, so the currency is gone as far as the
+        // app is concerned while its iso still holds the primary key against the row that would
+        // bring it back. Revive it.
+        //
+        // This is what makes the default set loadable again. That set is written exactly when
+        // nothing is being served, and every insert of it collided with such a row and landed
+        // nothing, so the table stayed empty and the app had no currency to offer.
+        //
+        // NOTHING BUT THE DELETED FLAG IS WRITTEN, and that is the whole of the care here. The
+        // decimals on the row are the scale every amount held in that currency is already stored
+        // at. The other path that changes them, updateCurrency, at least asks: it reads the old
+        // value first and rescales every wallet, transaction, debt, saving and budget through
+        // fixCurrencyAmounts, though only when the caller sets FIX_MONEY_DECIMALS, which the
+        // editor decides by a dialog the user answers. Copying the caller's decimals onto an
+        // existing row here would move that scale under money nobody rescaled and nobody was
+        // asked about, so a currency the owner had set to two decimals would read a hundred times
+        // over once the default set claimed it back. The name, the symbol, the favourite flag and
+        // the uuid are left for the same reason in miniature: they are the owner's, not the asset
+        // file's, and the uuid is the row's identity in the backup it came from.
+        //
+        // Only when the caller asked, which is the default set and nothing else. The editor
+        // creates a currency through this same method, and for it a collision has to stay a
+        // refusal: a row that arrived from a backup as deleted carries that backup's name, symbol
+        // and decimals, so reviving one on the editor's behalf would answer a typed 8 decimal
+        // Bitcoin with whatever that row happened to hold, report success, and throw away
+        // everything typed. On master that create was a silent no op and the user knew to look
+        // again. The two callers want opposite things from a collision, so they have to say which.
+        if (!contentValues.containsKey(Contract.Currency.REVIVE_IF_DELETED)
+                || !contentValues.getAsBoolean(Contract.Currency.REVIVE_IF_DELETED)) {
+            return null;
+        }
+        // A row that is already served is refused either way.
+        ContentValues revived = new ContentValues();
+        revived.put(Schema.Currency.DELETED, false);
+        revived.put(Schema.Currency.LAST_EDIT, System.currentTimeMillis());
+        String where = Schema.Currency.ISO + " = ? AND " + Schema.Currency.DELETED + " = 1";
+        if (getWritableDatabase().update(Schema.Currency.TABLE, revived, where, new String[] {iso}) > 0) {
+            return iso;
         }
         return null;
     }
@@ -346,14 +788,7 @@ import java.util.UUID;
             }
         }
         where = Schema.Currency.ISO + " = ?";
-        if (mCacheDeletedObjects) {
-            ContentValues cv = new ContentValues();
-            cv.put(Schema.Currency.DELETED, true);
-            cv.put(Schema.Currency.LAST_EDIT, System.currentTimeMillis());
-            return getWritableDatabase().update(Schema.Currency.TABLE, cv, where, whereArgs);
-        } else {
-            return getWritableDatabase().delete(Schema.Currency.TABLE, where, whereArgs);
-        }
+        return getWritableDatabase().delete(Schema.Currency.TABLE, where, whereArgs);
     }
 
     /**
@@ -392,6 +827,7 @@ import java.util.UUID;
                 Schema.Wallet.ARCHIVED + " AS " + Contract.Wallet.ARCHIVED + ", " +
                 Schema.Wallet.INDEX + " AS " + Contract.Wallet.INDEX + ", " +
                 Schema.Wallet.TAG + " AS " + Contract.Wallet.TAG + ", " +
+                Schema.Wallet.GROUP + " AS " + Contract.Wallet.GROUP + ", " +
                 "total_money AS " + Contract.Wallet.TOTAL_MONEY + " FROM " + Schema.Wallet.TABLE +
                 " LEFT JOIN (SELECT " + Schema.Transaction.WALLET + " AS _wallet," +
                 " SUM(((" + Schema.Transaction.DIRECTION + " * 2) - 1) * " + Schema.Transaction.MONEY +
@@ -424,6 +860,7 @@ import java.util.UUID;
         Integer index = contentValues.getAsInteger(Contract.Wallet.INDEX);
         cv.put(Schema.Wallet.INDEX, index != null ? index : 0);
         cv.put(Schema.Wallet.TAG, contentValues.getAsString(Contract.Wallet.TAG));
+        cv.put(Schema.Wallet.GROUP, contentValues.getAsString(Contract.Wallet.GROUP));
         cv.put(Schema.Wallet.UUID, UUID.randomUUID().toString());
         cv.put(Schema.Wallet.LAST_EDIT, System.currentTimeMillis());
         cv.put(Schema.Wallet.DELETED, false);
@@ -437,8 +874,15 @@ import java.util.UUID;
      * @param walletId id of the wallet to update.
      * @param contentValues bundle that contains the data from the content provider.
      * @return the number of row updated inside the database.
+     * @throws SQLiteDataException if the currency changes and checkSplitDebtPaymentWallet or
+     *                             checkSplitSavingWallet refuses the wallet.
      */
     /*package-local*/ int updateWallet(long walletId, ContentValues contentValues) {
+        if (contentValues.containsKey(Contract.Wallet.CURRENCY) && !TextUtils.equals(
+                contentValues.getAsString(Contract.Wallet.CURRENCY), walletCurrency(walletId))) {
+            checkSplitDebtPaymentWallet(walletId);
+            checkSplitSavingWallet(walletId);
+        }
         ContentValues cv = new ContentValues();
         if (contentValues.containsKey(Contract.Wallet.NAME)) {
             cv.put(Schema.Wallet.NAME, contentValues.getAsString(Contract.Wallet.NAME));
@@ -468,6 +912,9 @@ import java.util.UUID;
         }
         if (contentValues.containsKey(Contract.Wallet.TAG)) {
             cv.put(Schema.Wallet.TAG, contentValues.getAsString(Contract.Wallet.TAG));
+        }
+        if (contentValues.containsKey(Contract.Wallet.GROUP)) {
+            cv.put(Schema.Wallet.GROUP, contentValues.getAsString(Contract.Wallet.GROUP));
         }
         cv.put(Schema.Wallet.LAST_EDIT, System.currentTimeMillis());
         String where = Schema.Wallet.ID + " = ?";
@@ -509,106 +956,51 @@ import java.util.UUID;
             }
         }
         // if this line is reached it means that the wallet can be deleted
+        // the attachments go first: the transactions below are removed in one statement rather
+        // than through deleteTransactionItem, and on the build that ships, where deletes are
+        // hard, the link rows go with them on the cascade
+        deleteAttachmentsOf(Schema.TransactionAttachment.TABLE, Schema.TransactionAttachment.ATTACHMENT,
+                Schema.TransactionAttachment.TRANSACTION + " IN (SELECT " + Schema.Transaction.ID +
+                        " FROM " + Schema.Transaction.TABLE + " WHERE " + Schema.Transaction.WALLET +
+                        " = ?) AND " + Schema.TransactionAttachment.DELETED + " = 0",
+                new String[] {String.valueOf(walletId)});
         // we can start to delete all the transactions related to this wallet
         String where = Schema.Transaction.WALLET + " = ?";
         String[] whereArgs = new String[]{String.valueOf(walletId)};
-        if (mCacheDeletedObjects) {
-            ContentValues cv = new ContentValues();
-            cv.put(Schema.Transaction.DELETED, true);
-            cv.put(Schema.Transaction.LAST_EDIT, System.currentTimeMillis());
-            getWritableDatabase().update(Schema.Transaction.TABLE, cv, where, whereArgs);
-        } else {
-            getWritableDatabase().delete(Schema.Transaction.TABLE, where, whereArgs);
-        }
+        getWritableDatabase().delete(Schema.Transaction.TABLE, where, whereArgs);
         // now we can delete all the transaction models
         where = Schema.TransactionModel.WALLET + " = ?";
         whereArgs = new String[]{String.valueOf(walletId)};
-        if (mCacheDeletedObjects) {
-            ContentValues cv = new ContentValues();
-            cv.put(Schema.TransactionModel.DELETED, true);
-            cv.put(Schema.TransactionModel.LAST_EDIT, System.currentTimeMillis());
-            getWritableDatabase().update(Schema.TransactionModel.TABLE, cv, where, whereArgs);
-        } else {
-            getWritableDatabase().delete(Schema.TransactionModel.TABLE, where, whereArgs);
-        }
+        getWritableDatabase().delete(Schema.TransactionModel.TABLE, where, whereArgs);
         // now we can delete all the transfer models
         where = Schema.TransferModel.WALLET_FROM + " = ? OR " + Schema.TransferModel.WALLET_TO + " = ?";
         whereArgs = new String[]{String.valueOf(walletId), String.valueOf(walletId)};
-        if (mCacheDeletedObjects) {
-            ContentValues cv = new ContentValues();
-            cv.put(Schema.TransferModel.DELETED, true);
-            cv.put(Schema.TransferModel.LAST_EDIT, System.currentTimeMillis());
-            getWritableDatabase().update(Schema.TransferModel.TABLE, cv, where, whereArgs);
-        } else {
-            getWritableDatabase().delete(Schema.TransferModel.TABLE, where, whereArgs);
-        }
+        getWritableDatabase().delete(Schema.TransferModel.TABLE, where, whereArgs);
         // now we can delete all the recurrent transactions
         where = Schema.RecurrentTransaction.WALLET + " = ?";
         whereArgs = new String[]{String.valueOf(walletId)};
-        if (mCacheDeletedObjects) {
-            ContentValues cv = new ContentValues();
-            cv.put(Schema.RecurrentTransaction.DELETED, true);
-            cv.put(Schema.RecurrentTransaction.LAST_EDIT, System.currentTimeMillis());
-            getWritableDatabase().update(Schema.RecurrentTransaction.TABLE, cv, where, whereArgs);
-        } else {
-            getWritableDatabase().delete(Schema.RecurrentTransaction.TABLE, where, whereArgs);
-        }
+        getWritableDatabase().delete(Schema.RecurrentTransaction.TABLE, where, whereArgs);
         // now we can delete all the recurrent transfers
         where = Schema.RecurrentTransfer.WALLET_FROM + " = ? OR " + Schema.RecurrentTransfer.WALLET_TO + " = ?";
         whereArgs = new String[]{String.valueOf(walletId), String.valueOf(walletId)};
-        if (mCacheDeletedObjects) {
-            ContentValues cv = new ContentValues();
-            cv.put(Schema.RecurrentTransfer.DELETED, true);
-            cv.put(Schema.RecurrentTransfer.LAST_EDIT, System.currentTimeMillis());
-            getWritableDatabase().update(Schema.RecurrentTransfer.TABLE, cv, where, whereArgs);
-        } else {
-            getWritableDatabase().delete(Schema.RecurrentTransfer.TABLE, where, whereArgs);
-        }
+        getWritableDatabase().delete(Schema.RecurrentTransfer.TABLE, where, whereArgs);
         // now we can delete all the savings
         where = Schema.Saving.WALLET + " = ?";
         whereArgs = new String[]{String.valueOf(walletId)};
-        if (mCacheDeletedObjects) {
-            ContentValues cv = new ContentValues();
-            cv.put(Schema.Saving.DELETED, true);
-            cv.put(Schema.Saving.LAST_EDIT, System.currentTimeMillis());
-            getWritableDatabase().update(Schema.Saving.TABLE, cv, where, whereArgs);
-        } else {
-            getWritableDatabase().delete(Schema.Saving.TABLE, where, whereArgs);
-        }
+        getWritableDatabase().delete(Schema.Saving.TABLE, where, whereArgs);
         // now we can delete all the debts
         where = Schema.Debt.WALLET + " = ?";
         whereArgs = new String[]{String.valueOf(walletId)};
-        if (mCacheDeletedObjects) {
-            ContentValues cv = new ContentValues();
-            cv.put(Schema.Debt.DELETED, true);
-            cv.put(Schema.Debt.LAST_EDIT, System.currentTimeMillis());
-            getWritableDatabase().update(Schema.Debt.TABLE, cv, where, whereArgs);
-        } else {
-            getWritableDatabase().delete(Schema.Debt.TABLE, where, whereArgs);
-        }
+        getWritableDatabase().delete(Schema.Debt.TABLE, where, whereArgs);
         // now we can delete all the budget wallets
         where = Schema.BudgetWallet.WALLET + " = ?";
         whereArgs = new String[]{String.valueOf(walletId)};
-        if (mCacheDeletedObjects) {
-            ContentValues cv = new ContentValues();
-            cv.put(Schema.BudgetWallet.DELETED, true);
-            cv.put(Schema.BudgetWallet.LAST_EDIT, System.currentTimeMillis());
-            getWritableDatabase().update(Schema.BudgetWallet.TABLE, cv, where, whereArgs);
-        } else {
-            getWritableDatabase().delete(Schema.BudgetWallet.TABLE, where, whereArgs);
-        }
+        getWritableDatabase().delete(Schema.BudgetWallet.TABLE, where, whereArgs);
         // TODO: [MEDIUM] A budget that has only this wallet must be removed
         // finally we can delete the wallet itself
         where = Schema.Wallet.ID + " = ?";
         whereArgs = new String[]{String.valueOf(walletId)};
-        if (mCacheDeletedObjects) {
-            ContentValues cv = new ContentValues();
-            cv.put(Schema.Wallet.DELETED, true);
-            cv.put(Schema.Wallet.LAST_EDIT, System.currentTimeMillis());
-            return getWritableDatabase().update(Schema.Wallet.TABLE, cv, where, whereArgs);
-        } else {
-            return getWritableDatabase().delete(Schema.Wallet.TABLE, where, whereArgs);
-        }
+        return getWritableDatabase().delete(Schema.Wallet.TABLE, where, whereArgs);
     }
 
     /**
@@ -636,51 +1028,199 @@ import java.util.UUID;
      * @return a cursor with zero or more rows.
      */
     /*package-local*/ Cursor getTransactions(String[] projection, String selection, String[] selectionArgs, String sortOrder) {
-        String subQuery = "SELECT " +
-                "t." + Schema.Transaction.ID + " AS " + Contract.Transaction.ID + ", " +
-                "t." + Schema.Transaction.MONEY + " AS " + Contract.Transaction.MONEY + ", " +
-                "t." + Schema.Transaction.DATE + " AS " + Contract.Transaction.DATE + ", " +
-                "t." + Schema.Transaction.DESCRIPTION + " AS " + Contract.Transaction.DESCRIPTION + ", " +
-                "t." + Schema.Transaction.CATEGORY + " AS " + Contract.Transaction.CATEGORY_ID + ", " +
-                "c." + Schema.Category.NAME + " AS " + Contract.Transaction.CATEGORY_NAME + ", " +
-                "c." + Schema.Category.ICON + " AS " + Contract.Transaction.CATEGORY_ICON + ", " +
-                "c." + Schema.Category.PARENT + " AS " + Contract.Transaction.CATEGORY_PARENT_ID + ", " +
-                "c." + Schema.Category.TYPE + " AS " + Contract.Transaction.CATEGORY_TYPE + ", " +
-                "c." + Schema.Category.TAG + " AS " + Contract.Transaction.CATEGORY_TAG + ", " +
-                "c." + Schema.Category.SHOW_REPORT + " AS " + Contract.Transaction.CATEGORY_SHOW_REPORT + ", " +
-                "t." + Schema.Transaction.DIRECTION + " AS " + Contract.Transaction.DIRECTION + ", " +
-                "t." + Schema.Transaction.TYPE + " AS " + Contract.Transaction.TYPE + ", " +
-                "t." + Schema.Transaction.WALLET + " AS " + Contract.Transaction.WALLET_ID + ", " +
-                "w." + Schema.Wallet.NAME + " AS " + Contract.Transaction.WALLET_NAME + ", " +
-                "w." + Schema.Wallet.ICON + " AS " + Contract.Transaction.WALLET_ICON + ", " +
-                "w." + Schema.Wallet.CURRENCY + " AS " + Contract.Transaction.WALLET_CURRENCY + ", " +
-                "w." + Schema.Wallet.COUNT_IN_TOTAL + " AS " + Contract.Transaction.WALLET_COUNT_IN_TOTAL + ", " +
-                "w." + Schema.Wallet.ARCHIVED + " AS " + Contract.Transaction.WALLET_ARCHIVED + ", " +
-                "w." + Schema.Wallet.TAG + " AS " + Contract.Transaction.WALLET_TAG + ", " +
-                "t." + Schema.Transaction.PLACE + " AS " + Contract.Transaction.PLACE_ID + ", " +
-                "p." + Schema.Place.NAME + " AS " + Contract.Transaction.PLACE_NAME + ", " +
-                "p." + Schema.Place.ICON + " AS " + Contract.Transaction.PLACE_ICON + ", " +
-                "p." + Schema.Place.ADDRESS + " AS " + Contract.Transaction.PLACE_ADDRESS + ", " +
-                "p." + Schema.Place.LATITUDE + " AS " + Contract.Transaction.PLACE_LATITUDE + ", " +
-                "p." + Schema.Place.LONGITUDE + " AS " + Contract.Transaction.PLACE_LONGITUDE + ", " +
-                "p." + Schema.Place.TAG + " AS " + Contract.Transaction.PLACE_TAG + ", " +
-                "t." + Schema.Transaction.EVENT + " AS " + Contract.Transaction.EVENT_ID + ", " +
-                "e." + Schema.Event.NAME + " AS " + Contract.Transaction.EVENT_NAME + ", " +
-                "e." + Schema.Event.ICON + " AS " + Contract.Transaction.EVENT_ICON + ", " +
-                "e." + Schema.Event.NOTE + " AS " + Contract.Transaction.EVENT_NOTE + ", " +
-                "e." + Schema.Event.START_DATE + " AS " + Contract.Transaction.EVENT_START_DATE + ", " +
-                "e." + Schema.Event.END_DATE + " AS " + Contract.Transaction.EVENT_END_DATE + ", " +
-                "e." + Schema.Event.TAG + " AS " + Contract.Transaction.EVENT_TAG + ", " +
-                "t." + Schema.Transaction.NOTE + " AS " + Contract.Transaction.NOTE + ", " +
-                "t." + Schema.Transaction.DEBT + " AS " + Contract.Transaction.DEBT_ID + ", " +
-                "t." + Schema.Transaction.SAVING + " AS " + Contract.Transaction.SAVING_ID + ", " +
-                "t." + Schema.Transaction.RECURRENCE + " AS " + Contract.Transaction.RECURRENCE_ID + ", " +
-                "t." + Schema.Transaction.CONFIRMED + " AS " + Contract.Transaction.CONFIRMED + ", " +
-                "t." + Schema.Transaction.COUNT_IN_TOTAL + " AS " + Contract.Transaction.COUNT_IN_TOTAL + ", " +
-                "t." + Schema.Transaction.TAG + " AS " + Contract.Transaction.TAG + ", " +
-                "GROUP_CONCAT('<' || pe." + Schema.Person.ID + " || '>') AS " + Contract.Transaction.PEOPLE_IDS + " " +
-                "FROM " + Schema.Transaction.TABLE + " AS t LEFT JOIN " + Schema.Category.TABLE +
-                " AS c ON t." + Schema.Transaction.CATEGORY + " = c." + Schema.Category.ID + " AND c." +
+        String subQuery = transactionRows("t." + Schema.Transaction.MONEY, "t." + Schema.Transaction.CATEGORY,
+                Schema.Transaction.TABLE + " AS t", "t." + Schema.Transaction.ID);
+        return queryFrom(subQuery, projection, selection, selectionArgs, sortOrder);
+    }
+
+    /**
+     * The transactions whose live parts are valid, each with the sum of those parts. Parts are
+     * ignored, and the transaction reads as unsplit under its main category, when they add up to
+     * more than the total, when one is below zero, when one sits in a category of the other
+     * direction or in a system category, or when the transaction is not a standard one. A release
+     * that predates parts can edit the total, the category or the direction without them, and a
+     * restore takes any amount a backup holds, so none of this is guaranteed by the writes.
+     */
+    private static final String VALID_PARTS = validParts("");
+
+    /**
+     * The same, counting only the live parts that also match the given condition on s.
+     */
+    private static String validParts(String partCondition) {
+        return "SELECT s." + Schema.TransactionSplit.TRANSACTION +
+            " AS _parts_transaction, SUM(s." + Schema.TransactionSplit.MONEY + ") AS _parts_money, " +
+            "COUNT(DISTINCT s." + Schema.TransactionSplit.CATEGORY + ") AS _parts_categories, MAX(s." +
+            Schema.TransactionSplit.CATEGORY + " = st." + Schema.Transaction.CATEGORY +
+            ") AS _parts_in_main FROM " +
+            Schema.TransactionSplit.TABLE + " AS s JOIN " + Schema.Transaction.TABLE + " AS st ON s." +
+            Schema.TransactionSplit.TRANSACTION + " = st." + Schema.Transaction.ID + " LEFT JOIN " +
+            Schema.Category.TABLE + " AS sc ON s." + Schema.TransactionSplit.CATEGORY + " = sc." +
+            Schema.Category.ID + " AND sc." + Schema.Category.DELETED + " = 0 WHERE s." +
+            Schema.TransactionSplit.DELETED + " = 0 AND st." + Schema.Transaction.DELETED + " = 0" +
+            partCondition + " GROUP BY s." +
+            Schema.TransactionSplit.TRANSACTION + " HAVING SUM(s." + Schema.TransactionSplit.MONEY +
+            ") <= MAX(st." + Schema.Transaction.MONEY + ") AND MIN(s." + Schema.TransactionSplit.MONEY +
+            ") >= 0 AND MAX(st." + Schema.Transaction.TYPE + ") = " + Contract.TransactionType.STANDARD +
+            " AND MIN(CASE WHEN (st." + Schema.Transaction.DIRECTION + " = " + Schema.Direction.EXPENSE +
+            " AND sc." + Schema.Category.TYPE + " = " + Schema.CategoryType.EXPENSE + ") OR (st." +
+            Schema.Transaction.DIRECTION + " = " + Schema.Direction.INCOME + " AND sc." +
+            Schema.Category.TYPE + " = " + Schema.CategoryType.INCOME + ") THEN 1 ELSE 0 END) = 1";
+    }
+
+    /**
+     * The category lines, one per category a transaction's money falls under. A transaction with
+     * valid parts gives a line per part and a line under its main category for what the parts
+     * leave of the total, only when that is above zero. Every other transaction gives one line,
+     * itself. So the lines of a transaction always add up to its total, and none is negative.
+     *
+     * The key of a line is the part's id, or the transaction's id negated for the line under the
+     * main category. It is unique across both, and the lowest key of a transaction is its main
+     * line when it has one and its first part otherwise.
+     */
+    private static final String CATEGORY_LINES = "SELECT -t." + Schema.Transaction.ID + " AS _line_id, " +
+            "NULL AS _line_split, t." + Schema.Transaction.ID + " AS _line_transaction, t." +
+            Schema.Transaction.CATEGORY + " AS _line_category, t." + Schema.Transaction.MONEY +
+            " - IFNULL(v._parts_money, 0) AS _line_money FROM " + Schema.Transaction.TABLE +
+            " AS t LEFT JOIN (" + VALID_PARTS + ") AS v ON v._parts_transaction = t." +
+            Schema.Transaction.ID + " WHERE t." + Schema.Transaction.DELETED + " = 0 AND (" +
+            "v._parts_transaction IS NULL OR t." + Schema.Transaction.MONEY + " > v._parts_money) " +
+            "UNION ALL SELECT s." + Schema.TransactionSplit.ID + ", s." + Schema.TransactionSplit.ID +
+            ", s." + Schema.TransactionSplit.TRANSACTION + ", s." + Schema.TransactionSplit.CATEGORY +
+            ", s." + Schema.TransactionSplit.MONEY + " FROM " + Schema.TransactionSplit.TABLE +
+            " AS s JOIN (" + VALID_PARTS + ") AS v ON v._parts_transaction = s." +
+            Schema.TransactionSplit.TRANSACTION + " WHERE s." + Schema.TransactionSplit.DELETED + " = 0";
+
+    private static final String CATEGORY_LINES_FROM = "(" + CATEGORY_LINES + ") AS l JOIN " +
+            Schema.Transaction.TABLE + " AS t ON l._line_transaction = t." + Schema.Transaction.ID;
+
+    /**
+     * This method is called by the content provider when the user is querying the category lines
+     * of the transactions.
+     *
+     * @param projection column names that are requested to be part of the cursor.
+     * @param selection string that may contains additional filters for the query.
+     * @param selectionArgs string array that may contains the arguments for the selection string.
+     * @param sortOrder string that may contains column name to use to sort the cursor.
+     * @return a cursor with zero or more rows.
+     */
+    /*package-local*/ Cursor getCategoryLines(String[] projection, String selection, String[] selectionArgs, String sortOrder) {
+        String subQuery = transactionRows("l._line_money", "l._line_category", CATEGORY_LINES_FROM,
+                "l._line_id", "l._line_id AS " + Contract.Transaction.LINE_ID,
+                "l._line_split AS " + Contract.Transaction.SPLIT_ID);
+        return queryFrom(subQuery, projection, selection, selectionArgs, sortOrder);
+    }
+
+    /**
+     * This method is called by the content provider when the user is querying the transactions
+     * that have a category line matching the selection. Each comes once, carrying the money of
+     * its matching lines and the category of the lowest matching line. The selection runs on each
+     * line before they are summed, and sees the full total of the transaction as its money, so a
+     * filter on the amount still matches the receipt and not the share.
+     *
+     * @param projection column names that are requested to be part of the cursor.
+     * @param selection string that may contains additional filters for the query.
+     * @param selectionArgs string array that may contains the arguments for the selection string.
+     * @param sortOrder string that may contains column name to use to sort the cursor.
+     * @return a cursor with zero or more rows.
+     */
+    /*package-local*/ Cursor getCategoryShares(String[] projection, String selection, String[] selectionArgs, String sortOrder) {
+        String lines = transactionRows("t." + Schema.Transaction.MONEY, "l._line_category",
+                CATEGORY_LINES_FROM, "l._line_id", "l._line_id AS " + Contract.Transaction.LINE_ID,
+                "l._line_split AS " + Contract.Transaction.SPLIT_ID, "l._line_money AS _line_money");
+        StringBuilder columns = new StringBuilder();
+        for (String[] column : transactionColumns("", "")) {
+            String name = column[1];
+            columns.append(Contract.Transaction.MONEY.equals(name) ? "SUM(_line_money) AS " + name : name).append(", ");
+        }
+        // the one MIN in this select is what makes SQLite take every other column from the row
+        // holding the lowest key
+        String subQuery = "SELECT " + columns + "MIN(" + Contract.Transaction.LINE_ID + ") AS " +
+                Contract.Transaction.LINE_ID + ", " + Contract.Transaction.SPLIT_ID + " FROM (" + lines +
+                ")" + (TextUtils.isEmpty(selection) ? "" : " WHERE " + selection) + " GROUP BY " +
+                Contract.Transaction.ID;
+        return queryFrom(subQuery, projection, null, selectionArgs, sortOrder);
+    }
+
+    /**
+     * Every column a transaction row carries, as the expression and the name it goes by.
+     *
+     * @param money expression giving the money of the row.
+     * @param category expression giving the id of its category, which the category columns follow.
+     */
+    private static String[][] transactionColumns(String money, String category) {
+        return new String[][] {
+                {"t." + Schema.Transaction.ID, Contract.Transaction.ID},
+                {money, Contract.Transaction.MONEY},
+                {"t." + Schema.Transaction.DATE, Contract.Transaction.DATE},
+                {"t." + Schema.Transaction.DESCRIPTION, Contract.Transaction.DESCRIPTION},
+                {category, Contract.Transaction.CATEGORY_ID},
+                {"c." + Schema.Category.NAME, Contract.Transaction.CATEGORY_NAME},
+                {"c." + Schema.Category.ICON, Contract.Transaction.CATEGORY_ICON},
+                {"c." + Schema.Category.PARENT, Contract.Transaction.CATEGORY_PARENT_ID},
+                {"c." + Schema.Category.TYPE, Contract.Transaction.CATEGORY_TYPE},
+                {"c." + Schema.Category.TAG, Contract.Transaction.CATEGORY_TAG},
+                {"c." + Schema.Category.SHOW_REPORT, Contract.Transaction.CATEGORY_SHOW_REPORT},
+                {"pc." + Schema.Category.SHOW_REPORT, Contract.Transaction.CATEGORY_PARENT_SHOW_REPORT},
+                {"t." + Schema.Transaction.DIRECTION, Contract.Transaction.DIRECTION},
+                {"t." + Schema.Transaction.TYPE, Contract.Transaction.TYPE},
+                {"t." + Schema.Transaction.WALLET, Contract.Transaction.WALLET_ID},
+                {"w." + Schema.Wallet.NAME, Contract.Transaction.WALLET_NAME},
+                {"w." + Schema.Wallet.ICON, Contract.Transaction.WALLET_ICON},
+                {"w." + Schema.Wallet.CURRENCY, Contract.Transaction.WALLET_CURRENCY},
+                {"w." + Schema.Wallet.COUNT_IN_TOTAL, Contract.Transaction.WALLET_COUNT_IN_TOTAL},
+                {"w." + Schema.Wallet.ARCHIVED, Contract.Transaction.WALLET_ARCHIVED},
+                {"w." + Schema.Wallet.TAG, Contract.Transaction.WALLET_TAG},
+                {"t." + Schema.Transaction.PLACE, Contract.Transaction.PLACE_ID},
+                {"p." + Schema.Place.NAME, Contract.Transaction.PLACE_NAME},
+                {"p." + Schema.Place.ICON, Contract.Transaction.PLACE_ICON},
+                {"p." + Schema.Place.ADDRESS, Contract.Transaction.PLACE_ADDRESS},
+                {"p." + Schema.Place.LATITUDE, Contract.Transaction.PLACE_LATITUDE},
+                {"p." + Schema.Place.LONGITUDE, Contract.Transaction.PLACE_LONGITUDE},
+                {"p." + Schema.Place.TAG, Contract.Transaction.PLACE_TAG},
+                {"t." + Schema.Transaction.EVENT, Contract.Transaction.EVENT_ID},
+                {"e." + Schema.Event.NAME, Contract.Transaction.EVENT_NAME},
+                {"e." + Schema.Event.ICON, Contract.Transaction.EVENT_ICON},
+                {"e." + Schema.Event.NOTE, Contract.Transaction.EVENT_NOTE},
+                {"e." + Schema.Event.START_DATE, Contract.Transaction.EVENT_START_DATE},
+                {"e." + Schema.Event.END_DATE, Contract.Transaction.EVENT_END_DATE},
+                {"e." + Schema.Event.TAG, Contract.Transaction.EVENT_TAG},
+                {"t." + Schema.Transaction.NOTE, Contract.Transaction.NOTE},
+                {"t." + Schema.Transaction.DEBT, Contract.Transaction.DEBT_ID},
+                {"t." + Schema.Transaction.SAVING, Contract.Transaction.SAVING_ID},
+                {"t." + Schema.Transaction.RECURRENCE, Contract.Transaction.RECURRENCE_ID},
+                {"t." + Schema.Transaction.CONFIRMED, Contract.Transaction.CONFIRMED},
+                {"t." + Schema.Transaction.COUNT_IN_TOTAL, Contract.Transaction.COUNT_IN_TOTAL},
+                {"t." + Schema.Transaction.TAG, Contract.Transaction.TAG},
+                {"GROUP_CONCAT('<' || pe." + Schema.Person.ID + " || '>')", Contract.Transaction.PEOPLE_IDS},
+                {"IFNULL(vp._parts_categories + CASE WHEN t." + Schema.Transaction.MONEY +
+                        " > vp._parts_money AND vp._parts_in_main = 0 THEN 1 ELSE 0 END, 0)",
+                        Contract.Transaction.SPLIT_CATEGORIES}
+        };
+    }
+
+    /**
+     * The select every transaction view is built on, one row per value of the group key.
+     *
+     * @param money expression giving the money of a row.
+     * @param category expression giving the id of the category of a row.
+     * @param from source of the rows, which has to name the transactions table t.
+     * @param groupBy key of a row.
+     * @param extraColumns further columns, each an expression with its name.
+     */
+    private static String transactionRows(String money, String category, String from, String groupBy, String... extraColumns) {
+        StringBuilder columns = new StringBuilder();
+        for (String[] column : transactionColumns(money, category)) {
+            columns.append(columns.length() > 0 ? ", " : "").append(column[0]).append(" AS ").append(column[1]);
+        }
+        for (String column : extraColumns) {
+            columns.append(", ").append(column);
+        }
+        return "SELECT " + columns + " " +
+                "FROM " + from + " LEFT JOIN (" + VALID_PARTS + ") AS vp ON vp._parts_transaction = t." +
+                Schema.Transaction.ID + " LEFT JOIN " + Schema.Category.TABLE +
+                " AS c ON " + category + " = c." + Schema.Category.ID + " AND c." +
+                Schema.Category.DELETED + " = 0 LEFT JOIN " + Schema.Category.TABLE + " AS pc ON c." +
+                Schema.Category.PARENT + " = pc." + Schema.Category.ID + " AND pc." +
                 Schema.Category.DELETED + " = 0 JOIN " + Schema.Wallet.TABLE + " AS w ON t." +
                 Schema.Transaction.WALLET + " = w." + Schema.Wallet.ID + " AND w." +
                 Schema.Wallet.DELETED + " = 0 LEFT JOIN " + Schema.TransactionPeople.TABLE + " AS tp ON t." +
@@ -691,8 +1231,7 @@ import java.util.UUID;
                 Schema.Transaction.PLACE + " = " + Schema.Place.ID + " AND p." + Schema.Place.DELETED +
                 " = 0 LEFT JOIN " + Schema.Event.TABLE + " AS e ON t." + Schema.Transaction.EVENT +
                 " = e." + Schema.Event.ID + " AND e." + Schema.Event.DELETED + " = 0 WHERE t." +
-                Schema.Transaction.DELETED + " = 0 GROUP BY t." + Schema.Transaction.ID;
-        return queryFrom(subQuery, projection, selection, selectionArgs, sortOrder);
+                Schema.Transaction.DELETED + " = 0 GROUP BY " + groupBy;
     }
 
     /**
@@ -701,8 +1240,13 @@ import java.util.UUID;
      *
      * @param contentValues object which contains all the column values.
      * @return the id of the created transaction if success, -1 if failure.
+     * @throws SQLiteDataException if it is a debt payment in a wallet of another currency than the
+     *                             debt's.
      */
     /*package-local*/ long insertTransaction(ContentValues contentValues) {
+        checkDebtPaymentWalletCurrency(contentValues.getAsLong(Contract.Transaction.DEBT_ID),
+                contentValues.getAsLong(Contract.Transaction.CATEGORY_ID),
+                contentValues.getAsLong(Contract.Transaction.WALLET_ID));
         // if this is a transaction linked to a recurrence, we need to correctly calculate
         // the uuid of the transaction to be uniquely identified across different devices
         String transactionUUID = UUID.randomUUID().toString();
@@ -773,8 +1317,107 @@ import java.util.UUID;
                     getWritableDatabase().insert(Schema.TransactionAttachment.TABLE, null, cva);
                 }
             }
+            if (contentValues.containsKey(Contract.Transaction.SPLIT_PARTS)) {
+                writeSplitParts(transactionId, contentValues.getAsString(Contract.Transaction.SPLIT_PARTS));
+            }
         }
         return transactionId;
+    }
+
+    /**
+     * Makes the live parts of a transaction exactly the ones given, after checking them against
+     * the row as it is stored, so it runs once the row itself is written. Every write of the
+     * provider runs inside one transaction, so a refusal here takes the row back out with it.
+     *
+     * The parts are replaced and not matched up with the ones already there, the same end the
+     * people of a transaction reach, since a part has nothing but its own id to be matched by.
+     *
+     * @param transactionId id of the transaction.
+     * @param encodedParts the parts as {@link Contract.Transaction#SPLIT_PARTS} holds them, null
+     *                     or an empty array for none.
+     * @throws SQLiteDataException with {@link Contract.ErrorCode#SPLIT_NOT_VALID} when a part is
+     *                             of zero or below, the parts add up to more than the total, a
+     *                             part sits in a system category or in one of the other
+     *                             direction, or the transaction is not a standard one.
+     */
+    private void writeSplitParts(long transactionId, String encodedParts) {
+        List<ContentValues> parts = new ArrayList<>();
+        try {
+            for (SplitPartsCodec.Part part : SplitPartsCodec.decode(encodedParts)) {
+                ContentValues cv = new ContentValues();
+                cv.put(Schema.TransactionSplit.CATEGORY, part.getCategoryId());
+                cv.put(Schema.TransactionSplit.MONEY, part.getMoney());
+                cv.put(Schema.TransactionSplit.NOTE, part.getNote());
+                parts.add(cv);
+            }
+        } catch (JSONException e) {
+            throw new SQLiteDataException(Contract.ErrorCode.SPLIT_NOT_VALID, "The parts cannot be read: " + e.getMessage());
+        }
+        if (!parts.isEmpty()) {
+            checkSplitParts(transactionId, parts);
+        }
+        getWritableDatabase().delete(Schema.TransactionSplit.TABLE, Schema.TransactionSplit.TRANSACTION +
+                " = ?", new String[] {String.valueOf(transactionId)});
+        for (ContentValues cv : parts) {
+            cv.put(Schema.TransactionSplit.TRANSACTION, transactionId);
+            cv.put(Schema.TransactionSplit.UUID, UUID.randomUUID().toString());
+            cv.put(Schema.TransactionSplit.LAST_EDIT, System.currentTimeMillis());
+            cv.put(Schema.TransactionSplit.DELETED, false);
+            getWritableDatabase().insert(Schema.TransactionSplit.TABLE, null, cv);
+        }
+    }
+
+    /**
+     * A sum past the largest long wraps below zero and would pass the check against the total.
+     */
+    private void checkSplitParts(long transactionId, List<ContentValues> parts) {
+        long total;
+        int direction;
+        int type;
+        Cursor cursor = getReadableDatabase().query(Schema.Transaction.TABLE, new String[] {
+                Schema.Transaction.MONEY, Schema.Transaction.DIRECTION, Schema.Transaction.TYPE},
+                Schema.Transaction.ID + " = ?", new String[] {String.valueOf(transactionId)}, null, null, null);
+        try {
+            if (!cursor.moveToFirst()) {
+                throw new SQLiteDataException(Contract.ErrorCode.SPLIT_NOT_VALID,
+                        String.format(Locale.ENGLISH, "The transaction (id: %d) is not stored", transactionId));
+            }
+            total = cursor.getLong(0);
+            direction = cursor.getInt(1);
+            type = cursor.getInt(2);
+        } finally {
+            cursor.close();
+        }
+        if (type != Contract.TransactionType.STANDARD) {
+            throw new SQLiteDataException(Contract.ErrorCode.SPLIT_NOT_VALID,
+                    String.format(Locale.ENGLISH, "The transaction (id: %d) is of type %d and cannot be split", transactionId, type));
+        }
+        int categoryType = direction == Schema.Direction.INCOME ? Schema.CategoryType.INCOME : Schema.CategoryType.EXPENSE;
+        long sum = 0L;
+        for (ContentValues part : parts) {
+            long money = part.getAsLong(Schema.TransactionSplit.MONEY);
+            long categoryId = part.getAsLong(Schema.TransactionSplit.CATEGORY);
+            if (money <= 0L) {
+                throw new SQLiteDataException(Contract.ErrorCode.SPLIT_NOT_VALID,
+                        String.format(Locale.ENGLISH, "A part of the transaction (id: %d) holds %d", transactionId, money));
+            }
+            sum = money > Long.MAX_VALUE - sum ? Long.MAX_VALUE : sum + money;
+            cursor = getReadableDatabase().query(Schema.Category.TABLE, new String[] {Schema.Category.TYPE},
+                    Schema.Category.ID + " = ? AND " + Schema.Category.DELETED + " = 0",
+                    new String[] {String.valueOf(categoryId)}, null, null, null);
+            try {
+                if (!cursor.moveToFirst() || cursor.getInt(0) != categoryType) {
+                    throw new SQLiteDataException(Contract.ErrorCode.SPLIT_NOT_VALID,
+                            String.format(Locale.ENGLISH, "The category (id: %d) of a part is missing or not of the direction of the transaction (id: %d)", categoryId, transactionId));
+                }
+            } finally {
+                cursor.close();
+            }
+        }
+        if (sum > total) {
+            throw new SQLiteDataException(Contract.ErrorCode.SPLIT_NOT_VALID,
+                    String.format(Locale.ENGLISH, "The parts of the transaction (id: %d) add up to %d, more than its total of %d", transactionId, sum, total));
+        }
     }
 
     /**
@@ -829,6 +1472,34 @@ import java.util.UUID;
     }
 
     /**
+     * This method is called by the content provider when the user is querying the live parts of
+     * a specific transaction, each with its category, whether they are valid or not.
+     *
+     * @param id of the transaction.
+     * @param projection column names that are requested to be part of the cursor.
+     * @param selection string that may contains additional filters for the query.
+     * @param selectionArgs string array that may contains the arguments for the selection string.
+     * @param sortOrder string that may contains column name to use to sort the cursor.
+     * @return a cursor with zero or more rows.
+     */
+    /*package-local*/ Cursor getTransactionSplits(long id, String[] projection, String selection, String[] selectionArgs, String sortOrder) {
+        String subQuery = "SELECT " +
+                "s." + Schema.TransactionSplit.ID + " AS " + Contract.TransactionSplit.ID + ", " +
+                "s." + Schema.TransactionSplit.CATEGORY + " AS " + Contract.TransactionSplit.CATEGORY_ID + ", " +
+                "c." + Schema.Category.NAME + " AS " + Contract.TransactionSplit.CATEGORY_NAME + ", " +
+                "c." + Schema.Category.ICON + " AS " + Contract.TransactionSplit.CATEGORY_ICON + ", " +
+                "c." + Schema.Category.TYPE + " AS " + Contract.TransactionSplit.CATEGORY_TYPE + ", " +
+                "s." + Schema.TransactionSplit.MONEY + " AS " + Contract.TransactionSplit.MONEY + ", " +
+                "s." + Schema.TransactionSplit.NOTE + " AS " + Contract.TransactionSplit.NOTE + " " +
+                "FROM " + Schema.TransactionSplit.TABLE + " AS s LEFT JOIN " + Schema.Category.TABLE +
+                " AS c ON s." + Schema.TransactionSplit.CATEGORY + " = c." + Schema.Category.ID +
+                " AND c." + Schema.Category.DELETED + " = 0 WHERE s." + Schema.TransactionSplit.DELETED +
+                " = 0 AND s." + Schema.TransactionSplit.TRANSACTION + " = " + id;
+        return queryFrom(subQuery, projection, selection, selectionArgs,
+                sortOrder != null ? sortOrder : Contract.TransactionSplit.ID);
+    }
+
+    /**
      * This method is called by the content provider when the user is updating a specific transaction.
      * A transfer transaction cannot be updated directly, it must be updated updating the related
      * transfer item.
@@ -836,9 +1507,35 @@ import java.util.UUID;
      * @param transactionId id of the transaction to update.
      * @param contentValues set of column values to update.
      * @return the number of rows affected by the update.
-     * @throws SQLiteDataException if the transaction is part of a transfer.
+     * @throws SQLiteDataException if the transaction is part of a transfer, if it is a debt's
+     *                             master transaction and checkStrandedCurrency refuses the wallet,
+     *                             or if it is a debt payment moved to a wallet of another currency
+     *                             than the debt's.
      */
     /*package-local*/ int updateTransaction(long transactionId, ContentValues contentValues) {
+        checkDebtOfMasterTransactionWallet(transactionId, contentValues);
+        checkDebtPaymentOfTransactionWallet(transactionId, contentValues);
+        int rows = updateTransactionRow(transactionId, contentValues);
+        if (rows > 0) {
+            syncDebtOfMasterTransaction(transactionId, contentValues);
+        }
+        return rows;
+    }
+
+    /**
+     * The columns of one transaction, and its people and attachment links, with no debt sync.
+     *
+     * updateDebt calls this one. It writes the debt row and then pushes the same values onto the
+     * debt's master transaction, and going through updateTransaction from there would turn
+     * around and write the debt a second time. Splitting the two is what makes that impossible
+     * to reach, instead of a flag that has to be right every time.
+     *
+     * @param transactionId id of the transaction to update.
+     * @param contentValues set of column values to update.
+     * @return the number of rows affected by the update.
+     * @throws SQLiteDataException if the transaction is part of a transfer.
+     */
+    private int updateTransactionRow(long transactionId, ContentValues contentValues) {
         // we must checks that the transaction is not part of a transfer
         String[] projection = new String[]{Schema.Transfer.ID};
         String where = Schema.Transfer.TRANSACTION_FROM + " = ? OR " + Schema.Transfer.TRANSACTION_TO +
@@ -973,23 +1670,41 @@ import java.util.UUID;
                     }
                 }
             }
-            if (!mCacheDeletedObjects) {
-                // remove all deleted TransactionPeople
-                where = Schema.TransactionPeople.TRANSACTION + " = ? AND " + Schema.TransactionPeople.DELETED + " = 1";
-                whereArgs = new String[]{String.valueOf(transactionId)};
-                getWritableDatabase().delete(Schema.TransactionPeople.TABLE, where, whereArgs);
-                // remove all deleted TransactionAttachment
-                where = Schema.TransactionAttachment.TRANSACTION + " = ? AND " + Schema.TransactionAttachment.DELETED + " = 1";
-                whereArgs = new String[]{String.valueOf(transactionId)};
-                getWritableDatabase().delete(Schema.TransactionAttachment.TABLE, where, whereArgs);
+            if (contentValues.containsKey(Contract.Transaction.SPLIT_PARTS)) {
+                writeSplitParts(transactionId, contentValues.getAsString(Contract.Transaction.SPLIT_PARTS));
             }
+            if (contentValues.containsKey(Contract.Transaction.FIX_SPLIT_DECIMALS)) {
+                int decimalOffset = contentValues.getAsInteger(Contract.Transaction.FIX_SPLIT_DECIMALS);
+                projection = new String[] {Schema.TransactionSplit.ID, Schema.TransactionSplit.MONEY};
+                where = Schema.TransactionSplit.TRANSACTION + " = ?";
+                whereArgs = new String[]{String.valueOf(transactionId)};
+                cursor = getReadableDatabase().query(Schema.TransactionSplit.TABLE, projection, where, whereArgs, null, null, null);
+                try {
+                    while (cursor.moveToNext()) {
+                        cv = new ContentValues();
+                        cv.put(Schema.TransactionSplit.MONEY, MoneyFormatter.normalize(cursor.getLong(1), decimalOffset));
+                        cv.put(Schema.TransactionSplit.LAST_EDIT, System.currentTimeMillis());
+                        getWritableDatabase().update(Schema.TransactionSplit.TABLE, cv,
+                                Schema.TransactionSplit.ID + " = ?", new String[]{String.valueOf(cursor.getLong(0))});
+                    }
+                } finally {
+                    cursor.close();
+                }
+            }
+            // remove all deleted TransactionPeople
+            where = Schema.TransactionPeople.TRANSACTION + " = ? AND " + Schema.TransactionPeople.DELETED + " = 1";
+            whereArgs = new String[]{String.valueOf(transactionId)};
+            getWritableDatabase().delete(Schema.TransactionPeople.TABLE, where, whereArgs);
+            // remove all deleted TransactionAttachment
+            where = Schema.TransactionAttachment.TRANSACTION + " = ? AND " + Schema.TransactionAttachment.DELETED + " = 1";
+            whereArgs = new String[]{String.valueOf(transactionId)};
+            getWritableDatabase().delete(Schema.TransactionAttachment.TABLE, where, whereArgs);
         }
         return rows;
     }
 
     /**
-     * Delete a transaction from the database. If the 'mCacheDeletedObjects' flag is enabled the data
-     * is not removed but simply flagged as deleted. The transaction is NOT removed if part of a transfer.
+     * Delete a transaction from the database. The transaction is NOT removed if part of a transfer.
      * @param transactionId id of the transaction to remove.
      * @return the number of rows affected by the deletion (must be 1 for success).
      * @throws SQLiteDataException if the transaction is part of a transfer.
@@ -1024,39 +1739,28 @@ import java.util.UUID;
      * @return the number of row affected.
      */
     private int deleteTransactionItem(long transactionId) {
+        // the attachments have to go before the rows that link them to this transaction, since
+        // that link is how they are found
+        deleteAttachmentsOf(Schema.TransactionAttachment.TABLE, Schema.TransactionAttachment.ATTACHMENT,
+                Schema.TransactionAttachment.TRANSACTION + " = ? AND "
+                        + Schema.TransactionAttachment.DELETED + " = 0",
+                new String[] {String.valueOf(transactionId)});
         // remove all TransactionPeople
         String where = Schema.TransactionPeople.TRANSACTION + " = ?";
         String[] whereArgs = new String[]{String.valueOf(transactionId)};
-        if (mCacheDeletedObjects) {
-            ContentValues cv = new ContentValues();
-            cv.put(Schema.TransactionPeople.DELETED, true);
-            cv.put(Schema.TransactionPeople.LAST_EDIT, System.currentTimeMillis());
-            getWritableDatabase().update(Schema.TransactionPeople.TABLE, cv, where, whereArgs);
-        } else {
-            getWritableDatabase().delete(Schema.TransactionPeople.TABLE, where, whereArgs);
-        }
+        getWritableDatabase().delete(Schema.TransactionPeople.TABLE, where, whereArgs);
+        // remove all TransactionSplit
+        where = Schema.TransactionSplit.TRANSACTION + " = ?";
+        whereArgs = new String[]{String.valueOf(transactionId)};
+        getWritableDatabase().delete(Schema.TransactionSplit.TABLE, where, whereArgs);
         // now remove all TransactionAttachment
         where = Schema.TransactionAttachment.TRANSACTION + " = ?";
         whereArgs = new String[]{String.valueOf(transactionId)};
-        if (mCacheDeletedObjects) {
-            ContentValues cv = new ContentValues();
-            cv.put(Schema.TransactionAttachment.DELETED, true);
-            cv.put(Schema.TransactionAttachment.LAST_EDIT, System.currentTimeMillis());
-            getWritableDatabase().update(Schema.TransactionAttachment.TABLE, cv, where, whereArgs);
-        } else {
-            getWritableDatabase().delete(Schema.TransactionAttachment.TABLE, where, whereArgs);
-        }
+        getWritableDatabase().delete(Schema.TransactionAttachment.TABLE, where, whereArgs);
         // finally we can remove the transfer item
         where = Schema.Transaction.ID + " = ?";
         whereArgs = new String[]{String.valueOf(transactionId)};
-        if (mCacheDeletedObjects) {
-            ContentValues cv = new ContentValues();
-            cv.put(Schema.Transaction.DELETED, true);
-            cv.put(Schema.Transaction.LAST_EDIT, System.currentTimeMillis());
-            return getWritableDatabase().update(Schema.Transaction.TABLE, cv, where, whereArgs);
-        } else {
-            return getWritableDatabase().delete(Schema.Transaction.TABLE, where, whereArgs);
-        }
+        return getWritableDatabase().delete(Schema.Transaction.TABLE, where, whereArgs);
     }
 
     private int deleteTransactionItems(Cursor cursor) {
@@ -1476,14 +2180,7 @@ import java.util.UUID;
             } else {
                 where = Schema.Transaction.ID + " = ?";
                 whereArgs = new String[] {String.valueOf(transactionIds[2])};
-                if (mCacheDeletedObjects) {
-                    cv = new ContentValues();
-                    cv.put(Schema.Transaction.LAST_EDIT, System.currentTimeMillis());
-                    cv.put(Schema.Transaction.DELETED, true);
-                    getWritableDatabase().update(Schema.Transaction.TABLE, cv, where, whereArgs);
-                } else {
-                    getWritableDatabase().delete(Schema.Transaction.TABLE, where, whereArgs);
-                }
+                getWritableDatabase().delete(Schema.Transaction.TABLE, where, whereArgs);
                 transactionIds[2] = null;
             }
         } else if (contentValues.getAsLong(Contract.Transfer.TRANSACTION_TAX_MONEY) != 0L) {
@@ -1591,16 +2288,14 @@ import java.util.UUID;
                     }
                 }
             }
-            if (!mCacheDeletedObjects) {
-                // remove all deleted TransactionPeople
-                where = Schema.TransferPeople.TRANSFER + " = ? AND " + Schema.TransferPeople.DELETED + " = 1";
-                whereArgs = new String[]{String.valueOf(transferId)};
-                getWritableDatabase().delete(Schema.TransferPeople.TABLE, where, whereArgs);
-                // remove all deleted TransactionAttachment
-                where = Schema.TransferAttachment.TRANSFER + " = ? AND " + Schema.TransferAttachment.DELETED + " = 1";
-                whereArgs = new String[]{String.valueOf(transferId)};
-                getWritableDatabase().delete(Schema.TransferAttachment.TABLE, where, whereArgs);
-            }
+            // remove all deleted TransactionPeople
+            where = Schema.TransferPeople.TRANSFER + " = ? AND " + Schema.TransferPeople.DELETED + " = 1";
+            whereArgs = new String[]{String.valueOf(transferId)};
+            getWritableDatabase().delete(Schema.TransferPeople.TABLE, where, whereArgs);
+            // remove all deleted TransactionAttachment
+            where = Schema.TransferAttachment.TRANSFER + " = ? AND " + Schema.TransferAttachment.DELETED + " = 1";
+            whereArgs = new String[]{String.valueOf(transferId)};
+            getWritableDatabase().delete(Schema.TransferAttachment.TABLE, where, whereArgs);
         }
         return rows;
     }
@@ -1612,6 +2307,15 @@ import java.util.UUID;
      * @return the number of row affected.
      */
     /*package-local*/ int deleteTransfer(long transferId) {
+        // this has to be the first thing done. Where deletes are hard, which is every build that
+        // ships, removing the from or the to leg below takes the transfer row with it, since
+        // transfers references those two ON DELETE CASCADE, and that takes the
+        // transfer_attachment rows with it in turn, leaving the block further down nothing to
+        // read the attachments from
+        deleteAttachmentsOf(Schema.TransferAttachment.TABLE, Schema.TransferAttachment.ATTACHMENT,
+                Schema.TransferAttachment.TRANSFER + " = ? AND "
+                        + Schema.TransferAttachment.DELETED + " = 0",
+                new String[] {String.valueOf(transferId)});
         // obtain the transaction ids related to the transfer
         for (Long transactionId : getTransferTransactionIds(transferId)) {
             if (transactionId != null) {
@@ -1621,36 +2325,15 @@ import java.util.UUID;
         // now remove all TransferPeople
         String where = Schema.TransferPeople.TRANSFER + " = ?";
         String[] whereArgs = new String[]{String.valueOf(transferId)};
-        if (mCacheDeletedObjects) {
-            ContentValues cv = new ContentValues();
-            cv.put(Schema.TransferPeople.DELETED, true);
-            cv.put(Schema.TransferPeople.LAST_EDIT, System.currentTimeMillis());
-            getWritableDatabase().update(Schema.TransferPeople.TABLE, cv, where, whereArgs);
-        } else {
-            getWritableDatabase().delete(Schema.TransferPeople.TABLE, where, whereArgs);
-        }
+        getWritableDatabase().delete(Schema.TransferPeople.TABLE, where, whereArgs);
         // now remove all TransferAttachment
         where = Schema.TransferAttachment.TRANSFER + " = ?";
         whereArgs = new String[]{String.valueOf(transferId)};
-        if (mCacheDeletedObjects) {
-            ContentValues cv = new ContentValues();
-            cv.put(Schema.TransferAttachment.DELETED, true);
-            cv.put(Schema.TransferAttachment.LAST_EDIT, System.currentTimeMillis());
-            getWritableDatabase().update(Schema.TransferAttachment.TABLE, cv, where, whereArgs);
-        } else {
-            getWritableDatabase().delete(Schema.TransferAttachment.TABLE, where, whereArgs);
-        }
+        getWritableDatabase().delete(Schema.TransferAttachment.TABLE, where, whereArgs);
         // finally we can remove the transfer item
         where = Schema.Transfer.ID + " = ?";
         whereArgs = new String[]{String.valueOf(transferId)};
-        if (mCacheDeletedObjects) {
-            ContentValues cv = new ContentValues();
-            cv.put(Schema.Transfer.DELETED, true);
-            cv.put(Schema.Transfer.LAST_EDIT, System.currentTimeMillis());
-            return getWritableDatabase().update(Schema.Transfer.TABLE, cv, where, whereArgs);
-        } else {
-            return getWritableDatabase().delete(Schema.Transfer.TABLE, where, whereArgs);
-        }
+        return getWritableDatabase().delete(Schema.Transfer.TABLE, where, whereArgs);
     }
 
     /**
@@ -1725,7 +2408,7 @@ import java.util.UUID;
         if (selectionArgs != null) {
             System.arraycopy(selectionArgs, 0, _selectionArgs, 2, size);
         }
-        return getTransactions(projection, _selection, _selectionArgs, sortOrder);
+        return getCategoryShares(projection, _selection, _selectionArgs, sortOrder);
     }
 
     /**
@@ -1794,6 +2477,7 @@ import java.util.UUID;
         // check if category is a system category: only the flag SHOW_REPORT can be changed
         boolean isSystemCategory = false;
         boolean isChildCategory = false;
+        Integer currentType = null;
         String[] projection = new String[] {Schema.Category.TYPE, Schema.Category.PARENT};
         String where = Schema.Category.ID + " = ?";
         String[] whereArgs = new String[]{String.valueOf(categoryId)};
@@ -1801,6 +2485,7 @@ import java.util.UUID;
         if (cursor != null) {
             try {
                 if (cursor.moveToFirst()) {
+                    currentType = cursor.getInt(cursor.getColumnIndexOrThrow(Schema.Category.TYPE));
                     if (cursor.getInt(cursor.getColumnIndex(Schema.Category.TYPE)) == Contract.CategoryType.SYSTEM.getValue()) {
                         isSystemCategory = true;
                     }
@@ -1869,6 +2554,27 @@ import java.util.UUID;
                         cursor.close();
                     }
                 }
+            }
+        }
+        // a part has to sit in a category of its transaction's direction, so a type change that
+        // flips the direction of either side is refused while live parts depend on it
+        if (!isSystemCategory && currentType != null && contentValues.containsKey(Contract.Category.TYPE)
+                && contentValues.getAsInteger(Contract.Category.TYPE) != Schema.CategoryType.SYSTEM
+                && contentValues.getAsInteger(Contract.Category.TYPE) != currentType.intValue()) {
+            cursor = getReadableDatabase().rawQuery("SELECT s." + Schema.TransactionSplit.ID + " FROM " +
+                    Schema.TransactionSplit.TABLE + " AS s JOIN " + Schema.Transaction.TABLE + " AS t ON s." +
+                    Schema.TransactionSplit.TRANSACTION + " = t." + Schema.Transaction.ID + " WHERE (s." +
+                    Schema.TransactionSplit.CATEGORY + " = ? OR t." + Schema.Transaction.CATEGORY +
+                    " = ?) AND s." + Schema.TransactionSplit.DELETED + " = 0 AND t." +
+                    Schema.Transaction.DELETED + " = 0", new String[] {String.valueOf(categoryId),
+                    String.valueOf(categoryId)});
+            try {
+                if (cursor.moveToFirst()) {
+                    throw new SQLiteDataException(Contract.ErrorCode.CATEGORY_IN_USE,
+                            String.format(Locale.ENGLISH, "The type of the category (id: %d) cannot be changed because %d parts of transactions depend on it", categoryId, cursor.getCount()));
+                }
+            } finally {
+                cursor.close();
             }
         }
         // update the category
@@ -1986,6 +2692,34 @@ import java.util.UUID;
                 cursor.close();
             }
         }
+        // check if category is in use in some part of a transaction. The key carries ON DELETE
+        // CASCADE, so a part this check lets through leaves with the category. That is safe only
+        // for a part of a transaction whose parts are invalid now and stay invalid without the
+        // parts in this category, since then its one line reads under the main category before
+        // and after. Removing the one part that keeps the others invalid would move their money
+        // off the main category
+        cursor = getReadableDatabase().rawQuery("SELECT DISTINCT t." + Schema.Transaction.ID + " FROM " +
+                Schema.TransactionSplit.TABLE + " AS s JOIN " + Schema.Transaction.TABLE + " AS t ON s." +
+                Schema.TransactionSplit.TRANSACTION + " = t." + Schema.Transaction.ID + " WHERE s." +
+                Schema.TransactionSplit.CATEGORY + " = ? AND s." + Schema.TransactionSplit.DELETED +
+                " = 0 AND s." + Schema.TransactionSplit.TRANSACTION + " IN (SELECT _parts_transaction FROM (" +
+                VALID_PARTS + ") UNION SELECT _parts_transaction FROM (" + validParts(" AND s." +
+                Schema.TransactionSplit.CATEGORY + " != ?") + ")) ORDER BY t." + Schema.Transaction.DATE +
+                " DESC, t." + Schema.Transaction.ID + " DESC",
+                new String[] {String.valueOf(categoryId), String.valueOf(categoryId)});
+        try {
+            if (cursor.moveToFirst()) {
+                long[] transactionIds = new long[cursor.getCount()];
+                do {
+                    transactionIds[cursor.getPosition()] = cursor.getLong(0);
+                } while (cursor.moveToNext());
+                throw new SQLiteDataException(Contract.ErrorCode.CATEGORY_IN_SPLIT,
+                        String.format(Locale.ENGLISH, "The category (id: %d) cannot be deleted because it is in use in parts of %d transactions", categoryId, transactionIds.length),
+                        transactionIds);
+            }
+        } finally {
+            cursor.close();
+        }
         // check if category is in use in some transaction model
         projection = new String[] {Schema.TransactionModel.ID};
         where = Schema.TransactionModel.CATEGORY + " = ? AND " + Schema.TransactionModel.DELETED + " = 0";
@@ -2016,7 +2750,10 @@ import java.util.UUID;
                 cursor.close();
             }
         }
-        // check if category is in use in some budget
+        // check if category is in use in some budget. Both places have to be asked. The column
+        // carries ON DELETE CASCADE, so a category it names and this check misses does not fail,
+        // it takes the whole budget row with it. And a budget covering several categories reaches
+        // all but the first of them through the join table alone, which the column cannot see.
         projection = new String[] {Schema.Budget.ID};
         where = Schema.Budget.CATEGORY + " = ? AND " + Schema.Budget.DELETED + " = 0";
         whereArgs = new String[]{String.valueOf(categoryId)};
@@ -2031,17 +2768,161 @@ import java.util.UUID;
                 cursor.close();
             }
         }
+        projection = new String[] {"bc." + Schema.BudgetCategory.BUDGET};
+        where = "bc." + Schema.BudgetCategory.CATEGORY + " = ? AND bc." +
+                Schema.BudgetCategory.DELETED + " = 0 AND b." + Schema.Budget.DELETED + " = 0";
+        whereArgs = new String[]{String.valueOf(categoryId)};
+        cursor = getReadableDatabase().query(Schema.BudgetCategory.TABLE + " AS bc JOIN " +
+                Schema.Budget.TABLE + " AS b ON bc." + Schema.BudgetCategory.BUDGET + " = b." +
+                Schema.Budget.ID, projection, where, whereArgs, null, null, null);
+        if (cursor != null) {
+            try {
+                if (cursor.moveToFirst()) {
+                    throw new SQLiteDataException(Contract.ErrorCode.CATEGORY_IN_USE,
+                            String.format(Locale.ENGLISH, "The category (id: %d) cannot be deleted because it is in use in %d budgets", categoryId, cursor.getCount()));
+                }
+            } finally {
+                cursor.close();
+            }
+        }
         // if this line has been reached, the category can be removed
         where = Schema.Category.ID + " = ?";
         whereArgs = new String[]{String.valueOf(categoryId)};
-        if (mCacheDeletedObjects) {
-            ContentValues cv = new ContentValues();
-            cv.put(Schema.Category.DELETED, true);
-            cv.put(Schema.Category.LAST_EDIT, System.currentTimeMillis());
-            return getWritableDatabase().update(Schema.Category.TABLE, cv, where, whereArgs);
-        } else {
-            return getWritableDatabase().delete(Schema.Category.TABLE, where, whereArgs);
+        return getWritableDatabase().delete(Schema.Category.TABLE, where, whereArgs);
+    }
+
+    /**
+     * This method is called by the content provider when the user is querying a specific
+     * category rule.
+     *
+     * @param ruleId id of the rule.
+     * @param projection column names that are requested to be part of the cursor.
+     * @return a cursor with zero or one row.
+     */
+    /*package-local*/ Cursor getCategoryRule(long ruleId, String[] projection) {
+        String selection = Schema.CategoryRule.ID + " = ?";
+        String[] selectionArgs = new String[]{String.valueOf(ruleId)};
+        return getCategoryRules(projection, selection, selectionArgs, null);
+    }
+
+    /**
+     * This method is called by the content provider when the user is querying all the category
+     * rules.
+     *
+     * @param projection column names that are requested to be part of the cursor.
+     * @param selection string that may contains additional filters for the query.
+     * @param selectionArgs string array that may contains the arguments for the selection string.
+     * @param sortOrder string that may contains column name to use to sort the cursor.
+     * @return a cursor with zero or more rows.
+     */
+    /*package-local*/ Cursor getCategoryRules(String[] projection, String selection, String[] selectionArgs, String sortOrder) {
+        String subQuery = "SELECT " +
+                "cr." + Schema.CategoryRule.ID + " AS " + Contract.CategoryRule.ID + ", " +
+                "cr." + Schema.CategoryRule.PATTERN + " AS " + Contract.CategoryRule.PATTERN + ", " +
+                "cr." + Schema.CategoryRule.CATEGORY + " AS " + Contract.CategoryRule.CATEGORY_ID + ", " +
+                "c." + Schema.Category.NAME + " AS " + Contract.CategoryRule.CATEGORY_NAME + ", " +
+                "cr." + Schema.CategoryRule.INDEX + " AS " + Contract.CategoryRule.INDEX +
+                " FROM " + Schema.CategoryRule.TABLE + " AS cr JOIN " + Schema.Category.TABLE +
+                " AS c ON cr." + Schema.CategoryRule.CATEGORY + " = c." + Schema.Category.ID +
+                " AND c." + Schema.Category.DELETED + " = 0 WHERE cr." +
+                Schema.CategoryRule.DELETED + " = 0";
+        return queryFrom(subQuery, projection, selection, selectionArgs, sortOrder);
+    }
+
+    /**
+     * The category named by the first rule whose pattern appears in the given description, or an
+     * empty cursor when no rule matches. Which rule comes first is decided by the index column,
+     * the priority the rules are kept in. Two rules can hold the same index, since nothing in the
+     * schema stops it and a restore writes the column straight from the file, so the id breaks the
+     * tie and the older rule wins. Without it SQLite is free to answer either one.
+     *
+     * instr and not LIKE, because a percent or an underscore typed into a pattern is a wildcard
+     * under LIKE and would have to be escaped. lower() folds ASCII only, which is the same limit
+     * LIKE carries.
+     *
+     * @param description text the user typed on the transaction.
+     * @return a cursor with zero or one row, holding the category id.
+     */
+    /*package-local*/ Cursor getCategoryRuleMatch(String description) {
+        String query = "SELECT " + Schema.CategoryRule.CATEGORY + " AS " +
+                Contract.CategoryRule.CATEGORY_ID + " FROM " + Schema.CategoryRule.TABLE +
+                " WHERE " + Schema.CategoryRule.DELETED + " = 0 AND instr(lower(?), lower(" +
+                Schema.CategoryRule.PATTERN + ")) > 0 ORDER BY " + Schema.CategoryRule.INDEX +
+                ", " + Schema.CategoryRule.ID + " LIMIT 1";
+        return getReadableDatabase().rawQuery(query, new String[]{description});
+    }
+
+    /**
+     * The index a new rule is appended at, one past the highest the table holds. Rows flagged
+     * deleted count too, so a rule a restored backup brings back cannot collide with one written
+     * since.
+     *
+     * @return the index to write, zero when the table is empty.
+     */
+    private int nextCategoryRuleIndex() {
+        Cursor cursor = getReadableDatabase().rawQuery("SELECT IFNULL(MAX(" +
+                Schema.CategoryRule.INDEX + "), -1) + 1 FROM " + Schema.CategoryRule.TABLE, null);
+        try {
+            return cursor.moveToFirst() ? cursor.getInt(0) : 0;
+        } finally {
+            cursor.close();
         }
+    }
+
+    /**
+     * This method is called by the content provider when the user is inserting a new category
+     * rule. A rule that names no index of its own is appended after the ones already there.
+     *
+     * @param contentValues bundle that contains the data from the content provider.
+     * @return the id of the new item if inserted, -1 if an error occurs.
+     */
+    /*package-local*/ long insertCategoryRule(ContentValues contentValues) {
+        ContentValues cv = new ContentValues();
+        cv.put(Schema.CategoryRule.PATTERN, contentValues.getAsString(Contract.CategoryRule.PATTERN));
+        cv.put(Schema.CategoryRule.CATEGORY, contentValues.getAsLong(Contract.CategoryRule.CATEGORY_ID));
+        Integer index = contentValues.getAsInteger(Contract.CategoryRule.INDEX);
+        cv.put(Schema.CategoryRule.INDEX, index != null ? index : nextCategoryRuleIndex());
+        cv.put(Schema.CategoryRule.UUID, UUID.randomUUID().toString());
+        cv.put(Schema.CategoryRule.LAST_EDIT, System.currentTimeMillis());
+        cv.put(Schema.CategoryRule.DELETED, false);
+        return getWritableDatabase().insert(Schema.CategoryRule.TABLE, null, cv);
+    }
+
+    /**
+     * This method is called by the content provider when the user is updating an existing
+     * category rule.
+     *
+     * @param ruleId id of the rule to update.
+     * @param contentValues bundle that contains the values to update.
+     * @return the number of row affected.
+     */
+    /*package-local*/ int updateCategoryRule(long ruleId, ContentValues contentValues) {
+        ContentValues cv = new ContentValues();
+        if (contentValues.containsKey(Contract.CategoryRule.PATTERN)) {
+            cv.put(Schema.CategoryRule.PATTERN, contentValues.getAsString(Contract.CategoryRule.PATTERN));
+        }
+        if (contentValues.containsKey(Contract.CategoryRule.CATEGORY_ID)) {
+            cv.put(Schema.CategoryRule.CATEGORY, contentValues.getAsLong(Contract.CategoryRule.CATEGORY_ID));
+        }
+        if (contentValues.containsKey(Contract.CategoryRule.INDEX)) {
+            cv.put(Schema.CategoryRule.INDEX, contentValues.getAsInteger(Contract.CategoryRule.INDEX));
+        }
+        cv.put(Schema.CategoryRule.LAST_EDIT, System.currentTimeMillis());
+        String where = Schema.CategoryRule.ID + " = ?";
+        String[] whereArgs = new String[]{String.valueOf(ruleId)};
+        return getWritableDatabase().update(Schema.CategoryRule.TABLE, cv, where, whereArgs);
+    }
+
+    /**
+     * Delete a category rule from the database.
+     *
+     * @param ruleId id of the rule to remove.
+     * @return the number of rows affected by the deletion (must be 1 for success).
+     */
+    /*package-local*/ int deleteCategoryRule(long ruleId) {
+        String where = Schema.CategoryRule.ID + " = ?";
+        String[] whereArgs = new String[]{String.valueOf(ruleId)};
+        return getWritableDatabase().delete(Schema.CategoryRule.TABLE, where, whereArgs);
     }
 
     /**
@@ -2171,6 +3052,345 @@ import java.util.UUID;
     }
 
     /**
+     * A debt and its master transaction are the same event, so the transaction takes the debt's
+     * day. Only the day, since the debt editor writes that date with no time of day. The time of
+     * day is the transaction's own, entered through the time picker in the transaction editor, and
+     * saving the debt no longer replaces it with the start of the day.
+     *
+     * A null transaction date is the insert path, where there is no transaction yet and no time to
+     * keep, so the new one starts at the beginning of the day. Debt.DATE is NOT NULL in the
+     * schema, so its own null branch cannot fire today and is only there to keep a schema change
+     * from becoming a crash here.
+     *
+     * The parse of the debt's date is lenient, like every other getDateFromSQLDateString call in
+     * this app, so a day past the end of its month rolls forward and a trailing time is dropped
+     * without complaint. NewEditDebtActivity is the only caller that writes this key and it always
+     * writes a plain valid date, so nothing here has to refuse those the way
+     * CSVDataImporter.parseDatetime does.
+     *
+     * The calendar that carries the time over is lenient too, so a time that does not exist on the
+     * debt's new day, the hour a spring forward skips, moves forward by the length of the skip.
+     * Tested on a device, 02:30:45 carried onto 2026-03-08 in America/New_York lands on 03:30:45.
+     * A time that happens twice on a fall back day writes back the string it was given.
+     */
+    private static String masterTransactionDateFor(String debtDate, String transactionDate) {
+        if (debtDate == null) {
+            return DateUtils.getSQLDateTimeString(System.currentTimeMillis());
+        }
+        Date day = DateUtils.getDateFromSQLDateString(debtDate);
+        if (transactionDate == null) {
+            return DateUtils.getSQLDateTimeString(day);
+        }
+        Calendar time = DateUtils.getCalendar(DateUtils.getDateFromSQLDateTimeString(transactionDate));
+        return DateUtils.getSQLDateTimeString(DateUtils.setTime(day, time.get(Calendar.HOUR_OF_DAY),
+                time.get(Calendar.MINUTE), time.get(Calendar.SECOND), 0));
+    }
+
+    /**
+     * The id of the debt this transaction is the master transaction of, or null when it is not
+     * one. A debt's payments carry the same type and the same debt id, so the category is what
+     * tells them apart, a master transaction is filed on the debt or credit system category and
+     * a payment on the paid debt or paid credit one. Same test updateDebt uses to find the master
+     * transaction from the other side.
+     *
+     * Asked of the stored row. syncDebtOfMasterTransaction asks after the row is written and
+     * checkDebtOfMasterTransactionWallet asks before it, and the only saves that reach both are
+     * the transaction editor's. That editor has no field for the type or the debt id and hides the
+     * category picker on a debt row, so it sends all three back at what it loaded and the answer
+     * is the same either way. updateDebt writes the master transaction through updateTransactionRow
+     * and reaches neither.
+     *
+     * Straight off the table, the way the transfer check at the top of updateTransactionRow reads
+     * its own. getTransaction would answer this too, and it builds the joined view every reader
+     * of a transaction gets: seven tables, a GROUP_CONCAT of the people and a GROUP BY over
+     * every row in the table. This runs on the save of every transaction, so it asks the three columns
+     * it needs of one row by its id.
+     */
+    private Long masterTransactionDebtId(long transactionId) {
+        String[] projection = new String[] {
+                Schema.Transaction.TYPE,
+                Schema.Transaction.DEBT,
+                Schema.Transaction.CATEGORY
+        };
+        String selection = Schema.Transaction.ID + " = ?";
+        String[] selectionArgs = new String[] {String.valueOf(transactionId)};
+        Cursor cursor = getReadableDatabase().query(Schema.Transaction.TABLE, projection, selection,
+                selectionArgs, null, null, null);
+        Long debtId = null;
+        if (cursor != null) {
+            try {
+                if (cursor.moveToFirst()
+                        && cursor.getInt(cursor.getColumnIndex(Schema.Transaction.TYPE)) == Contract.TransactionType.DEBT
+                        && !cursor.isNull(cursor.getColumnIndex(Schema.Transaction.DEBT))) {
+                    long categoryId = cursor.getLong(cursor.getColumnIndex(Schema.Transaction.CATEGORY));
+                    Long debtCategoryId = getSystemCategoryId(Schema.CategoryTag.DEBT);
+                    Long creditCategoryId = getSystemCategoryId(Schema.CategoryTag.CREDIT);
+                    if ((debtCategoryId != null && debtCategoryId == categoryId)
+                            || (creditCategoryId != null && creditCategoryId == categoryId)) {
+                        debtId = cursor.getLong(cursor.getColumnIndex(Schema.Transaction.DEBT));
+                    }
+                }
+            } finally {
+                cursor.close();
+            }
+        }
+        return debtId;
+    }
+
+    /**
+     * The wallet half of the sync below, asked before anything is written.
+     *
+     * Nothing here runs inside a database transaction, so a refusal raised from the sync would
+     * leave the transaction already moved and the debt sitting in the wallet it started in. The
+     * question is asked of the debt's own wallet, which is the one every figure on the debt is
+     * read in, and not of the transaction's.
+     *
+     * @param transactionId id of the transaction being updated.
+     * @param contentValues set of column values to update.
+     * @throws SQLiteDataException if checkStrandedCurrency refuses the wallet.
+     */
+    private void checkDebtOfMasterTransactionWallet(long transactionId, ContentValues contentValues) {
+        if (!contentValues.containsKey(Contract.Transaction.WALLET_ID)) {
+            return;
+        }
+        Long debtId = masterTransactionDebtId(transactionId);
+        if (debtId == null) {
+            return;
+        }
+        checkDebtWalletCurrency(debtId, contentValues.getAsLong(Contract.Transaction.WALLET_ID));
+    }
+
+    /**
+     * The payment half of the check, asked only when the update moves the row to another wallet.
+     * A ledger from before this check can hold a payment already in another currency than its
+     * debt, and a save that keeps that wallet has to go through, or its note or its date could
+     * never be edited again. The debt and the category are the ones the update names, or the
+     * stored ones when it names none.
+     *
+     * @param transactionId id of the transaction being updated.
+     * @param contentValues set of column values to update.
+     * @throws SQLiteDataException if checkDebtPaymentWalletCurrency refuses the wallet.
+     */
+    private void checkDebtPaymentOfTransactionWallet(long transactionId, ContentValues contentValues) {
+        if (!contentValues.containsKey(Contract.Transaction.WALLET_ID)) {
+            return;
+        }
+        Long walletId = contentValues.getAsLong(Contract.Transaction.WALLET_ID);
+        String[] projection = new String[] {
+                Schema.Transaction.WALLET,
+                Schema.Transaction.DEBT,
+                Schema.Transaction.CATEGORY
+        };
+        String selection = Schema.Transaction.ID + " = ?";
+        String[] selectionArgs = new String[] {String.valueOf(transactionId)};
+        Cursor cursor = getReadableDatabase().query(Schema.Transaction.TABLE, projection, selection,
+                selectionArgs, null, null, null);
+        Long storedWalletId = null;
+        Long storedDebtId = null;
+        Long storedCategoryId = null;
+        if (cursor != null) {
+            try {
+                if (cursor.moveToFirst()) {
+                    storedWalletId = cursor.getLong(cursor.getColumnIndexOrThrow(Schema.Transaction.WALLET));
+                    int debtIndex = cursor.getColumnIndexOrThrow(Schema.Transaction.DEBT);
+                    storedDebtId = cursor.isNull(debtIndex) ? null : cursor.getLong(debtIndex);
+                    storedCategoryId = cursor.getLong(cursor.getColumnIndexOrThrow(Schema.Transaction.CATEGORY));
+                }
+            } finally {
+                cursor.close();
+            }
+        }
+        if (storedWalletId == null || storedWalletId.equals(walletId)) {
+            return;
+        }
+        Long debtId = contentValues.containsKey(Contract.Transaction.DEBT_ID)
+                ? contentValues.getAsLong(Contract.Transaction.DEBT_ID) : storedDebtId;
+        Long categoryId = contentValues.containsKey(Contract.Transaction.CATEGORY_ID)
+                ? contentValues.getAsLong(Contract.Transaction.CATEGORY_ID) : storedCategoryId;
+        checkDebtPaymentWalletCurrency(debtId, categoryId, walletId);
+    }
+
+    /**
+     * A debt and its master transaction are the same event, so an edit to that transaction has to
+     * move the debt with it. updateDebt has done this in the other direction since the app was
+     * written and nothing did it in this one, so the transaction list could move or re price a
+     * debt's own transaction and leave the debt claiming the old day and the old amount.
+     *
+     * Only the columns a debt owns, and only the ones that were named, the way updateDebt
+     * writes its own half. Category and direction are not among them, because the transaction
+     * editor hides the category picker on a debt row so neither can move from this side. The
+     * debt's expiration date and its archived flag have no column on a transaction and are left
+     * alone. Its tag has one on both tables and is left alone anyway, since updateDebt does not
+     * carry a debt's tag onto its master transaction either. Its icon has no column and is
+     * written regardless, because the letters on a generated one are the initials of the
+     * description this method just moved. renamedDebtIcon below carries them and says what it
+     * leaves alone.
+     *
+     * The debt row is written here instead of through updateDebt, which would turn around and
+     * write the transaction a second time with the values it was just read from.
+     *
+     * A time of day entered here survives a later save of the debt, since masterTransactionDateFor
+     * takes only the day from the debt.
+     */
+    private void syncDebtOfMasterTransaction(long transactionId, ContentValues contentValues) {
+        Long debtId = masterTransactionDebtId(transactionId);
+        if (debtId == null) {
+            return;
+        }
+        ContentValues cv = new ContentValues();
+        if (contentValues.containsKey(Contract.Transaction.MONEY)) {
+            cv.put(Schema.Debt.MONEY, contentValues.getAsLong(Contract.Transaction.MONEY));
+        }
+        // The day the transaction lands on. getAsString reports a key that is absent as null,
+        // so this is the containsKey test the columns around it use, written the short way
+        // because the value has to be read either way. A date that is present cannot be null,
+        // since Schema.Transaction.DATE is NOT NULL and updateTransactionRow would have been
+        // refused before reaching this.
+        String date = contentValues.getAsString(Contract.Transaction.DATE);
+        if (date != null) {
+            cv.put(Schema.Debt.DATE, DateUtils.getSQLDateString(DateUtils.getDateFromSQLDateTimeString(date)));
+        }
+        // A description is optional on a transaction and required on a debt, which is not a
+        // difference this sync gets to erase. Schema.Debt.DESCRIPTION is NOT NULL and
+        // NewEditDebtActivity holds it non empty, while the transaction editor validates the date,
+        // the category and the wallet and never the description. Clearing it there and carrying
+        // the blank across would leave a debt its own editor refuses to save, so the debt keeps
+        // the description it has.
+        //
+        // Blank is what NonEmptyTextValidator calls blank, which is empty after a trim. Nothing
+        // trims on the way in, since MaterialEditText.getTextAsString hands back the field as
+        // typed, so a description of one space is a value TextUtils.isEmpty accepts and that
+        // validator refuses. Testing it any other way leaves a debt whose description looks empty
+        // on every screen and whose own editor will not save it until something is typed back.
+        // The value itself is written as it was typed, which is what the debt editor stores.
+        String description = contentValues.getAsString(Contract.Transaction.DESCRIPTION);
+        if (description != null && !description.trim().isEmpty()) {
+            cv.put(Schema.Debt.DESCRIPTION, description);
+            String icon = renamedDebtIcon(debtId, description);
+            if (icon != null) {
+                cv.put(Schema.Debt.ICON, icon);
+            }
+        }
+        if (contentValues.containsKey(Contract.Transaction.WALLET_ID)) {
+            cv.put(Schema.Debt.WALLET, contentValues.getAsLong(Contract.Transaction.WALLET_ID));
+        }
+        if (contentValues.containsKey(Contract.Transaction.PLACE_ID)) {
+            cv.put(Schema.Debt.PLACE, contentValues.getAsLong(Contract.Transaction.PLACE_ID));
+        }
+        if (contentValues.containsKey(Contract.Transaction.NOTE)) {
+            cv.put(Schema.Debt.NOTE, contentValues.getAsString(Contract.Transaction.NOTE));
+        }
+        if (cv.size() > 0) {
+            cv.put(Schema.Debt.LAST_EDIT, System.currentTimeMillis());
+            String where = Schema.Debt.ID + " = ?";
+            String[] whereArgs = new String[] {String.valueOf(debtId)};
+            getWritableDatabase().update(Schema.Debt.TABLE, cv, where, whereArgs);
+        }
+        if (contentValues.containsKey(Contract.Transaction.PEOPLE_IDS)) {
+            updateDebtPeople(debtId, contentValues.getAsString(Contract.Transaction.PEOPLE_IDS));
+        }
+    }
+
+    /**
+     * The letters on a debt's default icon are the initials of its description, and
+     * IconPicker.listenOn regenerates them on every keystroke in the debt editor's description
+     * field, so a debt renamed from this side has to do the same or its list row reads one name
+     * beside another name's letters. Only the letters move, since nothing derives the color from
+     * the description and the stored one is the only place it exists.
+     *
+     * On a rename and nothing else. The editor sends the description on every save, so an edit
+     * that only moved the amount arrives here looking the same as a rename, and rewriting the
+     * letters on one of those would change an icon the user had not touched. Not every stored
+     * pair agrees to begin with: IconPicker.restoreColorIcon writes the first character as it
+     * was typed, so a debt named rent payment can be sitting on the letter r, and without this
+     * test the next edit of any kind would turn it into RP.
+     *
+     * SystemCategoryLocalizer.relocalizedIcon does this same thing for a renamed system category
+     * and this follows it, including what it leaves alone. An icon the user picked out of the
+     * gallery is a VectorIcon with no letters in it and is untouched, and so is anything
+     * IconLoader cannot read.
+     *
+     * @return the icon to store, or null to leave the stored one as it is.
+     */
+    private String renamedDebtIcon(long debtId, String description) {
+        String stored = null;
+        String storedDescription = null;
+        Cursor cursor = getReadableDatabase().query(Schema.Debt.TABLE,
+                new String[] {Schema.Debt.ICON, Schema.Debt.DESCRIPTION}, Schema.Debt.ID + " = ?",
+                new String[] {String.valueOf(debtId)}, null, null, null);
+        if (cursor != null) {
+            try {
+                if (cursor.moveToFirst()) {
+                    stored = cursor.getString(cursor.getColumnIndex(Schema.Debt.ICON));
+                    storedDescription = cursor.getString(cursor.getColumnIndex(Schema.Debt.DESCRIPTION));
+                }
+            } finally {
+                cursor.close();
+            }
+        }
+        // Read before the debt row is written, so this is the name the debt is being renamed
+        // from. TextUtils.equals because the stored side is null when there is no debt row.
+        if (TextUtils.equals(description, storedDescription)) {
+            return null;
+        }
+        try {
+            Icon icon = IconLoader.parse(stored);
+            if (!(icon instanceof ColorIcon)) {
+                return null;
+            }
+            return new ColorIcon((ColorIcon) icon, IconLoader.getColorIconString(description)).toString();
+        } catch (Exception e) {
+            // IconLoader returns null on malformed json and throws on a type it does not know,
+            // which is the case this catches. The rename still lands, the icon keeps its letters.
+            Log.e(TAG, "unreadable icon on a renamed debt, keeping the old one", e);
+            return null;
+        }
+    }
+
+    /**
+     * We have to check if the new provided people ids is changed. We could query the current
+     * list, compute two sets containing the items to flag as deleted and the items to add
+     * but it is not enough fast. We can flag all the current items as deleted and then add all the
+     * ids as new items but checking for conflict. In case of conflict (same debtId, personId
+     * tuple) we update the deleted flag only.
+     */
+    private void updateDebtPeople(long debtId, String peopleIdList) {
+        ContentValues cv = new ContentValues();
+        cv.put(Schema.DebtPeople.DELETED, true);
+        String where = Schema.DebtPeople.DEBT + " = ?";
+        String[] whereArgs = new String[]{String.valueOf(debtId)};
+        getWritableDatabase().update(Schema.DebtPeople.TABLE, cv, where, whereArgs);
+        // All the current people associated with this debt are flagged as deleted, now it's
+        // time to add (checking for conflicts) the new ids.
+        long[] peopleIds = parseIds(peopleIdList);
+        if (peopleIds != null) {
+            for (long personId : peopleIds) {
+                cv.clear();
+                cv.put(Schema.DebtPeople.DEBT, debtId);
+                cv.put(Schema.DebtPeople.PERSON, personId);
+                cv.put(Schema.DebtPeople.UUID, UUID.randomUUID().toString());
+                cv.put(Schema.DebtPeople.LAST_EDIT, System.currentTimeMillis());
+                cv.put(Schema.DebtPeople.DELETED, false);
+                long newId = getWritableDatabase().insertWithOnConflict(Schema.DebtPeople.TABLE, null, cv, SQLiteDatabase.CONFLICT_IGNORE);
+                if (newId == -1L) {
+                    // In this case the tuple <debtId,personId> already exists inside the table!
+                    // We have to simply update the deleted flag and the update timestamp.
+                    cv.clear();
+                    cv.put(Schema.DebtPeople.LAST_EDIT, System.currentTimeMillis());
+                    cv.put(Schema.DebtPeople.DELETED, false);
+                    where = Schema.DebtPeople.DEBT + " = ? AND " + Schema.DebtPeople.PERSON + " = ?";
+                    whereArgs = new String[]{String.valueOf(debtId), String.valueOf(personId)};
+                    getWritableDatabase().update(Schema.DebtPeople.TABLE, cv, where, whereArgs);
+                }
+            }
+        }
+        // remove all deleted DebtPeople
+        where = Schema.DebtPeople.DEBT + " = ? AND " + Schema.DebtPeople.DELETED + " = 1";
+        whereArgs = new String[]{String.valueOf(debtId)};
+        getWritableDatabase().delete(Schema.DebtPeople.TABLE, where, whereArgs);
+    }
+
+    /**
      * This method is called by the content provider when the user is inserting a new debt.
      *
      * contentValues bundle that contains the data from the content provider.
@@ -2213,7 +3433,7 @@ import java.util.UUID;
                 cv = new ContentValues();
                 Contract.DebtType type = Contract.DebtType.fromValue(contentValues.getAsInteger(Contract.Debt.TYPE));
                 cv.put(Contract.Transaction.MONEY, contentValues.getAsLong(Contract.Debt.MONEY));
-                cv.put(Contract.Transaction.DATE, DateUtils.getSQLDateTimeString(System.currentTimeMillis()));
+                cv.put(Contract.Transaction.DATE, masterTransactionDateFor(contentValues.getAsString(Contract.Debt.DATE), null));
                 cv.put(Contract.Transaction.DESCRIPTION, contentValues.getAsString(Contract.Debt.DESCRIPTION));
                 cv.put(Contract.Transaction.CATEGORY_ID, getSystemCategoryId((type == Contract.DebtType.DEBT) ? Schema.CategoryTag.DEBT : Schema.CategoryTag.CREDIT));
                 cv.put(Contract.Transaction.DIRECTION, (type == Contract.DebtType.CREDIT) ? Contract.Direction.EXPENSE : Contract.Direction.INCOME);
@@ -2240,8 +3460,12 @@ import java.util.UUID;
      * @param debtId id of the debt to update.
      * @param contentValues bundle that contains the data from the content provider.
      * @return the number of row affected.
+     * @throws SQLiteDataException if checkStrandedCurrency refuses the wallet.
      */
     /*package-local*/ int updateDebt(long debtId, ContentValues contentValues) {
+        if (contentValues.containsKey(Contract.Debt.WALLET_ID)) {
+            checkDebtWalletCurrency(debtId, contentValues.getAsLong(Contract.Debt.WALLET_ID));
+        }
         ContentValues cv = new ContentValues();
         if (contentValues.containsKey(Contract.Debt.TYPE)) {
             cv.put(Schema.Debt.TYPE, contentValues.getAsInteger(Contract.Debt.TYPE));
@@ -2281,53 +3505,15 @@ import java.util.UUID;
         String[] whereArgs = new String[]{String.valueOf(debtId)};
         int rows = getWritableDatabase().update(Schema.Debt.TABLE, cv, where, whereArgs);
         if (rows > 0) {
-            // In this case we have to check if the new provided people ids is changed. We could
-            // query the current list, compute two sets containing the items to flag as deleted and
-            // and the items to add but it is not enough fast. We can flag all the current items as
-            // deleted and then add all the ids as new items but checking for conflict. In case of
-            // conflict (same <debtId,personId> tuple) we update the deleted flag only.
             if (contentValues.containsKey(Contract.Debt.PEOPLE_IDS)) {
-                cv = new ContentValues();
-                cv.put(Schema.DebtPeople.DELETED, true);
-                where = Schema.DebtPeople.DEBT + " = ?";
-                whereArgs = new String[]{String.valueOf(debtId)};
-                getWritableDatabase().update(Schema.DebtPeople.TABLE, cv, where, whereArgs);
-                // All the current people associated with this debt are flagged as deleted, now it's
-                // time to add (checking for conflicts) the new ids.
-                long[] peopleIds = parseIds(contentValues.getAsString(Contract.Debt.PEOPLE_IDS));
-                if (peopleIds != null) {
-                    for (long personId : peopleIds) {
-                        cv.clear();
-                        cv.put(Schema.DebtPeople.DEBT, debtId);
-                        cv.put(Schema.DebtPeople.PERSON, personId);
-                        cv.put(Schema.DebtPeople.UUID, UUID.randomUUID().toString());
-                        cv.put(Schema.DebtPeople.LAST_EDIT, System.currentTimeMillis());
-                        cv.put(Schema.DebtPeople.DELETED, false);
-                        long newId = getWritableDatabase().insertWithOnConflict(Schema.DebtPeople.TABLE, null, cv, SQLiteDatabase.CONFLICT_IGNORE);
-                        if (newId == -1L) {
-                            // In this case the tuple <debtId,personId> already exists inside the table!
-                            // We have to simply update the deleted flag and the update timestamp.
-                            cv.clear();
-                            cv.put(Schema.DebtPeople.LAST_EDIT, System.currentTimeMillis());
-                            cv.put(Schema.DebtPeople.DELETED, false);
-                            where = Schema.DebtPeople.DEBT + " = ? AND " + Schema.DebtPeople.PERSON + " = ?";
-                            whereArgs = new String[]{String.valueOf(debtId), String.valueOf(personId)};
-                            getWritableDatabase().update(Schema.DebtPeople.TABLE, cv, where, whereArgs);
-                        }
-                    }
-                }
-                if (!mCacheDeletedObjects) {
-                    // remove all deleted DebtPeople
-                    where = Schema.DebtPeople.DEBT + " = ? AND " + Schema.DebtPeople.DELETED + " = 1";
-                    whereArgs = new String[]{String.valueOf(debtId)};
-                    getWritableDatabase().delete(Schema.DebtPeople.TABLE, where, whereArgs);
-                }
+                updateDebtPeople(debtId, contentValues.getAsString(Contract.Debt.PEOPLE_IDS));
             }
             // check if exists a master transaction for this debt and update it
             Long debtCategoryId = getSystemCategoryId(Schema.CategoryTag.DEBT);
             Long creditCategoryId = getSystemCategoryId(Schema.CategoryTag.CREDIT);
             String[] projection = new String[] {
-                    Contract.Transaction.ID
+                    Contract.Transaction.ID,
+                    Contract.Transaction.DATE
             };
             String selection = Contract.Transaction.TYPE + " = ? AND " +
                     Contract.Transaction.DEBT_ID + " = ? AND (" +
@@ -2343,12 +3529,17 @@ import java.util.UUID;
             if (cursor != null) {
                 if (cursor.moveToFirst()) {
                     long transactionId = cursor.getLong(cursor.getColumnIndex(Contract.Transaction.ID));
+                    String transactionDate = cursor.getString(cursor.getColumnIndex(Contract.Transaction.DATE));
                     cv = new ContentValues();
                     if (contentValues.containsKey(Contract.Debt.MONEY)) {
                         cv.put(Contract.Transaction.MONEY, contentValues.getAsLong(Contract.Debt.MONEY));
                     }
                     if (contentValues.containsKey(Contract.Debt.DESCRIPTION)) {
                         cv.put(Contract.Transaction.DESCRIPTION, contentValues.getAsString(Contract.Debt.DESCRIPTION));
+                    }
+                    if (contentValues.containsKey(Contract.Debt.DATE)) {
+                        cv.put(Contract.Transaction.DATE, masterTransactionDateFor(
+                                contentValues.getAsString(Contract.Debt.DATE), transactionDate));
                     }
                     if (contentValues.containsKey(Contract.Debt.TYPE)) {
                         Contract.DebtType type = Contract.DebtType.fromValue(contentValues.getAsInteger(Contract.Debt.TYPE));
@@ -2372,7 +3563,7 @@ import java.util.UUID;
                     if (contentValues.containsKey(Contract.Debt.PEOPLE_IDS)) {
                         cv.put(Contract.Transaction.PEOPLE_IDS, contentValues.getAsString(Contract.Debt.PEOPLE_IDS));
                     }
-                    updateTransaction(transactionId, cv);
+                    updateTransactionRow(transactionId, cv);
                 }
                 cursor.close();
             }
@@ -2381,8 +3572,7 @@ import java.util.UUID;
     }
 
     /**
-     * Delete a debt from the database. If the 'mCacheDeletedObjects' flag is enabled the data
-     * is not removed but simply flagged as deleted.
+     * Delete a debt from the database.
      *
      * @param debtId id of the debt to remove.
      * @return the number of rows affected by the deletion (must be 1 for success).
@@ -2393,25 +3583,11 @@ import java.util.UUID;
         // remove all DebtPeople
         String where = Schema.DebtPeople.DEBT + " = ?";
         String[] whereArgs = new String[]{String.valueOf(debtId)};
-        if (mCacheDeletedObjects) {
-            ContentValues cv = new ContentValues();
-            cv.put(Schema.DebtPeople.DELETED, true);
-            cv.put(Schema.DebtPeople.LAST_EDIT, System.currentTimeMillis());
-            getWritableDatabase().update(Schema.DebtPeople.TABLE, cv, where, whereArgs);
-        } else {
-            getWritableDatabase().delete(Schema.DebtPeople.TABLE, where, whereArgs);
-        }
+        getWritableDatabase().delete(Schema.DebtPeople.TABLE, where, whereArgs);
         // remove the debt item
         where = Schema.Debt.ID + " = ?";
         whereArgs = new String[]{String.valueOf(debtId)};
-        if (mCacheDeletedObjects) {
-            ContentValues cv = new ContentValues();
-            cv.put(Schema.Debt.DELETED, true);
-            cv.put(Schema.Debt.LAST_EDIT, System.currentTimeMillis());
-            return getWritableDatabase().update(Schema.Debt.TABLE, cv, where, whereArgs);
-        } else {
-            return getWritableDatabase().delete(Schema.Debt.TABLE, where, whereArgs);
-        }
+        return getWritableDatabase().delete(Schema.Debt.TABLE, where, whereArgs);
     }
 
     /**
@@ -2452,7 +3628,20 @@ import java.util.UUID;
                 "b." + Schema.Budget.ID + " AS " + Contract.Budget.ID + ", " +
                 "b." + Schema.Budget.TYPE + " AS " + Contract.Budget.TYPE + ", " +
                 "b." + Schema.Budget.CATEGORY + " AS " + Contract.Budget.CATEGORY_ID + ", " +
-                "c." + Schema.Category.NAME + " AS " + Contract.Budget.CATEGORY_NAME + ", " +
+                "(SELECT GROUP_CONCAT(n, ', ') FROM (SELECT c2." + Schema.Category.NAME +
+                " AS n FROM " + Schema.BudgetCategory.TABLE + " AS bc2 JOIN " +
+                Schema.Category.TABLE + " AS c2 ON bc2." + Schema.BudgetCategory.CATEGORY +
+                " = c2." + Schema.Category.ID + " AND c2." + Schema.Category.DELETED +
+                " = 0 WHERE bc2." + Schema.BudgetCategory.BUDGET + " = b." + Schema.Budget.ID +
+                " AND bc2." + Schema.BudgetCategory.DELETED + " = 0 ORDER BY c2." +
+                Schema.Category.NAME + ")) AS " + Contract.Budget.CATEGORY_NAME + ", " +
+                "(SELECT GROUP_CONCAT(i) FROM (SELECT '<' || bc3." + Schema.BudgetCategory.CATEGORY +
+                " || '>' AS i FROM " + Schema.BudgetCategory.TABLE + " AS bc3 JOIN " +
+                Schema.Category.TABLE + " AS c3 ON bc3." + Schema.BudgetCategory.CATEGORY +
+                " = c3." + Schema.Category.ID + " AND c3." + Schema.Category.DELETED +
+                " = 0 WHERE bc3." + Schema.BudgetCategory.BUDGET + " = b." + Schema.Budget.ID +
+                " AND bc3." + Schema.BudgetCategory.DELETED + " = 0 ORDER BY bc3." +
+                Schema.BudgetCategory.CATEGORY + ")) AS " + Contract.Budget.CATEGORY_IDS + ", " +
                 "c." + Schema.Category.ICON + " AS " + Contract.Budget.CATEGORY_ICON + ", " +
                 "c." + Schema.Category.TYPE + " AS " + Contract.Budget.CATEGORY_TYPE + ", " +
                 "c." + Schema.Category.SHOW_REPORT + " AS " + Contract.Budget.CATEGORY_SHOW_REPORT + ", " +
@@ -2461,6 +3650,8 @@ import java.util.UUID;
                 "b." + Schema.Budget.END_DATE + " AS " + Contract.Budget.END_DATE + ", " +
                 "b." + Schema.Budget.MONEY + " AS " + Contract.Budget.MONEY + ", " +
                 "b." + Schema.Budget.CURRENCY + " AS " + Contract.Budget.CURRENCY + ", " +
+                "b." + Schema.Budget.RULE + " AS " + Contract.Budget.RULE + ", " +
+                "b." + Schema.Budget.RULE_START + " AS " + Contract.Budget.RULE_START + ", " +
                 "b." + Schema.Budget.TAG + " AS " + Contract.Budget.TAG + ", " +
                 "SUM(_progress) AS " + Contract.Budget.PROGRESS + "," +
                 "GROUP_CONCAT('<' || _wallet_id || '>') AS " + Contract.Budget.WALLET_IDS + "," +
@@ -2478,6 +3669,7 @@ import java.util.UUID;
                 " = 0 AND b." + Schema.Budget.TYPE + " = " + Schema.BudgetType.EXPENSES +
                 " ) AS b LEFT JOIN " + Schema.Transaction.TABLE + " AS t ON b._wallet_id = t." +
                 Schema.Transaction.WALLET + " AND t." + Schema.Transaction.DELETED + " = 0 AND t." +
+                Schema.Transaction.CONFIRMED + " = 1 AND t." +
                 Schema.Transaction.DIRECTION + " = 0 AND DATETIME(t." + Schema.Transaction.DATE +
                 ") <= DATETIME('now', 'localtime') AND DATE(t." + Schema.Transaction.DATE +
                 ") >= DATE(b." + Schema.Budget.START_DATE + ") AND DATE(t." + Schema.Transaction.DATE +
@@ -2491,6 +3683,7 @@ import java.util.UUID;
                 "LEFT JOIN " + Schema.BudgetWallet.TABLE + " AS bw2 " +
                 "ON t2." + Schema.Transaction.WALLET + " = bw2." + Schema.BudgetWallet.WALLET + " " +
                 "WHERE bw2." + Schema.BudgetWallet.BUDGET + " = b." + Schema.Budget.ID + " " +
+                "AND bw2." + Schema.BudgetWallet.DELETED + " = 0 " +
                 "AND bw2." + Schema.BudgetWallet.WALLET + " != b._wallet_id " +
                 ") " +
                 "GROUP BY b." + Schema.Budget.ID + ",b._wallet_id " +
@@ -2508,6 +3701,7 @@ import java.util.UUID;
                 " = 0 AND b." + Schema.Budget.TYPE + " = " + Schema.BudgetType.INCOMES +
                 " ) AS b LEFT JOIN " + Schema.Transaction.TABLE + " AS t ON b._wallet_id = t." +
                 Schema.Transaction.WALLET + " AND t." + Schema.Transaction.DELETED + " = 0 AND t." +
+                Schema.Transaction.CONFIRMED + " = 1 AND t." +
                 Schema.Transaction.DIRECTION + " = 1 AND DATETIME(t." + Schema.Transaction.DATE +
                 ") <= DATETIME('now', 'localtime') AND DATE(t." + Schema.Transaction.DATE +
                 ") >= DATE(b." + Schema.Budget.START_DATE + ") AND DATE(t." +
@@ -2521,6 +3715,7 @@ import java.util.UUID;
                 "LEFT JOIN " + Schema.BudgetWallet.TABLE + " AS bw2 " +
                 "ON t2." + Schema.Transaction.WALLET + " = bw2." + Schema.BudgetWallet.WALLET + " " +
                 "WHERE bw2." + Schema.BudgetWallet.BUDGET + " = b." + Schema.Budget.ID + " " +
+                "AND bw2." + Schema.BudgetWallet.DELETED + " = 0 " +
                 "AND bw2." + Schema.BudgetWallet.WALLET + " != b._wallet_id " +
                 ") " +
 
@@ -2535,17 +3730,21 @@ import java.util.UUID;
                 " JOIN " + Schema.Wallet.TABLE + " AS w ON bw._wallet = w." + Schema.Wallet.ID +
                 " WHERE bw. " + Schema.BudgetWallet.DELETED + " = 0 AND b." + Schema.Budget.DELETED +
                 " = 0 AND w." + Schema.Wallet.DELETED + " = 0 AND b." + Schema.Budget.TYPE + " = " +
-                Schema.BudgetType.CATEGORY + ") AS b LEFT JOIN (SELECT tr.*, tc." +
-                Schema.Category.PARENT + " AS _parent_category FROM " + Schema.Transaction.TABLE +
-                " AS tr JOIN " + Schema.Category.TABLE + " AS tc ON tr." + Schema.Transaction.CATEGORY +
+                Schema.BudgetType.CATEGORY + ") AS b LEFT JOIN (SELECT tr." + Schema.Transaction.WALLET +
+                ", tr." + Schema.Transaction.DATE + ", tr." + Schema.Transaction.DIRECTION +
+                ", l._line_category AS " + Schema.Transaction.CATEGORY + ", l._line_money AS " +
+                Schema.Transaction.MONEY + ", tc." + Schema.Category.PARENT + " AS _parent_category FROM (" +
+                CATEGORY_LINES + ") AS l JOIN " + Schema.Transaction.TABLE + " AS tr ON l._line_transaction = tr." +
+                Schema.Transaction.ID + " JOIN " + Schema.Category.TABLE + " AS tc ON l._line_category" +
                 " = tc." + Schema.Category.ID + " WHERE tr." + Schema.Transaction.DELETED + " = 0 " +
+                " AND tr." + Schema.Transaction.CONFIRMED + " = 1 " +
                 " AND tc." + Schema.Category.DELETED + " = 0) AS t ON (b._wallet_id = t." +
                 Schema.Transaction.WALLET + " AND DATETIME(t." + Schema.Transaction.DATE +
                 ") <= DATETIME('now', 'localtime') AND DATE(t." + Schema.Transaction.DATE +
                 ") >= DATE(b." + Schema.Budget.START_DATE + ") AND DATE(t." +
-                Schema.Transaction.DATE + ") <=  DATE(b." + Schema.Budget.END_DATE + ") AND (b."
-                + Schema.Budget.CATEGORY + " = t." + Schema.Transaction.CATEGORY + " OR b." +
-                Schema.Budget.CATEGORY + " = t._parent_category)) GROUP BY b." + Schema.Budget.ID +
+                Schema.Transaction.DATE + ") <=  DATE(b." + Schema.Budget.END_DATE + ") AND (t."
+                + Schema.Transaction.CATEGORY + " IN " + budgetCategoriesOf("b") +
+                " OR t._parent_category IN " + budgetCategoriesOf("b") + ")) GROUP BY b." + Schema.Budget.ID +
                 ", _wallet_id) AS b LEFT JOIN " + Schema.Category.TABLE + " AS c ON b." +
                 Schema.Budget.CATEGORY + " = c." + Schema.Category.ID + " AND c." +
                 Schema.Category.DELETED + " = 0 GROUP BY b." + Schema.Budget.ID;
@@ -2581,6 +3780,35 @@ import java.util.UUID;
     }
 
     /**
+     * This method is called by the content provider when the user is querying all the categories
+     * covered by a given budget.
+     *
+     * @param id of the budget.
+     * @param projection column names that are requested to be part of the cursor.
+     * @param selection string that may contains additional filters for the query.
+     * @param selectionArgs string array that may contains the arguments for the selection string.
+     * @param sortOrder string that may contains column name to use to sort the cursor.
+     * @return a cursor with zero or more rows.
+     */
+    /*package-local*/ Cursor getBudgetCategories(long id, String[] projection, String selection, String[] selectionArgs, String sortOrder) {
+        String subQuery = "SELECT " +
+                "c." + Schema.Category.ID + " AS " + Contract.Category.ID + ", " +
+                "c." + Schema.Category.NAME + " AS " + Contract.Category.NAME + ", " +
+                "c." + Schema.Category.ICON + " AS " + Contract.Category.ICON + ", " +
+                "c." + Schema.Category.TYPE + " AS " + Contract.Category.TYPE + ", " +
+                "c." + Schema.Category.PARENT + " AS " + Contract.Category.PARENT + ", " +
+                "c." + Schema.Category.SHOW_REPORT + " AS " + Contract.Category.SHOW_REPORT + ", " +
+                "c." + Schema.Category.INDEX + " AS " + Contract.Category.INDEX + ", " +
+                "c." + Schema.Category.TAG + " AS " + Contract.Category.TAG + " " +
+                "FROM " + Schema.BudgetCategory.TABLE + " AS bc JOIN " + Schema.Category.TABLE +
+                " AS c ON bc." + Schema.BudgetCategory.CATEGORY + " = c." + Schema.Category.ID +
+                " AND bc." + Schema.BudgetCategory.DELETED + " = 0 AND c." +
+                Schema.Category.DELETED + " = 0 AND bc." + Schema.BudgetCategory.BUDGET + " = " +
+                String.valueOf(id);
+        return queryFrom(subQuery, projection, selection, selectionArgs, sortOrder);
+    }
+
+    /**
      * This method is called by the content provider when the user is querying all the transactions
      * related to a given budget.
      *
@@ -2592,6 +3820,42 @@ import java.util.UUID;
      * @return a cursor with zero or more rows.
      */
     /*package-local*/ Cursor getBudgetTransactions(long budgetId, String[] projection, String selection, String[] selectionArgs, String sortOrder) {
+        Cursor budget = getReadableDatabase().query(Schema.Budget.TABLE, new String[] {Schema.Budget.TYPE,
+                Schema.Budget.START_DATE, Schema.Budget.END_DATE}, Schema.Budget.ID + " = ? AND " +
+                Schema.Budget.DELETED + " = 0", new String[] {String.valueOf(budgetId)}, null, null, null);
+        try {
+            if (budget.moveToFirst() && budget.getInt(0) == Schema.BudgetType.CATEGORY) {
+                // the lines and not the rows, so each row carries what it adds to the progress,
+                // and only the lines whose own category is not flagged deleted, which the progress
+                // leaves out too
+                String categories = "(SELECT " + Schema.BudgetCategory.CATEGORY + " FROM " +
+                        Schema.BudgetCategory.TABLE + " WHERE " + Schema.BudgetCategory.BUDGET + " = " +
+                        budgetId + " AND " + Schema.BudgetCategory.DELETED + " = 0)";
+                String _selection = Contract.Transaction.WALLET_ID + " IN (SELECT " +
+                        Schema.BudgetWallet.WALLET + " FROM " + Schema.BudgetWallet.TABLE + " WHERE " +
+                        Schema.BudgetWallet.BUDGET + " = " + budgetId + " AND " + Schema.BudgetWallet.DELETED +
+                        " = 0) AND (" + Contract.Transaction.CATEGORY_ID + " IN " + categories + " OR " +
+                        Contract.Transaction.CATEGORY_PARENT_ID + " IN " + categories + ") AND " +
+                        Contract.Transaction.CATEGORY_ID + " IN (SELECT " + Schema.Category.ID + " FROM " +
+                        Schema.Category.TABLE + " WHERE " + Schema.Category.DELETED + " = 0) AND DATETIME(" +
+                        Contract.Transaction.DATE + ") <= DATETIME('now', 'localtime') AND DATE(" +
+                        Contract.Transaction.DATE + ") >= DATE(?) AND DATE(" + Contract.Transaction.DATE +
+                        ") <= DATE(?)";
+                if (!TextUtils.isEmpty(selection)) {
+                    _selection += " AND (" + selection + ")";
+                }
+                int size = selectionArgs != null ? selectionArgs.length : 0;
+                String[] _selectionArgs = new String[size + 2];
+                _selectionArgs[0] = budget.getString(1);
+                _selectionArgs[1] = budget.getString(2);
+                if (selectionArgs != null) {
+                    System.arraycopy(selectionArgs, 0, _selectionArgs, 2, size);
+                }
+                return getCategoryShares(projection, _selection, _selectionArgs, sortOrder);
+            }
+        } finally {
+            budget.close();
+        }
         String subQuery = "SELECT " +
                 "t." + Schema.Transaction.ID + " AS " + Contract.Transaction.ID + ", " +
                 "t." + Schema.Transaction.MONEY + " AS " + Contract.Transaction.MONEY + ", " +
@@ -2661,6 +3925,7 @@ import java.util.UUID;
                 "LEFT JOIN " + Schema.BudgetWallet.TABLE + " AS bw2 " +
                 "ON t2." + Schema.Transaction.WALLET + " = bw2." + Schema.BudgetWallet.WALLET + " " +
                 "WHERE bw2." + Schema.BudgetWallet.BUDGET + " = b." + Schema.Budget.ID + " " +
+                "AND bw2." + Schema.BudgetWallet.DELETED + " = 0 " +
                 ") " +
                 "UNION " +
 
@@ -2689,30 +3954,8 @@ import java.util.UUID;
                 "LEFT JOIN " + Schema.BudgetWallet.TABLE + " AS bw2 " +
                 "ON t2." + Schema.Transaction.WALLET + " = bw2." + Schema.BudgetWallet.WALLET + " " +
                 "WHERE bw2." + Schema.BudgetWallet.BUDGET + " = b." + Schema.Budget.ID + " " +
+                "AND bw2." + Schema.BudgetWallet.DELETED + " = 0 " +
                 ") " +
-                "UNION " +
-
-                // case budget of type category
-                "SELECT t.* FROM(SELECT b.*, w." + Schema.Wallet.ID + " AS _wallet_id, " +
-                "w." + Schema.Wallet.CURRENCY + " AS _wallet_currency, " +
-                "w." + Schema.Wallet.COUNT_IN_TOTAL + " AS _wallet_total FROM " +
-                Schema.BudgetWallet.TABLE + " AS bw JOIN " + Schema.Budget.TABLE + " AS b ON " +
-                "bw._budget = b." + Schema.Budget.ID + " JOIN " + Schema.Wallet.TABLE + " AS w ON " +
-                "bw._wallet = w." + Schema.Wallet.ID + " WHERE bw. " + Schema.BudgetWallet.DELETED +
-                " = 0 AND b." + Schema.Budget.DELETED + " = 0 AND w." + Schema.Wallet.DELETED +
-                " = 0 AND b." + Schema.Budget.TYPE + " = " + Schema.BudgetType.CATEGORY +
-                ") AS b LEFT JOIN " + Schema.Transaction.TABLE + " AS t ON b._wallet_id = t." +
-                Schema.Transaction.WALLET + " AND t." + Schema.Transaction.DELETED + " = 0 JOIN " +
-                Schema.Category.TABLE + " AS tc ON t." + Schema.Transaction.CATEGORY + " = tc." +
-                Schema.Category.ID + " AND tc." + Schema.Category.DELETED + " = 0 WHERE (b." +
-                Schema.Budget.CATEGORY + " = " + Schema.Transaction.CATEGORY + " OR b." +
-                Schema.Budget.CATEGORY + " = tc."+ Schema.Category.PARENT + ") " +
-                "AND DATETIME(t." + Schema.Transaction.DATE + ") <= DATETIME('now', 'localtime') " +
-                "AND DATE(t." + Schema.Transaction.DATE + ") >= DATE(b." +
-                Schema.Budget.START_DATE + ") AND DATE(t." + Schema.Transaction.DATE +
-                ") <=  DATE(b." + Schema.Budget.END_DATE + ") " + "AND b." + Schema.Budget.ID +
-                " = " + budgetId + " " +
-
                 ") AS t " +
                 "LEFT JOIN " + Schema.Category.TABLE + " AS c " +
                 "ON t." + Schema.Transaction.CATEGORY + " = c." + Schema.Category.ID + " " +
@@ -2748,16 +3991,23 @@ import java.util.UUID;
         if (walletIds == null || walletIds.length == 0) {
             throw new SQLiteDataException(Contract.ErrorCode.WALLETS_NOT_FOUND, "No wallet id provided");
         }
-        checkWalletsConsistency(walletIds);
+        String currency = checkWalletsConsistency(walletIds);
+        long[] categoryIds = budgetCategoryIds(contentValues);
         ContentValues cv = new ContentValues();
         cv.put(Schema.Budget.TYPE, contentValues.getAsInteger(Contract.Budget.TYPE));
-        cv.put(Schema.Budget.CATEGORY, contentValues.getAsLong(Contract.Budget.CATEGORY_ID));
+        if (categoryIds == null) {
+            cv.putNull(Schema.Budget.CATEGORY);
+        } else {
+            cv.put(Schema.Budget.CATEGORY, categoryIds[0]);
+        }
         cv.put(Schema.Budget.START_DATE, contentValues.getAsString(Contract.Budget.START_DATE));
         cv.put(Schema.Budget.END_DATE, contentValues.getAsString(Contract.Budget.END_DATE));
         cv.put(Schema.Budget.MONEY, contentValues.getAsLong(Contract.Budget.MONEY));
-        cv.put(Schema.Budget.CURRENCY, contentValues.getAsString(Contract.Budget.CURRENCY));
+        cv.put(Schema.Budget.CURRENCY, currency);
+        cv.put(Schema.Budget.RULE, contentValues.getAsString(Contract.Budget.RULE));
+        cv.put(Schema.Budget.RULE_START, contentValues.getAsString(Contract.Budget.RULE_START));
         cv.put(Schema.Budget.TAG, contentValues.getAsString(Contract.Budget.TAG));
-        cv.put(Schema.Budget.UUID, UUID.randomUUID().toString());
+        cv.put(Schema.Budget.UUID, budgetUUID(contentValues));
         cv.put(Schema.Budget.LAST_EDIT, System.currentTimeMillis());
         cv.put(Schema.Budget.DELETED, false);
         long budgetId = getWritableDatabase().insert(Schema.Budget.TABLE, null, cv);
@@ -2772,8 +4022,47 @@ import java.util.UUID;
                 cvw.put(Schema.BudgetWallet.DELETED, false);
                 getWritableDatabase().insert(Schema.BudgetWallet.TABLE, null, cvw);
             }
+            writeBudgetCategories(budgetId, categoryIds);
         }
         return budgetId;
+    }
+
+    /**
+     * The uuid to store on a budget being inserted. A period opened by rolling a repeating budget
+     * forward names the period it came from, and its uuid is built from the uuid of the budget its
+     * chain started from and its own start date, the same scheme
+     * {@link #getRecurrentItemUUID(String, Date)} gives an occurrence of a recurring transaction.
+     * Three things follow from that. A roll that is killed part way through is safe to run again,
+     * because the periods it already wrote come back with the uuid they already have and the
+     * unique index refuses them. Two devices that open the same period agree on its identity
+     * instead of each inventing one. And the name says which chain the period belongs to, which is
+     * how {@link Contract#budgetChainOf(String)} and the editor recover it, so a period must never be
+     * given a name of any other shape. Every other budget gets a random uuid.
+     *
+     * @param contentValues bundle handed to {@link #insertBudget(ContentValues)}.
+     * @return the uuid to store.
+     */
+    private String budgetUUID(ContentValues contentValues) {
+        if (contentValues.containsKey(Contract.Budget.ROLLED_FROM_ID)) {
+            String[] projection = new String[] {Schema.Budget.UUID};
+            String selection = Schema.Budget.ID + " = ?";
+            String[] selectionArgs = new String[] {contentValues.getAsString(Contract.Budget.ROLLED_FROM_ID)};
+            Cursor cursor = getReadableDatabase().query(Schema.Budget.TABLE, projection, selection, selectionArgs, null, null, null);
+            if (cursor != null) {
+                try {
+                    if (cursor.moveToFirst()) {
+                        String parentUUID = cursor.getString(cursor.getColumnIndex(Schema.Budget.UUID));
+                        Date startDate = DateUtils.getDateFromSQLDateString(contentValues.getAsString(Contract.Budget.START_DATE));
+                        if (parentUUID != null && startDate != null) {
+                            return getRecurrentItemUUID(Contract.budgetChainOf(parentUUID), startDate);
+                        }
+                    }
+                } finally {
+                    cursor.close();
+                }
+            }
+        }
+        return UUID.randomUUID().toString();
     }
 
     /**
@@ -2788,14 +4077,25 @@ import java.util.UUID;
         if (walletIds == null || walletIds.length == 0) {
             throw new SQLiteDataException(Contract.ErrorCode.WALLETS_NOT_FOUND, "No wallet id provided");
         }
-        checkWalletsConsistency(walletIds);
+        String currency = checkWalletsConsistency(walletIds);
+        long[] categoryIds = budgetCategoryIds(contentValues);
         ContentValues cv = new ContentValues();
         cv.put(Schema.Budget.TYPE, contentValues.getAsInteger(Contract.Budget.TYPE));
-        cv.put(Schema.Budget.CATEGORY, contentValues.getAsLong(Contract.Budget.CATEGORY_ID));
+        if (categoryIds == null) {
+            cv.putNull(Schema.Budget.CATEGORY);
+        } else {
+            cv.put(Schema.Budget.CATEGORY, categoryIds[0]);
+        }
         cv.put(Schema.Budget.START_DATE, contentValues.getAsString(Contract.Budget.START_DATE));
         cv.put(Schema.Budget.END_DATE, contentValues.getAsString(Contract.Budget.END_DATE));
         cv.put(Schema.Budget.MONEY, contentValues.getAsLong(Contract.Budget.MONEY));
-        cv.put(Schema.Budget.CURRENCY, contentValues.getAsString(Contract.Budget.CURRENCY));
+        cv.put(Schema.Budget.CURRENCY, currency);
+        if (contentValues.containsKey(Contract.Budget.RULE)) {
+            cv.put(Schema.Budget.RULE, contentValues.getAsString(Contract.Budget.RULE));
+        }
+        if (contentValues.containsKey(Contract.Budget.RULE_START)) {
+            cv.put(Schema.Budget.RULE_START, contentValues.getAsString(Contract.Budget.RULE_START));
+        }
         if (contentValues.containsKey(Contract.Budget.TAG)) {
             cv.put(Schema.Budget.TAG, contentValues.getAsString(Contract.Budget.TAG));
         }
@@ -2835,17 +4135,96 @@ import java.util.UUID;
                     getWritableDatabase().update(Schema.BudgetWallet.TABLE, cv, where, whereArgs);
                 }
             }
+            cv = new ContentValues();
+            cv.put(Schema.BudgetCategory.DELETED, true);
+            cv.put(Schema.BudgetCategory.LAST_EDIT, System.currentTimeMillis());
+            where = Schema.BudgetCategory.BUDGET + " = ?";
+            whereArgs = new String[]{String.valueOf(budgetId)};
+            getWritableDatabase().update(Schema.BudgetCategory.TABLE, cv, where, whereArgs);
+            writeBudgetCategories(budgetId, categoryIds);
         }
         return rows;
+    }
+
+    /**
+     * The categories a budget is being written with, and none at all for a budget of a type that
+     * does not cover them. A caller that names them all wins; one that names a single category,
+     * which is every caller that predates a budget covering more than one, is read as a list of
+     * that one. Both {@link #insertBudget(ContentValues)} and
+     * {@link #updateBudget(long, ContentValues)} take the first of whatever comes back as the
+     * value of {@link Schema.Budget#CATEGORY}, so a write leaves the column naming a category
+     * the join table also holds.
+     *
+     * @param contentValues bundle handed to the insert or the update.
+     * @return the category ids, or null on a budget that covers no category at all.
+     */
+    private long[] budgetCategoryIds(ContentValues contentValues) {
+        Integer type = contentValues.getAsInteger(Contract.Budget.TYPE);
+        if (type == null || type != Schema.BudgetType.CATEGORY) {
+            // a budget of any other type covers no category, whatever the caller passed. Without
+            // this, a period rolled forward from a budget that used to cover them hands them to
+            // every period it opens, because the roll copies both keys off the cursor and never
+            // looks at the type.
+            return null;
+        }
+        long[] categoryIds = parseIds(contentValues.getAsString(Contract.Budget.CATEGORY_IDS));
+        if (categoryIds != null && categoryIds.length > 0) {
+            return categoryIds;
+        }
+        Long categoryId = contentValues.getAsLong(Contract.Budget.CATEGORY_ID);
+        return categoryId == null ? null : new long[] {categoryId};
+    }
+
+    /**
+     * Puts one row in the join table per category the budget covers. A row flagged deleted by an
+     * update and named again here comes back instead of being inserted a second time, which is
+     * what the wallets above do and what the composite primary key requires.
+     *
+     * @param budgetId id of the budget being written.
+     * @param categoryIds categories it covers, null on a budget that covers none.
+     */
+    private void writeBudgetCategories(long budgetId, long[] categoryIds) {
+        if (categoryIds == null) {
+            return;
+        }
+        for (long categoryId : categoryIds) {
+            ContentValues cv = new ContentValues();
+            cv.put(Schema.BudgetCategory.BUDGET, budgetId);
+            cv.put(Schema.BudgetCategory.CATEGORY, categoryId);
+            cv.put(Schema.BudgetCategory.UUID, UUID.randomUUID().toString());
+            cv.put(Schema.BudgetCategory.LAST_EDIT, System.currentTimeMillis());
+            cv.put(Schema.BudgetCategory.DELETED, false);
+            long newId;
+            try {
+                newId = getWritableDatabase().insertWithOnConflict(Schema.BudgetCategory.TABLE, null, cv, SQLiteDatabase.CONFLICT_IGNORE);
+            } catch (SQLiteConstraintException e) {
+                // CONFLICT_IGNORE covers the composite key and nothing else, a foreign key is
+                // still enforced and still throws, which happens when the category was deleted
+                // while the editor was open. Dropping that one id leaves the rest of the budget
+                // written. Letting it out now rolls the whole save back instead, since both
+                // callers run inside the provider's transaction, so the user would lose the edit
+                // over a category that is already gone.
+                continue;
+            }
+            if (newId == -1L) {
+                cv = new ContentValues();
+                cv.put(Schema.BudgetCategory.LAST_EDIT, System.currentTimeMillis());
+                cv.put(Schema.BudgetCategory.DELETED, false);
+                String where = Schema.BudgetCategory.BUDGET + " = ? AND " + Schema.BudgetCategory.CATEGORY + " = ?";
+                String[] whereArgs = new String[]{String.valueOf(budgetId), String.valueOf(categoryId)};
+                getWritableDatabase().update(Schema.BudgetCategory.TABLE, cv, where, whereArgs);
+            }
+        }
     }
 
     /**
      * This method is used internally to check if the given array of wallet ids is consistent.
      * If two or more different currencies are found, an exception is thrown.
      * @param walletIds array of wallet id.
+     * @return the currency every wallet in the array has.
      * @throws SQLiteDataException if one of the id is not found or wallets are not consistent.
      */
-    private void checkWalletsConsistency(long[] walletIds) {
+    private String checkWalletsConsistency(long[] walletIds) {
         String savedCurrency = null;
         String[] projection = new String[] {
                 Contract.Wallet.CURRENCY
@@ -2869,11 +4248,294 @@ import java.util.UUID;
                 }
             }
         }
+        return savedCurrency;
     }
 
     /**
-     * Delete a budget from the database. If the 'mCacheDeletedObjects' flag is enabled the data
-     * is not removed but simply flagged as deleted.
+     * A saving and a debt each point at one wallet, and that wallet decides the currency the whole
+     * thing is read in. What is filed against them is added up with no currency in the sum and
+     * stays in the wallet it was filed against, so moving one of them to a wallet in another
+     * currency rereads their figures against money that is still held somewhere else.
+     *
+     * Three wallets go through. One of the currency the row is read in today, one of a currency
+     * something filed against the row already sits in, and any wallet at all when nothing is filed
+     * against the row, since then there is nothing to leave behind. A wallet id that names no row
+     * goes through as well, having no currency to be asked about. On a row whose transactions
+     * are all in a wallet of the currency it points at, the first two are the same currency and
+     * this is the plain refusal to change the currency a saving or a debt is read in.
+     *
+     * They come apart on a row that was moved across currencies, and both are needed to leave one
+     * usable. Without the wallet it has now, the move to another wallet of the currency it is
+     * already read in would be refused, which puts nothing right and takes nothing further wrong.
+     * Without what is filed against it, the move back to the currency the transactions are really
+     * in would be refused, and that is the one move that puts the row right. Either way deleting
+     * the saving or the debt becomes the way out, and that takes every transaction filed against
+     * it.
+     *
+     * On a row whose transactions are already spread over several currencies, every one of those
+     * currencies goes through and only a currency it holds nothing in is refused. This does not
+     * work out which of them leaves the fewest transactions misread; a row like that cannot be put
+     * fully right by any single wallet, and picking between its currencies is a judgement this
+     * does not make.
+     *
+     * @param storedWalletId id of the wallet the row holds now.
+     * @param walletId id of the wallet the update names.
+     * @param selection what counts as filed against the row, over the transaction table as t.
+     * @param selectionArgs arguments of that selection.
+     * @throws SQLiteDataException if the wallet is found, its currency is not the one the row is
+     *                             read in now, and the row has transactions, none of them in it.
+     */
+    private void checkStrandedCurrency(long storedWalletId, long walletId, String selection,
+                                       String[] selectionArgs) {
+        String walletCurrency = walletCurrency(walletId);
+        if (walletCurrency == null || TextUtils.equals(walletCurrency,
+                walletCurrency(storedWalletId))) {
+            return;
+        }
+        if (noneIsHeldIn(walletCurrency, selection, selectionArgs)) {
+            String message = String.format(Locale.ENGLISH,
+                    "Wallet (id: %d) is in %s and nothing filed against this item is",
+                    walletId, walletCurrency);
+            throw new SQLiteDataException(Contract.ErrorCode.WALLETS_NOT_CONSISTENT, message);
+        }
+    }
+
+    /**
+     * Whether the selection matches at least one transaction and none of the ones it matches is
+     * held in this currency. False when it matches none at all, which is a row with nothing filed
+     * against it and nothing to say about where it may go.
+     *
+     * Counted in one statement instead of read back as a list, since the answer is a yes or a no
+     * and a saving or a debt can carry any number of rows.
+     */
+    private boolean noneIsHeldIn(String currency, String selection, String[] selectionArgs) {
+        String query = "SELECT COUNT(*), SUM(CASE WHEN w." + Schema.Wallet.CURRENCY +
+                " = ? THEN 1 ELSE 0 END) FROM " + Schema.Transaction.TABLE + " AS t JOIN " +
+                Schema.Wallet.TABLE + " AS w ON t." + Schema.Transaction.WALLET + " = w." +
+                Schema.Wallet.ID + " WHERE t." + Schema.Transaction.DELETED + " = 0 AND " +
+                selection;
+        String[] args = new String[selectionArgs.length + 1];
+        args[0] = currency;
+        System.arraycopy(selectionArgs, 0, args, 1, selectionArgs.length);
+        Cursor cursor = getReadableDatabase().rawQuery(query, args);
+        boolean noneIsHeldIn = false;
+        if (cursor != null) {
+            try {
+                if (cursor.moveToFirst()) {
+                    noneIsHeldIn = cursor.getLong(0) > 0L && cursor.getLong(1) == 0L;
+                }
+            } finally {
+                cursor.close();
+            }
+        }
+        return noneIsHeldIn;
+    }
+
+    /**
+     * The currency of one wallet, or null when there is no such row. Read straight off the table,
+     * so a wallet flagged deleted still answers and a saving or a debt left pointing at one can
+     * still be edited.
+     */
+    private String walletCurrency(long walletId) {
+        String[] projection = new String[] {Schema.Wallet.CURRENCY};
+        String selection = Schema.Wallet.ID + " = ?";
+        String[] selectionArgs = new String[] {String.valueOf(walletId)};
+        Cursor cursor = getReadableDatabase().query(Schema.Wallet.TABLE, projection, selection,
+                selectionArgs, null, null, null);
+        String currency = null;
+        if (cursor != null) {
+            try {
+                if (cursor.moveToFirst()) {
+                    currency = cursor.getString(cursor.getColumnIndex(Schema.Wallet.CURRENCY));
+                }
+            } finally {
+                cursor.close();
+            }
+        }
+        return currency;
+    }
+
+    /**
+     * The wallet a saving or a debt holds now, or null when there is no such row.
+     */
+    private Long storedWallet(String table, String idColumn, String walletColumn, long id) {
+        String[] projection = new String[] {walletColumn};
+        String selection = idColumn + " = ?";
+        String[] selectionArgs = new String[] {String.valueOf(id)};
+        Cursor cursor = getReadableDatabase().query(table, projection, selection, selectionArgs,
+                null, null, null);
+        Long walletId = null;
+        if (cursor != null) {
+            try {
+                if (cursor.moveToFirst()) {
+                    walletId = cursor.getLong(cursor.getColumnIndex(walletColumn));
+                }
+            } finally {
+                cursor.close();
+            }
+        }
+        return walletId;
+    }
+
+    /**
+     * Everything filed against a saving stays where it is when the saving moves.
+     *
+     * @param savingId id of the saving being updated.
+     * @param walletId id of the wallet the update names.
+     * @throws SQLiteDataException if checkStrandedCurrency refuses the wallet.
+     */
+    private void checkSavingWalletCurrency(long savingId, long walletId) {
+        Long storedWalletId = storedWallet(Schema.Saving.TABLE, Schema.Saving.ID,
+                Schema.Saving.WALLET, savingId);
+        if (storedWalletId == null || storedWalletId == walletId) {
+            return;
+        }
+        checkStrandedCurrency(storedWalletId, walletId, "t." + Schema.Transaction.SAVING + " = ?",
+                new String[] {String.valueOf(savingId)});
+    }
+
+    /**
+     * A debt's payments stay where they are when the debt moves. Its master transaction does not,
+     * it travels with the debt in both directions, so it is not something the move strands and it
+     * is left out of the question. Told apart by category, the way updateDebt and
+     * masterTransactionDebtId both tell them apart.
+     *
+     * @param debtId id of the debt being updated.
+     * @param walletId id of the wallet the update names.
+     * @throws SQLiteDataException if checkStrandedCurrency refuses the wallet.
+     */
+    private void checkDebtWalletCurrency(long debtId, long walletId) {
+        Long storedWalletId = storedWallet(Schema.Debt.TABLE, Schema.Debt.ID, Schema.Debt.WALLET,
+                debtId);
+        Long debtCategoryId = getSystemCategoryId(Schema.CategoryTag.DEBT);
+        Long creditCategoryId = getSystemCategoryId(Schema.CategoryTag.CREDIT);
+        // Without both category ids the master transaction cannot be told from a payment. Counting
+        // it as one refuses the move of a debt that has a master transaction and no payments,
+        // since that transaction sits in the wallet the debt is leaving and would then be the only
+        // thing answering for it. Nothing else here fails closed and neither does this.
+        if (storedWalletId == null || storedWalletId == walletId || debtCategoryId == null
+                || creditCategoryId == null) {
+            return;
+        }
+        String selection = "t." + Schema.Transaction.DEBT + " = ? AND t." +
+                Schema.Transaction.CATEGORY + " NOT IN (?, ?)";
+        String[] selectionArgs = new String[] {
+                String.valueOf(debtId),
+                String.valueOf(debtCategoryId),
+                String.valueOf(creditCategoryId)
+        };
+        checkStrandedCurrency(storedWalletId, walletId, selection, selectionArgs);
+    }
+
+    /**
+     * A debt payment has to sit in a wallet of the debt's own currency. A debt is read in the
+     * currency of its wallet and its progress is its payments added up with no currency in the
+     * sum, so a payment in another currency would be counted at face value and 500 euros would
+     * settle 500 dollars. A master transaction is not a payment and is not asked about here, it
+     * is held by checkDebtOfMasterTransactionWallet.
+     *
+     * Nothing is refused when an id is missing or a currency cannot be read, the way
+     * checkDebtWalletCurrency lets such a row through.
+     *
+     * @param debtId id of the debt the row is filed against, or null.
+     * @param categoryId id of the category the row is filed under, or null.
+     * @param walletId id of the wallet the row names, or null.
+     * @throws SQLiteDataException if the row is a payment and its wallet is in a currency other
+     *                             than the one the debt's wallet is in.
+     */
+    private void checkDebtPaymentWalletCurrency(Long debtId, Long categoryId, Long walletId) {
+        if (debtId == null || categoryId == null || walletId == null) {
+            return;
+        }
+        Long paidDebtCategoryId = getSystemCategoryId(Schema.CategoryTag.PAID_DEBT);
+        Long paidCreditCategoryId = getSystemCategoryId(Schema.CategoryTag.PAID_CREDIT);
+        if (!categoryId.equals(paidDebtCategoryId) && !categoryId.equals(paidCreditCategoryId)) {
+            return;
+        }
+        Long debtWalletId = storedWallet(Schema.Debt.TABLE, Schema.Debt.ID, Schema.Debt.WALLET,
+                debtId);
+        if (debtWalletId == null) {
+            return;
+        }
+        String walletCurrency = walletCurrency(walletId);
+        String debtCurrency = walletCurrency(debtWalletId);
+        if (walletCurrency == null || debtCurrency == null
+                || TextUtils.equals(walletCurrency, debtCurrency)) {
+            return;
+        }
+        String message = String.format(Locale.ENGLISH,
+                "Wallet (id: %d) is in %s and the debt (id: %d) it pays is in %s",
+                walletId, walletCurrency, debtId, debtCurrency);
+        throw new SQLiteDataException(Contract.ErrorCode.WALLETS_NOT_CONSISTENT, message);
+    }
+
+    /**
+     * A wallet cannot change currency while a debt payment and its debt sit in two wallets and it
+     * is one of them. The payment was let into the other wallet because both were in one currency,
+     * and a debt adds its payments up with no currency in the sum, so a change on either side would
+     * count one currency at face value as the other. Pending and future payments are asked about
+     * too, since they join the sum once they are confirmed.
+     *
+     * @param walletId id of the wallet whose currency is changing.
+     * @throws SQLiteDataException if the wallet holds a payment whose debt is in another wallet,
+     *                             or a debt with a payment in another wallet.
+     */
+    private void checkSplitDebtPaymentWallet(long walletId) {
+        if (isSplitWallet(Schema.Debt.TABLE, Schema.Transaction.DEBT, Schema.Debt.ID,
+                Schema.Debt.WALLET, Schema.Debt.DELETED, Schema.CategoryTag.PAID_DEBT,
+                Schema.CategoryTag.PAID_CREDIT, walletId)) {
+            String message = String.format(Locale.ENGLISH,
+                    "Wallet (id: %d) holds a debt or a debt payment whose other half is in another wallet",
+                    walletId);
+            throw new SQLiteDataException(Contract.ErrorCode.WALLETS_NOT_CONSISTENT, message);
+        }
+    }
+
+    private void checkSplitSavingWallet(long walletId) {
+        if (isSplitWallet(Schema.Saving.TABLE, Schema.Transaction.SAVING, Schema.Saving.ID,
+                Schema.Saving.WALLET, Schema.Saving.DELETED, Schema.CategoryTag.SAVING_DEPOSIT,
+                Schema.CategoryTag.SAVING_WITHDRAW, walletId)) {
+            String message = String.format(Locale.ENGLISH,
+                    "Wallet (id: %d) holds a saving or a saving transaction whose other half is in another wallet",
+                    walletId);
+            throw new SQLiteDataException(Contract.ErrorCode.SAVING_IN_OTHER_WALLET, message);
+        }
+    }
+
+    /**
+     * A system category that cannot be found binds as the text null and matches no row.
+     */
+    private boolean isSplitWallet(String table, String ownerColumn, String idColumn,
+                                  String walletColumn, String deletedColumn, String firstTag,
+                                  String secondTag, long walletId) {
+        String query = "SELECT 1 FROM " + Schema.Transaction.TABLE + " AS t JOIN " + table +
+                " AS o ON t." + ownerColumn + " = o." + idColumn + " JOIN " +
+                Schema.Wallet.TABLE + " AS w ON o." + walletColumn + " = w." + Schema.Wallet.ID +
+                " WHERE t." + Schema.Transaction.DELETED + " = 0 AND o." + deletedColumn +
+                " = 0 AND w." + Schema.Wallet.DELETED + " = 0 AND t." +
+                Schema.Transaction.CATEGORY + " IN (?, ?) AND t." + Schema.Transaction.WALLET +
+                " != o." + walletColumn + " AND (t." + Schema.Transaction.WALLET + " = ? OR o." +
+                walletColumn + " = ?) LIMIT 1";
+        String[] args = new String[] {
+                String.valueOf(getSystemCategoryId(firstTag)),
+                String.valueOf(getSystemCategoryId(secondTag)),
+                String.valueOf(walletId),
+                String.valueOf(walletId)
+        };
+        Cursor cursor = getReadableDatabase().rawQuery(query, args);
+        boolean split = false;
+        if (cursor != null) {
+            try {
+                split = cursor.moveToFirst();
+            } finally {
+                cursor.close();
+            }
+        }
+        return split;
+    }
+
+    /**
+     * Delete a budget from the database.
      *
      * @param budgetId id of the budget to remove.
      * @return the number of rows affected by the deletion (must be 1 for success).
@@ -2882,25 +4544,15 @@ import java.util.UUID;
         // remove all BudgetWallet
         String where = Schema.BudgetWallet.BUDGET + " = ?";
         String[] whereArgs = new String[]{String.valueOf(budgetId)};
-        if (mCacheDeletedObjects) {
-            ContentValues cv = new ContentValues();
-            cv.put(Schema.BudgetWallet.DELETED, true);
-            cv.put(Schema.BudgetWallet.LAST_EDIT, System.currentTimeMillis());
-            getWritableDatabase().update(Schema.BudgetWallet.TABLE, cv, where, whereArgs);
-        } else {
-            getWritableDatabase().delete(Schema.BudgetWallet.TABLE, where, whereArgs);
-        }
+        getWritableDatabase().delete(Schema.BudgetWallet.TABLE, where, whereArgs);
+        // remove all BudgetCategory
+        where = Schema.BudgetCategory.BUDGET + " = ?";
+        whereArgs = new String[]{String.valueOf(budgetId)};
+        getWritableDatabase().delete(Schema.BudgetCategory.TABLE, where, whereArgs);
         // remove the debt item
         where = Schema.Budget.ID + " = ?";
         whereArgs = new String[]{String.valueOf(budgetId)};
-        if (mCacheDeletedObjects) {
-            ContentValues cv = new ContentValues();
-            cv.put(Schema.Budget.DELETED, true);
-            cv.put(Schema.Budget.LAST_EDIT, System.currentTimeMillis());
-            return getWritableDatabase().update(Schema.Budget.TABLE, cv, where, whereArgs);
-        } else {
-            return getWritableDatabase().delete(Schema.Budget.TABLE, where, whereArgs);
-        }
+        return getWritableDatabase().delete(Schema.Budget.TABLE, where, whereArgs);
     }
 
     /**
@@ -2926,6 +4578,28 @@ import java.util.UUID;
      * @return a cursor with zero or more rows.
      */
     /*package-local*/ Cursor getSavings(String[] projection, String selection, String[] selectionArgs, String sortOrder) {
+        // A saving's progress sums its deposits and its withdrawals, counting only the confirmed
+        // ones dated at or before this moment, so with the start money added it is what the
+        // saving holds now, and it is the sum the savings list draws its current amount from. A
+        // row dated later today is not one of them.
+        //
+        // It is a total and it holds no date order, so it says nothing about what the saving is
+        // worth on any other date. A withdrawal dated before the deposit that funds it leaves
+        // this sum where it was and takes the saving under zero in between. The transaction
+        // editor works that out for itself, walking the saving's rows in date order, and this
+        // sum is not the figure it holds a withdrawal to.
+        //
+        // The confirmed and date test used to sit in the WHERE and now sits in the CASE, so a
+        // saving with rows but none of them in the progress produces a group row where it
+        // produced none, and its progress reads 0 where it read NULL. That is any saving whose
+        // rows are all unconfirmed, all dated later, or a mix of the two. Every reader goes
+        // through getLong, which returns 0 for either, and nothing compares the column in SQL, so
+        // the two are indistinguishable today. Anything added later that can tell them apart has
+        // to account for the change.
+        String signedMoney = "(((" + Schema.Transaction.DIRECTION + " * -2) + 1) * " +
+                Schema.Transaction.MONEY + ")";
+        String landed = Schema.Transaction.CONFIRMED + " = 1 AND DATETIME(" +
+                Schema.Transaction.DATE + ") <= DATETIME('now', 'localtime')";
         String subQuery = "SELECT " +
                 Schema.Saving.ID + " AS " + Contract.Saving.ID + ", " +
                 Schema.Saving.DESCRIPTION + " AS " + Contract.Saving.DESCRIPTION + ", " +
@@ -2943,16 +4617,16 @@ import java.util.UUID;
                 Schema.Saving.COMPLETE + " AS " + Contract.Saving.COMPLETE + ", " +
                 Schema.Saving.NOTE + " AS " + Contract.Saving.NOTE + ", " +
                 Schema.Saving.TAG + " AS " + Contract.Saving.TAG + ", " +
-                "_progress AS " + Contract.Saving.PROGRESS + " FROM " + Schema.Saving.TABLE +
+                "_progress AS " + Contract.Saving.PROGRESS +
+                " FROM " + Schema.Saving.TABLE +
                 " AS s LEFT JOIN " + Schema.Wallet.TABLE + " ON " + Schema.Saving.WALLET + " = " +
                 Schema.Wallet.ID + " LEFT JOIN (SELECT " + Schema.Transaction.SAVING + " AS _saving, " +
-                " SUM(((" + Schema.Transaction.DIRECTION + " * -2) + 1) * " + Schema.Transaction.MONEY +
-                ") AS _progress FROM " + Schema.Transaction.TABLE + " AS j LEFT JOIN " + Schema.Category.TABLE +
+                " SUM(CASE WHEN " + landed + " THEN " + signedMoney + " ELSE 0 END) AS _progress" +
+                " FROM " + Schema.Transaction.TABLE + " AS j LEFT JOIN " + Schema.Category.TABLE +
                 " ON " + Schema.Transaction.CATEGORY + " = " + Schema.Category.ID + " WHERE j." +
-                Schema.Transaction.DELETED + " = 0 AND " + Schema.Transaction.CONFIRMED +
-                " = 1 AND (" + Schema.Category.TAG + " = '" + Schema.CategoryTag.SAVING_DEPOSIT + "' OR " +
-                Schema.Category.TAG + " = '" + Schema.CategoryTag.SAVING_WITHDRAW + "') AND DATETIME(" +
-                Schema.Transaction.DATE + ") <= DATETIME('now', 'localtime') GROUP BY _saving) ON " +
+                Schema.Transaction.DELETED + " = 0 AND (" + Schema.Category.TAG + " = '" +
+                Schema.CategoryTag.SAVING_DEPOSIT + "' OR " + Schema.Category.TAG + " = '" +
+                Schema.CategoryTag.SAVING_WITHDRAW + "') GROUP BY _saving) ON " +
                 Schema.Saving.ID + " = _saving WHERE s." + Schema.Saving.DELETED + " = 0";
         return queryFrom(subQuery, projection, selection, selectionArgs, sortOrder);
     }
@@ -3011,8 +4685,12 @@ import java.util.UUID;
      * @param savingId id of the saving to update.
      * @param contentValues bundle that contains the values to update.
      * @return the number of row affected.
+     * @throws SQLiteDataException if checkStrandedCurrency refuses the wallet.
      */
     /*package-local*/ int updateSaving(long savingId, ContentValues contentValues) {
+        if (contentValues.containsKey(Contract.Saving.WALLET_ID)) {
+            checkSavingWalletCurrency(savingId, contentValues.getAsLong(Contract.Saving.WALLET_ID));
+        }
         ContentValues cv = new ContentValues();
         if (contentValues.containsKey(Contract.Saving.COMPLETE)) {
             cv.put(Schema.Saving.COMPLETE, contentValues.getAsBoolean(Contract.Saving.COMPLETE));
@@ -3048,8 +4726,7 @@ import java.util.UUID;
     }
 
     /**
-     * Delete a saving from the database. If the 'mCacheDeletedObjects' flag is enabled the data
-     * is not removed but simply flagged as deleted.
+     * Delete a saving from the database.
      *
      * @param savingId id of the saving to remove.
      * @return the number of rows affected by the deletion (must be 1 for success).
@@ -3060,14 +4737,7 @@ import java.util.UUID;
         // delete the saving item
         String where = Schema.Saving.ID + " = ?";
         String[] whereArgs = new String[]{String.valueOf(savingId)};
-        if (mCacheDeletedObjects) {
-            ContentValues cv = new ContentValues();
-            cv.put(Schema.Saving.DELETED, true);
-            cv.put(Schema.Saving.LAST_EDIT, System.currentTimeMillis());
-            return getWritableDatabase().update(Schema.Saving.TABLE, cv, where, whereArgs);
-        } else {
-            return getWritableDatabase().delete(Schema.Saving.TABLE, where, whereArgs);
-        }
+        return getWritableDatabase().delete(Schema.Saving.TABLE, where, whereArgs);
     }
 
     /**
@@ -3184,8 +4854,7 @@ import java.util.UUID;
     }
 
     /**
-     * Delete a event from the database. If the 'mCacheDeletedObjects' flag is enabled the data
-     * is not removed but simply flagged as deleted.
+     * Delete a event from the database.
      *
      * @param eventId id of the event to remove.
      * @return the number of rows affected by the deletion (must be 1 for success).
@@ -3236,25 +4905,11 @@ import java.util.UUID;
         // remove all EventPeople
         where = Schema.EventPeople.EVENT + " = ?";
         whereArgs = new String[]{String.valueOf(eventId)};
-        if (mCacheDeletedObjects) {
-            cv = new ContentValues();
-            cv.put(Schema.EventPeople.DELETED, true);
-            cv.put(Schema.EventPeople.LAST_EDIT, System.currentTimeMillis());
-            getWritableDatabase().update(Schema.EventPeople.TABLE, cv, where, whereArgs);
-        } else {
-            getWritableDatabase().delete(Schema.EventPeople.TABLE, where, whereArgs);
-        }
+        getWritableDatabase().delete(Schema.EventPeople.TABLE, where, whereArgs);
         // finally remove the event item
         where = Schema.Event.ID + " = ?";
         whereArgs = new String[]{String.valueOf(eventId)};
-        if (mCacheDeletedObjects) {
-            cv = new ContentValues();
-            cv.put(Schema.Event.DELETED, true);
-            cv.put(Schema.Event.LAST_EDIT, System.currentTimeMillis());
-            return getWritableDatabase().update(Schema.Event.TABLE, cv, where, whereArgs);
-        } else {
-            return getWritableDatabase().delete(Schema.Event.TABLE, where, whereArgs);
-        }
+        return getWritableDatabase().delete(Schema.Event.TABLE, where, whereArgs);
     }
 
     /*package-local*/ Cursor getRecurrentTransaction(long transactionId, String[] projection) {
@@ -3412,13 +5067,40 @@ import java.util.UUID;
             String[] selectionArgs = new String[] {String.valueOf(transactionId)};
             return getWritableDatabase().update(Schema.RecurrentTransaction.TABLE, cv, where, selectionArgs);
         }
-        return 0;
+        String rule = contentValues.getAsString(Contract.RecurrentTransaction.RULE);
+        try {
+            // parsed for its exception: an invalid rule is refused here as it is on insert
+            new RecurrenceRule(rule);
+        } catch (InvalidRecurrenceRuleException e) {
+            throw new SQLiteDataException(Contract.ErrorCode.INVALID_RECURRENCE_RULE, e.getMessage());
+        }
+        String startDate = contentValues.getAsString(Contract.RecurrentTransaction.START_DATE);
+        ContentValues cv = new ContentValues();
+        cv.put(Schema.RecurrentTransaction.MONEY, contentValues.getAsLong(Contract.RecurrentTransaction.MONEY));
+        cv.put(Schema.RecurrentTransaction.DESCRIPTION, contentValues.getAsString(Contract.RecurrentTransaction.DESCRIPTION));
+        cv.put(Schema.RecurrentTransaction.CATEGORY, contentValues.getAsLong(Contract.RecurrentTransaction.CATEGORY_ID));
+        cv.put(Schema.RecurrentTransaction.DIRECTION, contentValues.getAsInteger(Contract.RecurrentTransaction.DIRECTION));
+        cv.put(Schema.RecurrentTransaction.WALLET, contentValues.getAsLong(Contract.RecurrentTransaction.WALLET_ID));
+        cv.put(Schema.RecurrentTransaction.PLACE, contentValues.getAsLong(Contract.RecurrentTransaction.PLACE_ID));
+        cv.put(Schema.RecurrentTransaction.EVENT, contentValues.getAsLong(Contract.RecurrentTransaction.EVENT_ID));
+        cv.put(Schema.RecurrentTransaction.NOTE, contentValues.getAsString(Contract.RecurrentTransaction.NOTE));
+        cv.put(Schema.RecurrentTransaction.CONFIRMED, contentValues.getAsBoolean(Contract.RecurrentTransaction.CONFIRMED));
+        cv.put(Schema.RecurrentTransaction.COUNT_IN_TOTAL, contentValues.getAsBoolean(Contract.RecurrentTransaction.COUNT_IN_TOTAL));
+        cv.put(Schema.RecurrentTransaction.START_DATE, startDate);
+        cv.put(Schema.RecurrentTransaction.RULE, rule);
+        cv.put(Schema.RecurrentTransaction.NEXT_OCCURRENCE, resumedNextOccurrence(
+                Schema.RecurrentTransaction.TABLE, Schema.RecurrentTransaction.ID,
+                Schema.RecurrentTransaction.RULE, Schema.RecurrentTransaction.START_DATE,
+                Schema.RecurrentTransaction.NEXT_OCCURRENCE, transactionId, rule, startDate));
+        cv.put(Schema.RecurrentTransaction.LAST_EDIT, System.currentTimeMillis());
+        String where = Schema.RecurrentTransaction.ID + " = ?";
+        String[] selectionArgs = new String[] {String.valueOf(transactionId)};
+        return getWritableDatabase().update(Schema.RecurrentTransaction.TABLE, cv, where, selectionArgs);
     }
 
     /**
-     * Delete a recurrent transaction from the database. If the 'mCacheDeletedObjects' flag is
-     * enabled the data is not removed but simply flagged as deleted. All the related transactions
-     * are updated with the removal of the reference to this recurring transaction.
+     * Delete a recurrent transaction from the database. All the related transactions are updated with
+     * the removal of the reference to this recurring transaction.
      *
      * @param transactionId id of the recurring transaction to remove.
      * @return the number of rows affected by the deletion (must be 1 for success).
@@ -3435,14 +5117,7 @@ import java.util.UUID;
         // now is possible to remove the recurrent transaction itself
         selection = Schema.RecurrentTransaction.ID + " = ?";
         selectionArgs = new String[]{String.valueOf(transactionId)};
-        if (mCacheDeletedObjects) {
-            contentValues = new ContentValues();
-            contentValues.put(Schema.RecurrentTransaction.DELETED, true);
-            contentValues.put(Schema.RecurrentTransaction.LAST_EDIT, System.currentTimeMillis());
-            return getWritableDatabase().update(Schema.RecurrentTransaction.TABLE, contentValues, selection, selectionArgs);
-        } else {
-            return getWritableDatabase().delete(Schema.RecurrentTransaction.TABLE, selection, selectionArgs);
-        }
+        return getWritableDatabase().delete(Schema.RecurrentTransaction.TABLE, selection, selectionArgs);
     }
 
     /*package-local*/ Cursor getRecurrentTransfer(long transferId, String[] projection) {
@@ -3667,13 +5342,41 @@ import java.util.UUID;
             String[] selectionArgs = new String[] {String.valueOf(transferId)};
             return getWritableDatabase().update(Schema.RecurrentTransfer.TABLE, cv, where, selectionArgs);
         }
-        return 0;
+        String rule = contentValues.getAsString(Contract.RecurrentTransfer.RULE);
+        try {
+            // parsed for its exception: an invalid rule is refused here as it is on insert
+            new RecurrenceRule(rule);
+        } catch (InvalidRecurrenceRuleException e) {
+            throw new SQLiteDataException(Contract.ErrorCode.INVALID_RECURRENCE_RULE, e.getMessage());
+        }
+        String startDate = contentValues.getAsString(Contract.RecurrentTransfer.START_DATE);
+        ContentValues cv = new ContentValues();
+        cv.put(Schema.RecurrentTransfer.DESCRIPTION, contentValues.getAsString(Contract.RecurrentTransfer.DESCRIPTION));
+        cv.put(Schema.RecurrentTransfer.WALLET_FROM, contentValues.getAsLong(Contract.RecurrentTransfer.WALLET_FROM_ID));
+        cv.put(Schema.RecurrentTransfer.WALLET_TO, contentValues.getAsLong(Contract.RecurrentTransfer.WALLET_TO_ID));
+        cv.put(Schema.RecurrentTransfer.MONEY_FROM, contentValues.getAsLong(Contract.RecurrentTransfer.MONEY_FROM));
+        cv.put(Schema.RecurrentTransfer.MONEY_TO, contentValues.getAsLong(Contract.RecurrentTransfer.MONEY_TO));
+        cv.put(Schema.RecurrentTransfer.MONEY_TAX, contentValues.getAsLong(Contract.RecurrentTransfer.MONEY_TAX));
+        cv.put(Schema.RecurrentTransfer.NOTE, contentValues.getAsString(Contract.RecurrentTransfer.NOTE));
+        cv.put(Schema.RecurrentTransfer.EVENT, contentValues.getAsLong(Contract.RecurrentTransfer.EVENT_ID));
+        cv.put(Schema.RecurrentTransfer.PLACE, contentValues.getAsLong(Contract.RecurrentTransfer.PLACE_ID));
+        cv.put(Schema.RecurrentTransfer.CONFIRMED, contentValues.getAsBoolean(Contract.RecurrentTransfer.CONFIRMED));
+        cv.put(Schema.RecurrentTransfer.COUNT_IN_TOTAL, contentValues.getAsBoolean(Contract.RecurrentTransfer.COUNT_IN_TOTAL));
+        cv.put(Schema.RecurrentTransfer.START_DATE, startDate);
+        cv.put(Schema.RecurrentTransfer.RULE, rule);
+        cv.put(Schema.RecurrentTransfer.NEXT_OCCURRENCE, resumedNextOccurrence(
+                Schema.RecurrentTransfer.TABLE, Schema.RecurrentTransfer.ID,
+                Schema.RecurrentTransfer.RULE, Schema.RecurrentTransfer.START_DATE,
+                Schema.RecurrentTransfer.NEXT_OCCURRENCE, transferId, rule, startDate));
+        cv.put(Schema.RecurrentTransfer.LAST_EDIT, System.currentTimeMillis());
+        String where = Schema.RecurrentTransfer.ID + " = ?";
+        String[] selectionArgs = new String[] {String.valueOf(transferId)};
+        return getWritableDatabase().update(Schema.RecurrentTransfer.TABLE, cv, where, selectionArgs);
     }
 
     /**
-     * Delete a recurrent transfer from the database. If the 'mCacheDeletedObjects' flag is
-     * enabled the data is not removed but simply flagged as deleted. All the related transfers
-     * are updated with the removal of the reference to this recurring transfer.
+     * Delete a recurrent transfer from the database. All the related transfers are updated with
+     * the removal of the reference to this recurring transfer.
      *
      * @param transferId id of the recurring transfer to remove.
      * @return the number of rows affected by the deletion (must be 1 for success).
@@ -3690,14 +5393,7 @@ import java.util.UUID;
         // now is possible to remove the recurrent transfer itself
         selection = Schema.RecurrentTransfer.ID + " = ?";
         selectionArgs = new String[]{String.valueOf(transferId)};
-        if (mCacheDeletedObjects) {
-            contentValues = new ContentValues();
-            contentValues.put(Schema.RecurrentTransfer.DELETED, true);
-            contentValues.put(Schema.RecurrentTransfer.LAST_EDIT, System.currentTimeMillis());
-            return getWritableDatabase().update(Schema.RecurrentTransfer.TABLE, contentValues, selection, selectionArgs);
-        } else {
-            return getWritableDatabase().delete(Schema.RecurrentTransfer.TABLE, selection, selectionArgs);
-        }
+        return getWritableDatabase().delete(Schema.RecurrentTransfer.TABLE, selection, selectionArgs);
     }
 
     /*package-local*/ long insertRecurrentTransferOccurrence(long transferId, ContentValues contentValues) {
@@ -3833,8 +5529,7 @@ import java.util.UUID;
     }
 
     /**
-     * Delete a transaction model from the database. If the 'mCacheDeletedObjects' flag is enabled the data
-     * is not removed but simply flagged as deleted.
+     * Delete a transaction model from the database.
      *
      * @param modelId id of the transaction model to remove.
      * @return the number of rows affected by the deletion (must be 1 for success).
@@ -3842,14 +5537,7 @@ import java.util.UUID;
     /*package-local*/ int deleteTransactionModel(long modelId) {
         String where = Schema.TransactionModel.ID + " = ?";
         String[] whereArgs = new String[]{String.valueOf(modelId)};
-        if (mCacheDeletedObjects) {
-            ContentValues cv = new ContentValues();
-            cv.put(Schema.TransactionModel.DELETED, true);
-            cv.put(Schema.TransactionModel.LAST_EDIT, System.currentTimeMillis());
-            return getWritableDatabase().update(Schema.TransactionModel.TABLE, cv, where, whereArgs);
-        } else {
-            return getWritableDatabase().delete(Schema.TransactionModel.TABLE, where, whereArgs);
-        }
+        return getWritableDatabase().delete(Schema.TransactionModel.TABLE, where, whereArgs);
     }
 
     /**
@@ -3984,8 +5672,7 @@ import java.util.UUID;
     }
 
     /**
-     * Delete a transfer model from the database. If the 'mCacheDeletedObjects' flag is enabled the
-     * data is not removed but simply flagged as deleted.
+     * Delete a transfer model from the database.
      *
      * @param modelId id of the transfer model to remove.
      * @return the number of rows affected by the deletion (must be 1 for success).
@@ -3993,14 +5680,7 @@ import java.util.UUID;
     /*package-local*/ int deleteTransferModel(long modelId) {
         String where = Schema.TransferModel.ID + " = ?";
         String[] whereArgs = new String[]{String.valueOf(modelId)};
-        if (mCacheDeletedObjects) {
-            ContentValues cv = new ContentValues();
-            cv.put(Schema.TransferModel.DELETED, true);
-            cv.put(Schema.TransferModel.LAST_EDIT, System.currentTimeMillis());
-            return getWritableDatabase().update(Schema.TransferModel.TABLE, cv, where, whereArgs);
-        } else {
-            return getWritableDatabase().delete(Schema.TransferModel.TABLE, where, whereArgs);
-        }
+        return getWritableDatabase().delete(Schema.TransferModel.TABLE, where, whereArgs);
     }
 
     /**
@@ -4107,8 +5787,7 @@ import java.util.UUID;
     }
 
     /**
-     * Delete a place from the database. If the 'mCacheDeletedObjects' flag is enabled the data
-     * is not removed but simply flagged as deleted.
+     * Delete a place from the database.
      *
      * @param placeId id of the place to remove.
      * @return the number of rows affected by the deletion (must be 1 for success).
@@ -4166,14 +5845,7 @@ import java.util.UUID;
         // finally remove the place item
         where = Schema.Place.ID + " = ?";
         whereArgs = new String[]{String.valueOf(placeId)};
-        if (mCacheDeletedObjects) {
-            cv = new ContentValues();
-            cv.put(Schema.Place.DELETED, true);
-            cv.put(Schema.Place.LAST_EDIT, System.currentTimeMillis());
-            return getWritableDatabase().update(Schema.Place.TABLE, cv, where, whereArgs);
-        } else {
-            return getWritableDatabase().delete(Schema.Place.TABLE, where, whereArgs);
-        }
+        return getWritableDatabase().delete(Schema.Place.TABLE, where, whereArgs);
     }
 
     /**
@@ -4276,8 +5948,7 @@ import java.util.UUID;
     }
 
     /**
-     * Delete a person from the database. If the 'mCacheDeletedObjects' flag is enabled the data
-     * is not removed but simply flagged as deleted.
+     * Delete a person from the database.
      *
      * @param personId id of the person to remove.
      * @return the number of rows affected by the deletion (must be 1 for success).
@@ -4286,58 +5957,23 @@ import java.util.UUID;
         // remove all the TransactionPeople
         String where = Schema.TransactionPeople.PERSON + " = ?";
         String[] whereArgs = new String[]{String.valueOf(personId)};
-        if (mCacheDeletedObjects) {
-            ContentValues cv = new ContentValues();
-            cv.put(Schema.TransactionPeople.DELETED, true);
-            cv.put(Schema.TransactionPeople.LAST_EDIT, System.currentTimeMillis());
-            getWritableDatabase().update(Schema.TransactionPeople.TABLE, cv, where, whereArgs);
-        } else {
-            getWritableDatabase().delete(Schema.TransactionPeople.TABLE, where, whereArgs);
-        }
+        getWritableDatabase().delete(Schema.TransactionPeople.TABLE, where, whereArgs);
         // remove all the TransferPeople
         where = Schema.TransferPeople.PERSON + " = ?";
         whereArgs = new String[]{String.valueOf(personId)};
-        if (mCacheDeletedObjects) {
-            ContentValues cv = new ContentValues();
-            cv.put(Schema.TransferPeople.DELETED, true);
-            cv.put(Schema.TransferPeople.LAST_EDIT, System.currentTimeMillis());
-            getWritableDatabase().update(Schema.TransferPeople.TABLE, cv, where, whereArgs);
-        } else {
-            getWritableDatabase().delete(Schema.TransferPeople.TABLE, where, whereArgs);
-        }
+        getWritableDatabase().delete(Schema.TransferPeople.TABLE, where, whereArgs);
         // remove all the EventPeople
         where = Schema.EventPeople.PERSON + " = ?";
         whereArgs = new String[]{String.valueOf(personId)};
-        if (mCacheDeletedObjects) {
-            ContentValues cv = new ContentValues();
-            cv.put(Schema.EventPeople.DELETED, true);
-            cv.put(Schema.EventPeople.LAST_EDIT, System.currentTimeMillis());
-            getWritableDatabase().update(Schema.EventPeople.TABLE, cv, where, whereArgs);
-        } else {
-            getWritableDatabase().delete(Schema.EventPeople.TABLE, where, whereArgs);
-        }
+        getWritableDatabase().delete(Schema.EventPeople.TABLE, where, whereArgs);
         // remove all the DebtPeople
         where = Schema.DebtPeople.PERSON + " = ?";
         whereArgs = new String[]{String.valueOf(personId)};
-        if (mCacheDeletedObjects) {
-            ContentValues cv = new ContentValues();
-            cv.put(Schema.DebtPeople.DELETED, true);
-            cv.put(Schema.DebtPeople.LAST_EDIT, System.currentTimeMillis());
-            getWritableDatabase().update(Schema.DebtPeople.TABLE, cv, where, whereArgs);
-        } else {
-            getWritableDatabase().delete(Schema.DebtPeople.TABLE, where, whereArgs);
-        }
+        getWritableDatabase().delete(Schema.DebtPeople.TABLE, where, whereArgs);
         // finally remove the person item
         where = Schema.Person.ID + " = ?";
         whereArgs = new String[]{String.valueOf(personId)};
-        if (mCacheDeletedObjects) {
-            ContentValues cv = new ContentValues();
-            cv.put(Schema.Person.DELETED, true);
-            cv.put(Schema.Person.LAST_EDIT, System.currentTimeMillis());
-            return getWritableDatabase().update(Schema.Person.TABLE, cv, where, whereArgs);
-        } else {
-            return getWritableDatabase().delete(Schema.Person.TABLE, where, whereArgs);
-        }
+        return getWritableDatabase().delete(Schema.Person.TABLE, where, whereArgs);
     }
 
     /**
@@ -4416,8 +6052,7 @@ import java.util.UUID;
     }
 
     /**
-     * Delete an attachment from the database. If the 'mCacheDeletedObjects' flag is enabled the data
-     * is not removed but simply flagged as deleted.
+     * Delete an attachment from the database.
      *
      * @param attachmentId id of the attachment to remove.
      * @return the number of rows affected by the deletion (must be 1 for success).
@@ -4425,14 +6060,129 @@ import java.util.UUID;
     /*package-local*/ int deleteAttachment(long attachmentId) {
         String where = Schema.Attachment.ID + " = ?";
         String[] whereArgs = new String[]{String.valueOf(attachmentId)};
-        if (mCacheDeletedObjects) {
-            ContentValues cv = new ContentValues();
-            cv.put(Schema.Attachment.DELETED, true);
-            cv.put(Schema.Attachment.LAST_EDIT, System.currentTimeMillis());
-            return getWritableDatabase().update(Schema.Attachment.TABLE, cv, where, whereArgs);
-        } else {
-            return getWritableDatabase().delete(Schema.Attachment.TABLE, where, whereArgs);
+        return getWritableDatabase().delete(Schema.Attachment.TABLE, where, whereArgs);
+    }
+
+    /**
+     * Removes the attachment rows the rows being deleted own, and the files those name, except
+     * for any that something outside this call still links to.
+     *
+     * Deleting a transaction used to drop only the row linking it to its attachment. The
+     * attachment row stayed live and its file stayed on disk, and no screen in the app reaches an
+     * attachment except through the item that owns it, so neither could be opened again. The
+     * backup writer takes every attachment not flagged as deleted, so every backup from then on
+     * carried the file.
+     *
+     * The attachments are found through the link rows, so this has to run before those are gone.
+     */
+    private void deleteAttachmentsOf(String linkTable, String attachmentColumn, String linkSelection,
+                                     String[] selectionArgs) {
+        String query = "SELECT " + Schema.Attachment.ID + ", " + Schema.Attachment.FILE +
+                " FROM " + Schema.Attachment.TABLE +
+                " WHERE " + Schema.Attachment.DELETED + " = 0 AND " + Schema.Attachment.ID +
+                " IN (SELECT " + attachmentColumn + " FROM " + linkTable + " WHERE " + linkSelection + ")";
+        Map<Long, String> attachments = new LinkedHashMap<>();
+        Cursor cursor = getReadableDatabase().rawQuery(query, selectionArgs);
+        if (cursor != null) {
+            try {
+                while (cursor.moveToNext()) {
+                    attachments.put(cursor.getLong(cursor.getColumnIndex(Schema.Attachment.ID)),
+                            cursor.getString(cursor.getColumnIndex(Schema.Attachment.FILE)));
+                }
+            } finally {
+                cursor.close();
+            }
         }
+        if (attachments.isEmpty()) {
+            return;
+        }
+        // A row goes whether or not its file can be reached: the row is what puts the file into
+        // every backup, so keeping the two in step by leaving the row would leave the problem this
+        // exists to fix
+        List<String> removed = new ArrayList<>();
+        for (Map.Entry<Long, String> attachment : attachments.entrySet()) {
+            if (isLinkedOutside(attachment.getKey(), linkTable, attachmentColumn, linkSelection,
+                    selectionArgs)) {
+                continue;
+            }
+            deleteAttachment(attachment.getKey());
+            removed.add(attachment.getValue());
+        }
+        List<String> pending = mPendingAttachmentFiles.get();
+        if (pending != null) {
+            // inside a transaction, so the rows are not committed yet and the files have to wait
+            // for them. inTransaction deletes these once the commit has gone through
+            pending.addAll(removed);
+        } else {
+            deleteAttachmentFiles(removed);
+        }
+    }
+
+    /**
+     * Removes the files behind attachment rows that have already gone. Resolving the folder
+     * touches the volume, so it happens only when there is something to delete.
+     */
+    private void deleteAttachmentFiles(List<String> fileNames) {
+        if (fileNames == null || fileNames.isEmpty()) {
+            return;
+        }
+        File folder = getAttachmentFolder();
+        if (folder == null) {
+            return;
+        }
+        for (String fileName : fileNames) {
+            deleteAttachmentFile(folder, fileName);
+        }
+    }
+
+    /**
+     * Whether a live link points at this attachment from outside the set this call is about to
+     * remove. Nothing in the app makes one: picking a file writes a new row and a new file name for
+     * the item being edited. A backup written somewhere else can, and once one has been restored
+     * every backup this app writes carries it on.
+     *
+     * Counting every live link instead would go wrong when two owners are inside the same delete,
+     * since each would see the other and neither would remove the attachment.
+     */
+    private boolean isLinkedOutside(long attachmentId, String linkTable, String attachmentColumn,
+                                    String linkSelection, String[] selectionArgs) {
+        // the id is a long read out of the database, so it goes in the text. The only placeholders
+        // are the caller's own, in the last subquery, so its arguments still bind in order
+        String query = "SELECT (SELECT COUNT(*) FROM " + Schema.TransactionAttachment.TABLE +
+                " WHERE " + Schema.TransactionAttachment.ATTACHMENT + " = " + attachmentId + " AND " +
+                Schema.TransactionAttachment.DELETED + " = 0) + (SELECT COUNT(*) FROM " +
+                Schema.TransferAttachment.TABLE + " WHERE " + Schema.TransferAttachment.ATTACHMENT +
+                " = " + attachmentId + " AND " + Schema.TransferAttachment.DELETED +
+                " = 0) - (SELECT COUNT(*) FROM " + linkTable + " WHERE " + attachmentColumn +
+                " = " + attachmentId + " AND (" + linkSelection + "))";
+        Cursor cursor = getReadableDatabase().rawQuery(query, selectionArgs);
+        if (cursor != null) {
+            try {
+                if (cursor.moveToFirst()) {
+                    return cursor.getInt(0) > 0;
+                }
+            } finally {
+                cursor.close();
+            }
+        }
+        return false;
+    }
+
+    private File getAttachmentFolder() {
+        File external = mContext.getExternalFilesDir(null);
+        return external != null ? new File(external, Attachment.FOLDER_NAME) : null;
+    }
+
+    private void deleteAttachmentFile(File folder, String fileName) {
+        // the name is read back out of a column, and a restored backup writes that column through,
+        // so it is used only when it is a plain file name and not a way out of this folder
+        if (TextUtils.isEmpty(fileName) || fileName.contains("/") || fileName.contains("\\")
+                || fileName.equals(".") || fileName.equals("..")) {
+            return;
+        }
+        // a file that will not delete is left where it is. Its row has gone either way, so it is
+        // out of every backup from here on and nothing in the app can open it
+        new File(folder, fileName).delete();
     }
 
     /**
@@ -4460,7 +6210,6 @@ import java.util.UUID;
      */
     private long[] parseIds(String list) {
         if (!TextUtils.isEmpty(list)) {
-            System.out.println(list);
             String[] encodedIds = list.split(",");
             long[] ids = new long[encodedIds.length];
             for (int i = 0; i < encodedIds.length; i++) {
@@ -4478,6 +6227,20 @@ import java.util.UUID;
     }
 
     /**
+     * The categories one budget covers, as a subquery to match a transaction against. It reads
+     * the join table and not {@link Schema.Budget#CATEGORY}, which holds only the first of them.
+     *
+     * @param budgetAlias alias the enclosing query gave the budgets table.
+     * @return a parenthesised SELECT of category ids, ready to sit on the right of an IN.
+     */
+    private static String budgetCategoriesOf(String budgetAlias) {
+        return "(SELECT bc." + Schema.BudgetCategory.CATEGORY + " FROM " +
+                Schema.BudgetCategory.TABLE + " AS bc WHERE bc." + Schema.BudgetCategory.BUDGET +
+                " = " + budgetAlias + "." + Schema.Budget.ID + " AND bc." +
+                Schema.BudgetCategory.DELETED + " = 0)";
+    }
+
+    /**
      * This is an internal method used to uniquely identify an occurrence of a recurring event
      * across different devices. This is not needed today but, if server sync will be introduced
      * in future, this will be necessary to avoid that, different devices adds the same transaction
@@ -4488,6 +6251,42 @@ import java.util.UUID;
      */
     private String getRecurrentItemUUID(String recurrenceUUID, Date date) {
         return String.format("%s:%s", recurrenceUUID, DateUtils.getSQLDateString(date));
+    }
+
+    /**
+     * Read the schedule currently stored on a recurrence row and hand it, together with the
+     * schedule the editor is saving, to {@link RecurrenceSetting#resumeAfterEdit}, which owns
+     * the decision. Both recurrence tables use this, so the caller names every column.
+     *
+     * @param table table holding the row.
+     * @param idColumn primary key column of that table.
+     * @param ruleColumn rule column of that table.
+     * @param startDateColumn start date column of that table.
+     * @param nextOccurrenceColumn next occurrence column of that table.
+     * @param id id of the row being edited.
+     * @param newRule rule the editor is saving.
+     * @param newStartDate start date the editor is saving, as an SQL date string.
+     * @return the value the next occurrence column must be set to, null when the rule is exhausted.
+     */
+    private String resumedNextOccurrence(String table, String idColumn, String ruleColumn,
+                                         String startDateColumn, String nextOccurrenceColumn,
+                                         long id, String newRule, String newStartDate) {
+        String oldRule = null;
+        String oldStartDate = null;
+        String oldNextOccurrence = null;
+        String[] projection = new String[] {ruleColumn, startDateColumn, nextOccurrenceColumn};
+        Cursor cursor = getWritableDatabase().query(table, projection, idColumn + " = ?",
+                new String[] {String.valueOf(id)}, null, null, null);
+        if (cursor != null) {
+            if (cursor.moveToFirst()) {
+                oldRule = cursor.getString(0);
+                oldStartDate = cursor.getString(1);
+                oldNextOccurrence = cursor.isNull(2) ? null : cursor.getString(2);
+            }
+            cursor.close();
+        }
+        return RecurrenceSetting.resumeAfterEdit(oldRule, oldStartDate, oldNextOccurrence,
+                newRule, newStartDate, new Date());
     }
 
     /**
@@ -4508,7 +6307,12 @@ import java.util.UUID;
             };
             String selection = Contract.Wallet.CURRENCY + " = ?";
             String[] selectionArgs = new String[] {iso};
-            Cursor cursor = getWallets(projections, selection, selectionArgs, null);
+            // the wallet table itself and not getWallets, which opens the database through the
+            // helper. That helper is already open and part way through onUpgrade when a
+            // migration calls this, so the call throws getDatabase called recursively. Reading
+            // the table also drops that method's subquery, so a row flagged deleted is
+            // rescaled here where it used to be skipped.
+            Cursor cursor = db.query(Schema.Wallet.TABLE, projections, selection, selectionArgs, null, null, null);
             if (cursor != null) {
                 int indexId = cursor.getColumnIndex(Contract.Wallet.ID);
                 int indexStartMoney = cursor.getColumnIndex(Contract.Wallet.START_MONEY);
@@ -4600,6 +6404,30 @@ import java.util.UUID;
                         db.update(Schema.Transaction.TABLE, contentValues, whereClause, whereArgs);
                     }
                     cursor.close();
+                }
+                // fix the parts of those transactions. The version 6 step calls this before the
+                // version 9 step creates their table, and with no table there are no parts
+                if (hasColumn(db, Schema.TransactionSplit.TABLE, Schema.TransactionSplit.MONEY)) {
+                    projection = new String[] {
+                            Schema.TransactionSplit.ID,
+                            Schema.TransactionSplit.MONEY
+                    };
+                    selection = Schema.TransactionSplit.TRANSACTION + " IN (SELECT " +
+                            Schema.Transaction.ID + " FROM " + Schema.Transaction.TABLE + " WHERE " +
+                            Schema.Transaction.WALLET + " = ?)";
+                    cursor = db.query(Schema.TransactionSplit.TABLE, projection, selection, selectionArgs, null, null, null);
+                    if (cursor != null) {
+                        while (cursor.moveToNext()) {
+                            long id = cursor.getLong(cursor.getColumnIndexOrThrow(Schema.TransactionSplit.ID));
+                            long money = cursor.getLong(cursor.getColumnIndexOrThrow(Schema.TransactionSplit.MONEY));
+                            ContentValues contentValues = new ContentValues();
+                            contentValues.put(Schema.TransactionSplit.MONEY, MoneyFormatter.normalize(money, decimalOffset));
+                            String whereClause = Schema.TransactionSplit.ID + " = ?";
+                            String[] whereArgs = new String[] {String.valueOf(id)};
+                            db.update(Schema.TransactionSplit.TABLE, contentValues, whereClause, whereArgs);
+                        }
+                        cursor.close();
+                    }
                 }
                 // fix the transaction model table
                 projection = new String[] {

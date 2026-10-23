@@ -1,0 +1,276 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ~ Copyright (c) 2026.
+  ~
+  ~ This file is part of MoneyWallet.
+  ~
+  ~ MoneyWallet is free software: you can redistribute it and/or modify
+  ~ it under the terms of the GNU General Public License as published by
+  ~ the Free Software Foundation, either version 3 of the License, or
+  ~ (at your option) any later version.
+  ~
+  ~ MoneyWallet is distributed in the hope that it will be useful,
+  ~ but WITHOUT ANY WARRANTY; without even the implied warranty of
+  ~ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  ~ GNU General Public License for more details.
+  ~
+  ~ You should have received a copy of the GNU General Public License
+  ~ along with MoneyWallet.  If not, see <http://www.gnu.org/licenses/>.
+  -->
+
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:minHeight="@dimen/material_component_lists_header_height"
+    android:background="?attr/selectableItemBackground">
+
+    <!--
+      An amount wide enough takes the whole row and resolves the date range beside it to nothing,
+      so the header stops saying which period it covers. The floor keeps the date readable and the
+      amount is cut instead. It is the same 80dp floor the period summary row uses, and at one
+      currency nothing moves.
+
+      The amount is held between the date and the fold arrow, since a view anchored by its end
+      alone is bounded by nothing and takes its full width off the start of the row, over the date
+      and past the edge of the screen. Bounded, it is held to one line as well, because a wrapped
+      amount is sized again after the barrier below has been placed, so the barrier keeps the
+      height of the first pass and the amount is drawn over the summary line. The binder gives an
+      amount holding several currencies one line for each, and caps it there for the same reason.
+    -->
+    <com.oriondev.moneywallet.ui.view.theme.ThemedTextView
+        android:id="@+id/left_text_view"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:layout_marginLeft="@dimen/material_component_lists_header_start_margin"
+        android:layout_marginStart="@dimen/material_component_lists_header_start_margin"
+        android:layout_marginEnd="8dp"
+        android:layout_marginRight="8dp"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textSize="@dimen/material_component_lists_header_text_size"
+        app:layout_constraintWidth_min="80dp"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toStartOf="@+id/right_text_view"
+        app:theme_textColor="textColorPrimary"
+        tools:text="August 1 - 31" />
+
+    <com.oriondev.moneywallet.ui.view.theme.ThemedTextView
+        android:id="@+id/right_text_view"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="8dp"
+        android:layout_marginRight="8dp"
+        android:ellipsize="end"
+        android:gravity="end"
+        android:maxLines="1"
+        android:textSize="@dimen/material_component_lists_header_text_size"
+        app:layout_constrainedWidth="true"
+        app:layout_constraintTop_toTopOf="@+id/left_text_view"
+        app:layout_constraintStart_toEndOf="@+id/left_text_view"
+        app:layout_constraintEnd_toStartOf="@+id/period_toggle_image_view"
+        app:theme_textColor="textColorPrimary"
+        tools:text="$ 600.00" />
+
+    <!--
+      The summary sits under whichever of the two above is taller.
+    -->
+    <androidx.constraintlayout.widget.Barrier
+        android:id="@+id/header_line_barrier"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        app:barrierDirection="bottom"
+        app:constraint_referenced_ids="left_text_view,right_text_view" />
+
+    <!--
+      A label and its amount travel together as one box, and the boxes sit in a Flow that moves a
+      whole box onto a second line when the line it is on runs out of room. One horizontal row
+      would not do, because the labels take their full width first and the amounts split what is
+      left, so a larger system font clips the numbers. A clipped number is read as a finished one.
+
+      The boxes are wrapped in a container of their own, and it is load bearing. ConstraintLayout
+      measures a wrap content child against the whole row, never against the region its Flow was
+      given, and the Flow lays a child out at whatever width came back. A box wider than the
+      region would be drawn under the fold arrow and the report icon, which paint over it, and
+      it would ellipsize only at the far edge of the row. Bounding the container bounds the boxes,
+      so a wide one ellipsizes where a reader can see it.
+
+      Inside a box only the figure carries a weight, so a box holding more than the container
+      allows takes the room off the number and the word keeps its natural width. A weight on the
+      word instead takes the room off the word until it reaches 0px, where the platform drops the
+      view from the accessibility tree and draws nothing, and the row reads as three unlabeled
+      numbers. A box that fits is untouched, since a weight divides a shortfall and there is none.
+    -->
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:layout_marginBottom="8dp"
+        android:layout_marginLeft="@dimen/material_component_lists_header_start_margin"
+        android:layout_marginStart="@dimen/material_component_lists_header_start_margin"
+        android:layout_marginEnd="8dp"
+        android:layout_marginRight="8dp"
+        app:layout_constraintTop_toBottomOf="@+id/header_line_barrier"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintVertical_bias="0"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toStartOf="@+id/period_toggle_image_view">
+
+    <LinearLayout
+        android:id="@+id/income_summary_layout"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <com.oriondev.moneywallet.ui.view.theme.ThemedTextView
+            android:id="@+id/income_label_text_view"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="4dp"
+            android:layout_marginRight="4dp"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="@string/hint_incomes"
+            android:textSize="@dimen/material_component_lists_header_summary_text_size"
+            app:theme_textColor="textColorSecondary" />
+
+        <TextView
+            android:id="@+id/income_text_view"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textSize="@dimen/material_component_lists_header_summary_text_size"
+            tools:text="$ 120.00" />
+
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/expense_summary_layout"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <com.oriondev.moneywallet.ui.view.theme.ThemedTextView
+            android:id="@+id/expense_label_text_view"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="4dp"
+            android:layout_marginRight="4dp"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="@string/hint_expenses"
+            android:textSize="@dimen/material_component_lists_header_summary_text_size"
+            app:theme_textColor="textColorSecondary" />
+
+        <TextView
+            android:id="@+id/expense_text_view"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textSize="@dimen/material_component_lists_header_summary_text_size"
+            tools:text="$ 720.00" />
+
+    </LinearLayout>
+
+    <!--
+      Money moved between two of the user's own wallets, kept out of the other two figures and
+      shown on its own. Hidden whenever the period moved none, which is what the Total wallet
+      usually shows, since both sides of a transfer between two counted wallets land there and
+      cancel. Not always, though: the two sides of a transfer between wallets in different
+      currencies do not cancel, and a wallet left out of the total puts only one side on the
+      list, so the row is shown in both cases.
+    -->
+    <LinearLayout
+        android:id="@+id/transfer_summary_layout"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        tools:visibility="visible">
+
+        <com.oriondev.moneywallet.ui.view.theme.ThemedTextView
+            android:id="@+id/transfer_label_text_view"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="4dp"
+            android:layout_marginRight="4dp"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="@string/hint_transfers"
+            android:textSize="@dimen/material_component_lists_header_summary_text_size"
+            app:theme_textColor="textColorSecondary" />
+
+        <com.oriondev.moneywallet.ui.view.theme.ThemedTextView
+            android:id="@+id/transfer_text_view"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textSize="@dimen/material_component_lists_header_summary_text_size"
+            app:theme_textColor="textColorPrimary"
+            tools:text="$ -250.00" />
+
+    </LinearLayout>
+
+    <androidx.constraintlayout.helper.widget.Flow
+        android:id="@+id/summary_flow"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        app:constraint_referenced_ids="income_summary_layout,expense_summary_layout,transfer_summary_layout"
+        app:flow_horizontalBias="0"
+        app:flow_horizontalGap="12dp"
+        app:flow_horizontalStyle="packed"
+        app:flow_verticalGap="2dp"
+        app:flow_wrapMode="chain"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+    <!--
+      The fold arrow. Its gone margin puts its glyph the same 16dp from the edge of the row that
+      the report icon's keeps. The height is fixed at 48dp because a height taken from the parent
+      constraints excluded the paddings and came out at 37.7dp on a device. The row's 8dp of top
+      and bottom space is carried as margins on the text, not as padding on the row, since a fixed
+      size child taller than a padded wrap content box grows the box instead of centering in it.
+    -->
+    <com.oriondev.moneywallet.ui.view.theme.ThemedImageView
+        android:id="@+id/period_toggle_image_view"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:padding="12dp"
+        android:scaleType="fitCenter"
+        android:src="@drawable/ic_expand_more_black_24dp"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toStartOf="@+id/report_image_view"
+        app:layout_goneMarginEnd="4dp"
+        app:layout_goneMarginRight="4dp"
+        app:theme_backgroundColor="colorWindowForeground"
+        tools:ignore="ContentDescription" />
+
+    <com.oriondev.moneywallet.ui.view.theme.ThemedImageView
+        android:id="@+id/report_image_view"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:layout_marginRight="@dimen/material_component_lists_header_end_margin"
+        android:layout_marginEnd="@dimen/material_component_lists_header_end_margin"
+        android:contentDescription="@string/description_show_period_report"
+        android:src="@drawable/ic_equalizer_24dp"
+        app:layout_constraintTop_toTopOf="@+id/period_toggle_image_view"
+        app:layout_constraintBottom_toBottomOf="@+id/period_toggle_image_view"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:theme_backgroundColor="colorWindowForeground" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>

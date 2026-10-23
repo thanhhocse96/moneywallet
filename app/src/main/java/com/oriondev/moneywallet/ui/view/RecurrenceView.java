@@ -19,16 +19,15 @@
 
 package com.oriondev.moneywallet.ui.view;
 
-import android.annotation.TargetApi;
 import android.content.Context;
-import android.os.Build;
 import androidx.annotation.Nullable;
 import android.util.AttributeSet;
 import android.view.View;
 import android.widget.LinearLayout;
 
-import com.jaredrummler.materialspinner.MaterialSpinner;
 import com.oriondev.moneywallet.R;
+import com.oriondev.moneywallet.ui.view.text.MaterialEditText;
+import com.oriondev.moneywallet.ui.view.theme.ThemedSpinner;
 
 import org.dmfs.rfc5545.recur.Freq;
 import org.dmfs.rfc5545.recur.RecurrenceRule;
@@ -38,8 +37,8 @@ import org.dmfs.rfc5545.recur.RecurrenceRule;
  */
 public class RecurrenceView extends LinearLayout {
 
-    private MaterialSpinner mTypeSpinner;
-    private MaterialSpinner mStartDateSpinner;
+    private ThemedSpinner mTypeSpinner;
+    private MaterialEditText mStartDateSpinner;
 
     public RecurrenceView(Context context) {
         super(context);
@@ -56,7 +55,6 @@ public class RecurrenceView extends LinearLayout {
         initialize(context);
     }
 
-    @TargetApi(Build.VERSION_CODES.LOLLIPOP)
     public RecurrenceView(Context context, AttributeSet attrs, int defStyleAttr, int defStyleRes) {
         super(context, attrs, defStyleAttr, defStyleRes);
         initialize(context);
@@ -69,20 +67,18 @@ public class RecurrenceView extends LinearLayout {
 
 
 
-        mTypeSpinner.setItems(
+        mTypeSpinner.setAdapter(new ThemedSpinner.Adapter(context,
                 "Repeat daily",
                 "Repeat weekly",
                 "Repeat monthly",
                 "Repeat yearly"
-        );
-        mTypeSpinner.setPadding(0, mTypeSpinner.getPaddingTop(), 0, mTypeSpinner.getPaddingBottom());
-        mStartDateSpinner.setPadding(0, mStartDateSpinner.getPaddingTop(), 0, mStartDateSpinner.getPaddingBottom());
+        ));
+        mStartDateSpinner.setTextViewMode(true);
         mStartDateSpinner.setOnClickListener(new OnClickListener() {
 
             @Override
             public void onClick(View v) {
                 // TODO: open picker
-                mStartDateSpinner.collapse();
             }
 
         });

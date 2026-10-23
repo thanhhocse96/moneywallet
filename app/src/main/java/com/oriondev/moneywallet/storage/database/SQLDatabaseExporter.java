@@ -25,8 +25,10 @@ import android.net.Uri;
 
 import com.oriondev.moneywallet.storage.database.model.Attachment;
 import com.oriondev.moneywallet.storage.database.model.Budget;
+import com.oriondev.moneywallet.storage.database.model.BudgetCategory;
 import com.oriondev.moneywallet.storage.database.model.BudgetWallet;
 import com.oriondev.moneywallet.storage.database.model.Category;
+import com.oriondev.moneywallet.storage.database.model.CategoryRule;
 import com.oriondev.moneywallet.storage.database.model.Currency;
 import com.oriondev.moneywallet.storage.database.model.Debt;
 import com.oriondev.moneywallet.storage.database.model.DebtPerson;
@@ -41,6 +43,7 @@ import com.oriondev.moneywallet.storage.database.model.Transaction;
 import com.oriondev.moneywallet.storage.database.model.TransactionAttachment;
 import com.oriondev.moneywallet.storage.database.model.TransactionModel;
 import com.oriondev.moneywallet.storage.database.model.TransactionPerson;
+import com.oriondev.moneywallet.storage.database.model.TransactionSplit;
 import com.oriondev.moneywallet.storage.database.model.Transfer;
 import com.oriondev.moneywallet.storage.database.model.TransferAttachment;
 import com.oriondev.moneywallet.storage.database.model.TransferModel;
@@ -71,11 +74,13 @@ public class SQLDatabaseExporter {
         object.mName = cursor.getString(cursor.getColumnIndex(Schema.Wallet.NAME));
         object.mIcon = cursor.getString(cursor.getColumnIndex(Schema.Wallet.ICON));
         object.mCurrency = cursor.getString(cursor.getColumnIndex(Schema.Wallet.CURRENCY));
+        object.mNote = cursor.getString(cursor.getColumnIndex(Schema.Wallet.NOTE));
         object.mStartMoney = cursor.getLong(cursor.getColumnIndex(Schema.Wallet.START_MONEY));
         object.mCountInTotal = cursor.getInt(cursor.getColumnIndex(Schema.Wallet.COUNT_IN_TOTAL)) == 1;
         object.mArchived = cursor.getInt(cursor.getColumnIndex(Schema.Wallet.ARCHIVED)) == 1;
         object.mIndex = cursor.getInt(cursor.getColumnIndex(Schema.Wallet.INDEX));
         object.mTag = cursor.getString(cursor.getColumnIndex(Schema.Wallet.TAG));
+        object.mGroup = cursor.getString(cursor.getColumnIndexOrThrow(Schema.Wallet.GROUP));
         object.mUUID = cursor.getString(cursor.getColumnIndex(Schema.Wallet.UUID));
         object.mLastEdit = cursor.getLong(cursor.getColumnIndex(Schema.Wallet.LAST_EDIT));
         object.mDeleted = cursor.getInt(cursor.getColumnIndex(Schema.Wallet.DELETED)) == 1;
@@ -110,6 +115,18 @@ public class SQLDatabaseExporter {
         object.mUUID = cursor.getString(cursor.getColumnIndex(Schema.Event.UUID));
         object.mLastEdit = cursor.getLong(cursor.getColumnIndex(Schema.Event.LAST_EDIT));
         object.mDeleted = cursor.getInt(cursor.getColumnIndex(Schema.Event.DELETED)) == 1;
+        return object;
+    }
+
+    public static CategoryRule getCategoryRule(Cursor cursor) {
+        CategoryRule object = new CategoryRule();
+        object.mId = cursor.getLong(cursor.getColumnIndexOrThrow(Schema.CategoryRule.ID));
+        object.mPattern = cursor.getString(cursor.getColumnIndexOrThrow(Schema.CategoryRule.PATTERN));
+        object.mCategory = cursor.getLong(cursor.getColumnIndexOrThrow(Schema.CategoryRule.CATEGORY));
+        object.mIndex = cursor.getInt(cursor.getColumnIndexOrThrow(Schema.CategoryRule.INDEX));
+        object.mUUID = cursor.getString(cursor.getColumnIndexOrThrow(Schema.CategoryRule.UUID));
+        object.mLastEdit = cursor.getLong(cursor.getColumnIndexOrThrow(Schema.CategoryRule.LAST_EDIT));
+        object.mDeleted = cursor.getInt(cursor.getColumnIndexOrThrow(Schema.CategoryRule.DELETED)) == 1;
         return object;
     }
 
@@ -195,10 +212,22 @@ public class SQLDatabaseExporter {
         object.mEndDate = cursor.getString(cursor.getColumnIndex(Schema.Budget.END_DATE));
         object.mMoney = cursor.getLong(cursor.getColumnIndex(Schema.Budget.MONEY));
         object.mCurrency = cursor.getString(cursor.getColumnIndex(Schema.Budget.CURRENCY));
+        object.mRule = cursor.getString(cursor.getColumnIndex(Schema.Budget.RULE));
+        object.mRuleStart = cursor.getString(cursor.getColumnIndex(Schema.Budget.RULE_START));
         object.mTag = cursor.getString(cursor.getColumnIndex(Schema.Budget.TAG));
         object.mUUID = cursor.getString(cursor.getColumnIndex(Schema.Budget.UUID));
         object.mLastEdit = cursor.getLong(cursor.getColumnIndex(Schema.Budget.LAST_EDIT));
         object.mDeleted = cursor.getInt(cursor.getColumnIndex(Schema.Budget.DELETED)) == 1;
+        return object;
+    }
+
+    public static BudgetCategory getBudgetCategory(Cursor cursor) {
+        BudgetCategory object = new BudgetCategory();
+        object.mBudget = cursor.isNull(cursor.getColumnIndex(Schema.BudgetCategory.BUDGET)) ? null : cursor.getLong(cursor.getColumnIndex(Schema.BudgetCategory.BUDGET));
+        object.mCategory = cursor.isNull(cursor.getColumnIndex(Schema.BudgetCategory.CATEGORY)) ? null : cursor.getLong(cursor.getColumnIndex(Schema.BudgetCategory.CATEGORY));
+        object.mUUID = cursor.getString(cursor.getColumnIndex(Schema.BudgetCategory.UUID));
+        object.mLastEdit = cursor.getLong(cursor.getColumnIndex(Schema.BudgetCategory.LAST_EDIT));
+        object.mDeleted = cursor.getInt(cursor.getColumnIndex(Schema.BudgetCategory.DELETED)) == 1;
         return object;
     }
 
@@ -301,6 +330,18 @@ public class SQLDatabaseExporter {
         object.mUUID = cursor.getString(cursor.getColumnIndex(Schema.Transaction.UUID));
         object.mLastEdit = cursor.getLong(cursor.getColumnIndex(Schema.Transaction.LAST_EDIT));
         object.mDeleted = cursor.getInt(cursor.getColumnIndex(Schema.Transaction.DELETED)) == 1;
+        return object;
+    }
+
+    public static TransactionSplit getTransactionSplit(Cursor cursor) {
+        TransactionSplit object = new TransactionSplit();
+        object.mTransaction = cursor.getLong(cursor.getColumnIndexOrThrow(Schema.TransactionSplit.TRANSACTION));
+        object.mCategory = cursor.getLong(cursor.getColumnIndexOrThrow(Schema.TransactionSplit.CATEGORY));
+        object.mMoney = cursor.getLong(cursor.getColumnIndexOrThrow(Schema.TransactionSplit.MONEY));
+        object.mNote = cursor.getString(cursor.getColumnIndexOrThrow(Schema.TransactionSplit.NOTE));
+        object.mUUID = cursor.getString(cursor.getColumnIndexOrThrow(Schema.TransactionSplit.UUID));
+        object.mLastEdit = cursor.getLong(cursor.getColumnIndexOrThrow(Schema.TransactionSplit.LAST_EDIT));
+        object.mDeleted = cursor.getInt(cursor.getColumnIndexOrThrow(Schema.TransactionSplit.DELETED)) == 1;
         return object;
     }
 
@@ -445,6 +486,13 @@ public class SQLDatabaseExporter {
         return contentResolver.query(uri, null, selection, null, null);
     }
 
+    public static Cursor getAllCategoryRules(ContentResolver contentResolver) {
+        Uri uri = SyncContentProvider.CONTENT_CATEGORY_RULES;
+        String selection = Schema.CategoryRule.DELETED + " = 0";
+        return contentResolver.query(uri, null, selection, null, null);
+    }
+
+
     public static Cursor getAllPlaces(ContentResolver contentResolver) {
         Uri uri = SyncContentProvider.CONTENT_PLACES;
         String selection = Schema.Place.DELETED + " = 0";
@@ -494,6 +542,13 @@ public class SQLDatabaseExporter {
     }
 
 
+    public static Cursor getAllBudgetCategories(ContentResolver contentResolver) {
+        Uri uri = SyncContentProvider.CONTENT_BUDGET_CATEGORY;
+        String selection = Schema.BudgetCategory.DELETED + " = 0";
+        return contentResolver.query(uri, null, selection, null, null);
+    }
+
+
     public static Cursor getAllSavings(ContentResolver contentResolver) {
         Uri uri = SyncContentProvider.CONTENT_SAVING;
         String selection = Schema.Saving.DELETED + " = 0";
@@ -518,6 +573,12 @@ public class SQLDatabaseExporter {
         return contentResolver.query(uri, null, selection, null, null);
     }
 
+
+    public static Cursor getAllTransactionSplits(ContentResolver contentResolver) {
+        Uri uri = SyncContentProvider.CONTENT_TRANSACTION_SPLIT;
+        String selection = Schema.TransactionSplit.DELETED + " = 0";
+        return contentResolver.query(uri, null, selection, null, null);
+    }
 
     public static Cursor getAllTransactionPeople(ContentResolver contentResolver) {
         Uri uri = SyncContentProvider.CONTENT_TRANSACTION_PEOPLE;

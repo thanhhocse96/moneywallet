@@ -22,13 +22,17 @@ package com.oriondev.moneywallet.ui.view.theme;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.os.Build;
 import androidx.annotation.UiThread;
 import androidx.core.graphics.ColorUtils;
 import android.view.View;
 import android.view.ViewGroup;
 
+import com.google.android.material.color.DynamicColors;
+
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * This class is responsible to dynamically theme the user interface at runtime.
@@ -40,6 +44,7 @@ public class ThemeEngine implements ITheme {
     private static final String COLOR_PRIMARY_DARK = "color_primary_dark";
     private static final String COLOR_ACCENT = "color_accent";
     private static final String MODE = "mode";
+    private static final String SYSTEM_COLORS = "system_colors";
 
     private static final int DEFAULT_COLOR_PRIMARY = Color.parseColor("#3f51b5");
     private static final int DEFAULT_COLOR_PRIMARY_DARK = Color.parseColor("#303F9F");
@@ -85,7 +90,7 @@ public class ThemeEngine implements ITheme {
     private static final int[] DEFAULT_COLOR_CARD_BACKGROUND = new int[] {
             Color.parseColor("#FFFFFF"), // OK
             Color.parseColor("#424242"), // OK
-            Color.parseColor("#424242")  // OK
+            Color.parseColor("#000000")  // OK
     };
 
     private static final int[] DEFAULT_COLOR_WINDOW_FOREGROUND = new int[] {
@@ -97,7 +102,7 @@ public class ThemeEngine implements ITheme {
     private static final int[] DEFAULT_COLOR_WINDOW_BACKGROUND = new int[] {
             Color.parseColor("#FAFAFA"), // OK
             Color.parseColor("#212121"), // OK
-            Color.parseColor("#212121")  // OK
+            Color.parseColor("#000000")  // OK
     };
 
     private static final int[] DEFAULT_COLOR_RIPPLE = new int[] {
@@ -106,16 +111,10 @@ public class ThemeEngine implements ITheme {
             Color.parseColor("#33ffffff") // OK
     };
 
-    private static final int[] DEFAULT_DIALOG_BACKGROUND_COLOR = new int[] {
-            Color.parseColor("#FFFFFF"), // OK
-            Color.parseColor("#424242"), // OK
-            Color.parseColor("#424242")  // OK
-    };
-
     private static final int[] DRAWER_BACKGROUND_COLOR = new int[] {
             Color.parseColor("#F9F9F9"),
             Color.parseColor("#303030"),
-            Color.parseColor("#303030")
+            Color.parseColor("#000000")
     };
 
     private static final int[] DRAWER_ICON_COLOR = new int[] {
@@ -144,6 +143,9 @@ public class ThemeEngine implements ITheme {
 
     private static ThemeEngine sInstance;
 
+    private static Integer sPreviewColorPrimary;
+    private static Integer sPreviewColorAccent;
+
     public static void initialize(Context context) {
         if (sInstance == null) {
             sInstance = new ThemeEngine(context);
@@ -158,10 +160,69 @@ public class ThemeEngine implements ITheme {
         mThemeObserverList.remove(observer);
     }
 
+    /**
+     * Shows a color without storing it, so a chooser can repaint the screen behind it while it
+     * is open. The stored value is untouched, which is what makes cancelling free. Clear it from
+     * clearPreview once the chooser is gone.
+     * <p>
+     * The color that is stored is never an override, and a chooser opens on it and can be walked
+     * back to it. That is not only to save a repaint of every observer. The stored dark primary
+     * is its own value while a previewed one is derived from the primary, and out of the box
+     * those two are not the same color, so showing the stored primary as an override would move
+     * the status bar to a color no screen will have once the chooser is gone.
+     *
+     * @return whether the screen is now showing something other than what is stored
+     */
+    @UiThread
+    public static boolean previewColorPrimary(int colorPrimary) {
+        if (sInstance == null) {
+            return false;
+        }
+        Integer showing = colorPrimary == sInstance.getStoredColorPrimary() ? null : colorPrimary;
+        if (!Objects.equals(showing, sPreviewColorPrimary)) {
+            sPreviewColorPrimary = showing;
+            notifyObservers();
+        }
+        return sPreviewColorPrimary != null;
+    }
+
+    @UiThread
+    public static boolean previewColorAccent(int colorAccent) {
+        if (sInstance == null) {
+            return false;
+        }
+        Integer showing = colorAccent == sInstance.getStoredColorAccent() ? null : colorAccent;
+        if (!Objects.equals(showing, sPreviewColorAccent)) {
+            sPreviewColorAccent = showing;
+            notifyObservers();
+        }
+        return sPreviewColorAccent != null;
+    }
+
+    @UiThread
+    public static void clearPreview() {
+        if (sPreviewColorPrimary == null && sPreviewColorAccent == null) {
+            return;
+        }
+        // OK stores the color it was previewing, so by the time the chooser is gone the override
+        // and the stored value are the same color and dropping it moves nothing on screen.
+        boolean showsSomethingElse = sInstance == null
+                || (sPreviewColorPrimary != null && sPreviewColorPrimary != sInstance.getStoredColorPrimary())
+                || (sPreviewColorAccent != null && sPreviewColorAccent != sInstance.getStoredColorAccent());
+        sPreviewColorPrimary = null;
+        sPreviewColorAccent = null;
+        if (showsSomethingElse) {
+            notifyObservers();
+        }
+    }
+
     @UiThread
     public static void setColorPrimary(int colorPrimary) {
         if (sInstance != null) {
-            if (colorPrimary != sInstance.getColorPrimary()) {
+            // Against the stored value, never the getter: a preview of this same color is showing
+            // while the chooser's OK button is what calls this, and comparing with the getter would
+            // read that preview and skip the write.
+            if (colorPrimary != sInstance.getStoredColorPrimary()) {
                 sInstance.mPreferences.edit().putInt(COLOR_PRIMARY, colorPrimary).apply();
                 sInstance.mPreferences.edit().putInt(COLOR_PRIMARY_DARK, Util.darkenColor(colorPrimary)).apply();
                 notifyObservers();
@@ -174,7 +235,7 @@ public class ThemeEngine implements ITheme {
     @UiThread
     public static void setColorAccent(int colorAccent) {
         if (sInstance != null) {
-            if (colorAccent != sInstance.getColorAccent()) {
+            if (colorAccent != sInstance.getStoredColorAccent()) {
                 sInstance.mPreferences.edit().putInt(COLOR_ACCENT, colorAccent).apply();
                 notifyObservers();
             }
@@ -190,6 +251,30 @@ public class ThemeEngine implements ITheme {
                 sInstance.mPreferences.edit().putInt(MODE, mode.getIndex()).apply();
                 notifyObservers();
             }
+        } else {
+            throw new RuntimeException("ThemeEngine not initialized!");
+        }
+    }
+
+    @UiThread
+    public static void setUseSystemColors(boolean useSystemColors) {
+        if (sInstance != null) {
+            if (useSystemColors != isSystemColorsEnabled()) {
+                sInstance.mPreferences.edit().putBoolean(SYSTEM_COLORS, useSystemColors).apply();
+                notifyObservers();
+            }
+        } else {
+            throw new RuntimeException("ThemeEngine not initialized!");
+        }
+    }
+
+    /**
+     * Whether the user asked for the wallpaper colors. Where dynamic color is not available the
+     * app keeps the picked colors even while this is true.
+     */
+    public static boolean isSystemColorsEnabled() {
+        if (sInstance != null) {
+            return sInstance.mPreferences.getBoolean(SYSTEM_COLORS, false);
         } else {
             throw new RuntimeException("ThemeEngine not initialized!");
         }
@@ -212,6 +297,26 @@ public class ThemeEngine implements ITheme {
         }
     }
 
+    /**
+     * The primary the user saved. While a chooser is open getColorPrimary answers with its preview
+     * instead, and while the system colors are in use with the wallpaper color.
+     */
+    public static int getSavedColorPrimary() {
+        if (sInstance != null) {
+            return sInstance.getStoredColorPrimary();
+        } else {
+            throw new RuntimeException("ThemeEngine not initialized!");
+        }
+    }
+
+    public static int getSavedColorAccent() {
+        if (sInstance != null) {
+            return sInstance.getStoredColorAccent();
+        } else {
+            throw new RuntimeException("ThemeEngine not initialized!");
+        }
+    }
+
     public static void applyTheme(View view, boolean propagate) {
         if (view instanceof ThemeConsumer) {
             ((ThemeConsumer) view).onApplyTheme(sInstance);
@@ -223,24 +328,71 @@ public class ThemeEngine implements ITheme {
         }
     }
 
+    private final Context mContext;
     private final SharedPreferences mPreferences;
 
     private ThemeEngine(Context context) {
+        mContext = context.getApplicationContext();
         mPreferences = context.getSharedPreferences(FILE_NAME, Context.MODE_PRIVATE);
     }
 
+    // Each getter holds the override it read, since it can be cleared between a null check
+    // and a use.
     @Override
     public int getColorPrimary() {
-        return noAlpha(mPreferences.getInt(COLOR_PRIMARY, DEFAULT_COLOR_PRIMARY));
+        Integer preview = sPreviewColorPrimary;
+        if (preview != null) {
+            return noAlpha(preview);
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && usesSystemColors()) {
+            return mContext.getColor(android.R.color.system_primary_light);
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && usesSystemColors()) {
+            return mContext.getColor(android.R.color.system_accent1_600);
+        }
+        return getStoredColorPrimary();
     }
 
     @Override
     public int getColorPrimaryDark() {
+        Integer preview = sPreviewColorPrimary;
+        if (preview != null) {
+            return noAlpha(Util.darkenColor(preview));
+        }
         return noAlpha(mPreferences.getInt(COLOR_PRIMARY_DARK, DEFAULT_COLOR_PRIMARY_DARK));
     }
 
     @Override
+    public int getColorPrimaryBackground() {
+        return getMode() == Mode.DEEP_DARK ? Color.BLACK : getColorPrimary();
+    }
+
+    @Override
     public int getColorAccent() {
+        Integer preview = sPreviewColorAccent;
+        if (preview != null) {
+            return noAlpha(preview);
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && usesSystemColors()) {
+            return mContext.getColor(isDark() ? android.R.color.system_secondary_dark
+                    : android.R.color.system_secondary_light);
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && usesSystemColors()) {
+            return mContext.getColor(isDark() ? android.R.color.system_accent2_200
+                    : android.R.color.system_accent2_600);
+        }
+        return getStoredColorAccent();
+    }
+
+    private boolean usesSystemColors() {
+        return mPreferences.getBoolean(SYSTEM_COLORS, false) && DynamicColors.isDynamicColorAvailable();
+    }
+
+    private int getStoredColorPrimary() {
+        return noAlpha(mPreferences.getInt(COLOR_PRIMARY, DEFAULT_COLOR_PRIMARY));
+    }
+
+    private int getStoredColorAccent() {
         return noAlpha(mPreferences.getInt(COLOR_ACCENT, DEFAULT_COLOR_ACCENT));
     }
 
@@ -324,11 +476,6 @@ public class ThemeEngine implements ITheme {
     }
 
     @Override
-    public int getDialogBackgroundColor() {
-        return DEFAULT_DIALOG_BACKGROUND_COLOR[getMode().getIndex()];
-    }
-
-    @Override
     public int getDrawerBackgroundColor() {
         return DRAWER_BACKGROUND_COLOR[getMode().getIndex()];
     }
@@ -340,7 +487,7 @@ public class ThemeEngine implements ITheme {
 
     @Override
     public int getDrawerSelectedIconColor() {
-        return getColorPrimary();
+        return drawerSelectedForeground();
     }
 
     @Override
@@ -350,7 +497,14 @@ public class ThemeEngine implements ITheme {
 
     @Override
     public int getDrawerSelectedTextColor() {
-        return getColorPrimary();
+        return drawerSelectedForeground();
+    }
+
+    // The opaque black or white, not the surface's own icon or text color: those are what the
+    // closed entries are already drawn in.
+    private int drawerSelectedForeground() {
+        int background = getDrawerSelectedItemColor();
+        return Util.visibleOr(getColorPrimary(), background, getBestColor(background));
     }
 
     @Override
@@ -373,6 +527,11 @@ public class ThemeEngine implements ITheme {
     public int getBestHintColor(int background) {
         int index = Util.isColorLight(background) ? INDEX_MODE_LIGHT : INDEX_MODE_DARK;
         return DEFAULT_HINT_TEXT_COLOR[index];
+    }
+
+    @Override
+    public int getVisibleColor(int color, int fallback) {
+        return Util.holdsUpAnywhere(this, color) ? color : fallback;
     }
 
     @Override

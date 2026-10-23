@@ -36,7 +36,6 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
 
-import com.itsronald.widget.ViewPagerIndicator;
 import com.oriondev.moneywallet.R;
 import com.oriondev.moneywallet.background.PeriodDetailSummaryLoader;
 import com.oriondev.moneywallet.model.Money;
@@ -76,7 +75,7 @@ public class PeriodDetailSummaryFragment extends Fragment implements PeriodDetai
     private RecyclerView mRecyclerView;
 
     private BarChartViewPagerAdapter mBarChartViewPagerAdapter;
-    private ViewPagerIndicator mChartViewPagerIndicator;
+    private View mChartViewPagerIndicator;
     private PeriodDetailSummaryAdapter mRecyclerViewAdapter;
 
     private Date mStartDate;
@@ -128,7 +127,7 @@ public class PeriodDetailSummaryFragment extends Fragment implements PeriodDetai
     @Override
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         mHeaderLeftTextView.setText(R.string.hint_net_incomes);
-        getLoaderManager().restartLoader(LOADER_FRAGMENT_DATA, null, this);
+        LoaderManager.getInstance(this).restartLoader(LOADER_FRAGMENT_DATA, null, this);
     }
 
     @Override
@@ -163,7 +162,7 @@ public class PeriodDetailSummaryFragment extends Fragment implements PeriodDetai
     @Override
     public void onLoadFinished(Loader<PeriodDetailSummaryData> loader, PeriodDetailSummaryData data) {
         if (data != null) {
-            mMoneyFormatter.applyTinted(mHeaderRightTextView, data.getNetIncomes());
+            mMoneyFormatter.applyNotTinted(mHeaderRightTextView, data.getNetIncomes());
             mBarChartViewPagerAdapter.setData(data);
             mRecyclerViewAdapter.setData(data);
             mChartViewPagerIndicator.setVisibility(data.getChartCount() > 1 ? View.VISIBLE : View.GONE);
@@ -184,6 +183,6 @@ public class PeriodDetailSummaryFragment extends Fragment implements PeriodDetai
 
     @Override
     public void onCurrentWalletChanged(long walletId) {
-        getLoaderManager().restartLoader(LOADER_FRAGMENT_DATA, null, this);
+        LoaderManager.getInstance(this).restartLoader(LOADER_FRAGMENT_DATA, null, this);
     }
 }

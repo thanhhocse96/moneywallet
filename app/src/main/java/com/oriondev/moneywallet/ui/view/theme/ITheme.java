@@ -28,6 +28,12 @@ public interface ITheme {
 
     int getColorPrimaryDark();
 
+    /**
+     * What an area with the primary color as its background is painted, black in deep dark.
+     * Text, icons and accents drawn in the primary color keep getColorPrimary.
+     */
+    int getColorPrimaryBackground();
+
     int getColorAccent();
 
     ThemeEngine.Mode getMode();
@@ -56,8 +62,6 @@ public interface ITheme {
 
     int getErrorColor();
 
-    int getDialogBackgroundColor();
-
     int getDrawerBackgroundColor();
 
     int getDrawerIconColor();
@@ -77,4 +81,6 @@ public interface ITheme {
     int getBestHintColor(int background);
 
     int getBestIconColor(int background);
+
+    int getVisibleColor(int color, int fallback);
 }

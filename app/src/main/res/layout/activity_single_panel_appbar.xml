@@ -38,8 +38,7 @@
             android:id="@+id/primary_toolbar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:theme_backgroundColor="colorPrimary"
-            app:layout_scrollFlags="scroll|enterAlways" />
+            app:theme_backgroundColor="colorPrimary" />
 
         <!-- In this area is placed the app bar layout -->
 
@@ -53,6 +52,7 @@
         android:layout_height="wrap_content"
         android:layout_margin="@dimen/fragment_multi_panel_fab_margin"
         android:layout_gravity="bottom|end"
+        android:contentDescription="@string/action_add"
         android:src="@drawable/ic_add_24dp"
         app:borderWidth="0dp"
         app:layout_behavior="com.oriondev.moneywallet.ui.behavior.ScrollingFloatingActionButtonBehavior" />

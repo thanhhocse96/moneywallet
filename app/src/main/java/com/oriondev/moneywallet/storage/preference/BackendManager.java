@@ -36,15 +36,83 @@ public class BackendManager {
     private static final String BACKEND_AUTO_BACKUP_ENABLED = "auto_backup_enabled_";
     private static final String BACKEND_AUTO_BACKUP_WIFI_ONLY = "auto_backup_wifi_only_";
     private static final String BACKEND_AUTO_BACKUP_DATA_CHANGED_ONLY = "auto_backup_data_changed_only_";
+    private static final String BACKEND_AUTO_BACKUP_EXPORT_CSV = "auto_backup_export_csv_";
     private static final String BACKEND_AUTO_BACKUP_OFFSET = "auto_backup_hour_offset_";
     private static final String BACKEND_AUTO_BACKUP_FOLDER = "auto_backup_folder_";
     private static final String BACKEND_AUTO_BACKUP_PASSWORD = "auto_backup_password_";
     private static final String BACKEND_AUTO_BACKUP_LAST_TIME = "auto_backup_last_time_";
+    private static final String BACKEND_AUTO_BACKUP_DISABLED_BY_FAILURE = "auto_backup_disabled_by_failure_";
+    private static final String BACKEND_AUTO_BACKUP_FAILURE_SEEN = "auto_backup_failure_seen_";
 
     private static SharedPreferences mPreferences;
 
     public static void initialize(Context context) {
         mPreferences = context.getSharedPreferences(FILE_NAME, Context.MODE_PRIVATE);
+    }
+
+    /**
+     * Turns automatic backup off for a backend because a backup, a restore or a listing failed in
+     * a way the app treats as not recoverable, or a Local folder change could not read the new
+     * folder, and records that the app is the one that turned it off. Nothing else sets that flag, so a user switching the service off in the settings dialog
+     * is not mistaken for a failure.
+     *
+     * The sweep builds its backend before the block that calls this, so a backend that cannot be
+     * built at all, a released storage grant or a cleared server address, never gets here from
+     * the sweep, and stays enabled while its notification says otherwise. The manual backup,
+     * restore and browse path builds its backend inside the block, so the same failure does get
+     * here from there.
+     *
+     * The flag is what the settings dialog has to work with. The saved folder and password survive
+     * a failure, so the dialog reopens showing them, and without this it cannot tell the two
+     * states apart: a backend the user switched off and a backend a failure switched off look
+     * identical in these preferences.
+     *
+     * Only recorded for a backend that had automatic backup on. The manual backup, restore and
+     * browse paths share the caller in {@link
+     * com.oriondev.moneywallet.service.BackupHandlerIntentService}, and browsing a backend runs a
+     * listing every time that screen resumes, so without this a backend the user never turned
+     * automatic backup on for would report that a failure turned it off.
+     */
+    public static void disableAutoBackupAfterFailure(String backendId) {
+        if (isAutoBackupEnabled(backendId)) {
+            mPreferences.edit()
+                    .putBoolean(BACKEND_AUTO_BACKUP_DISABLED_BY_FAILURE + backendId, true)
+                    .remove(BACKEND_AUTO_BACKUP_FAILURE_SEEN + backendId)
+                    .apply();
+        }
+        setAutoBackupEnabled(backendId, false);
+    }
+
+    public static boolean isAutoBackupDisabledByFailure(String backendId) {
+        return mPreferences.getBoolean(BACKEND_AUTO_BACKUP_DISABLED_BY_FAILURE + backendId, false);
+    }
+
+    /**
+     * Whether a failure turned automatic backup off for any backend and the launch prompt has not
+     * been answered for it yet. Reads the records themselves, so a failure recorded before the
+     * prompt existed is reported too.
+     */
+    public static boolean hasUnseenAutoBackupFailure() {
+        for (String key : mPreferences.getAll().keySet()) {
+            if (key.startsWith(BACKEND_AUTO_BACKUP_DISABLED_BY_FAILURE)) {
+                String backendId = key.substring(BACKEND_AUTO_BACKUP_DISABLED_BY_FAILURE.length());
+                if (!mPreferences.getBoolean(BACKEND_AUTO_BACKUP_FAILURE_SEEN + backendId, false)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    public static void markAutoBackupFailuresSeen() {
+        SharedPreferences.Editor editor = mPreferences.edit();
+        for (String key : mPreferences.getAll().keySet()) {
+            if (key.startsWith(BACKEND_AUTO_BACKUP_DISABLED_BY_FAILURE)) {
+                String backendId = key.substring(BACKEND_AUTO_BACKUP_DISABLED_BY_FAILURE.length());
+                editor.putBoolean(BACKEND_AUTO_BACKUP_FAILURE_SEEN + backendId, true);
+            }
+        }
+        editor.apply();
     }
 
     public static void setAutoBackupEnabled(String backendId, boolean enabled) {
@@ -55,11 +123,22 @@ public class BackendManager {
                 backendIdSet = new HashSet<>();
             }
             backendIdSet.add(backendId);
+            // Turning the service on is what forgets the failure that turned it off. The record
+            // describes a service that is off, so keeping it past this point would let it be
+            // shown against a service that is running.
+            mPreferences.edit()
+                    .remove(BACKEND_AUTO_BACKUP_DISABLED_BY_FAILURE + backendId)
+                    .apply();
         } else if (backendIdSet != null) {
             backendIdSet.remove(backendId);
+            // The folder and the password stay. This is reached from the failure path above as
+            // well as from the settings dialog, and the failure path never writes them back, so
+            // erasing them threw away what the user chose when a backup, a restore or a listing
+            // failed. The last run time still goes, because
+            // AutoBackupJobService leans on it being cleared, skipping the write back for a
+            // backend a failure has just disabled so that switching the backend on again does
+            // not fire a backup at once.
             mPreferences.edit()
-                    .remove(BACKEND_AUTO_BACKUP_FOLDER + backendId)
-                    .remove(BACKEND_AUTO_BACKUP_PASSWORD + backendId)
                     .remove(BACKEND_AUTO_BACKUP_LAST_TIME + backendId)
                     .apply();
         }
@@ -68,6 +147,10 @@ public class BackendManager {
 
     public static void setAutoBackupOnWiFiOnly(String backendId, boolean wifiOnly) {
         mPreferences.edit().putBoolean(BACKEND_AUTO_BACKUP_WIFI_ONLY + backendId, wifiOnly).apply();
+    }
+
+    public static void setAutoBackupExportCsv(String backendId, boolean exportCsv) {
+        mPreferences.edit().putBoolean(BACKEND_AUTO_BACKUP_EXPORT_CSV + backendId, exportCsv).apply();
     }
 
     public static void setAutoBackupWhenDataIsChangedOnly(String backendId, boolean dataChangedOnly) {
@@ -100,6 +183,10 @@ public class BackendManager {
 
     public static boolean isAutoBackupOnWiFiOnly(String backendId) {
         return mPreferences.getBoolean(BACKEND_AUTO_BACKUP_WIFI_ONLY + backendId, false);
+    }
+
+    public static boolean isAutoBackupExportCsv(String backendId) {
+        return mPreferences.getBoolean(BACKEND_AUTO_BACKUP_EXPORT_CSV + backendId, false);
     }
 
     public static boolean isAutoBackupWhenDataIsChangedOnly(String backendId) {

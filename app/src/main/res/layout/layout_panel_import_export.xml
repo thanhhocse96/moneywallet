@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <com.oriondev.moneywallet.ui.view.theme.ThemedScrollView
+    app:systemBarInsetSides="@bool/panel_fills_window"
+    app:systemBarInsetBottom="true"
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
@@ -38,7 +40,7 @@
             android:layout_height="wrap_content"
             android:layout_marginBottom="@dimen/material_activity_body_edit_text_margin_bottom"
             android:hint="@string/hint_start_date"
-            android:inputType="textNoSuggestions"
+            android:inputType="textMultiLine|textNoSuggestions"
             app:met_mode="floatingLabel"
             app:met_leftIcon="@drawable/ic_today_black_24dp"
             app:met_showCancelButton="true"/>
@@ -49,7 +51,7 @@
             android:layout_height="wrap_content"
             android:layout_marginBottom="@dimen/material_activity_body_edit_text_margin_bottom"
             android:hint="@string/hint_end_date"
-            android:inputType="textNoSuggestions"
+            android:inputType="textMultiLine|textNoSuggestions"
             app:met_mode="floatingLabel"
             app:met_leftIcon="@drawable/ic_calendar_black_24dp"
             app:met_showCancelButton="true" />
@@ -73,6 +75,116 @@
             android:inputType="textNoSuggestions"
             app:met_mode="floatingLabel"
             app:met_leftIcon="@drawable/ic_file_outline_24dp"/>
+
+        <LinearLayout
+            android:id="@+id/import_mapping_layout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <com.oriondev.moneywallet.ui.view.theme.ThemedTextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginLeft="@dimen/material_activity_body_check_box_start_end_margin"
+                android:layout_marginRight="@dimen/material_activity_body_check_box_start_end_margin"
+                android:layout_marginBottom="@dimen/material_activity_body_check_box_top_bottom_margin"
+                android:text="@string/csv_import_mapping_intro"
+                android:textAppearance="?android:attr/textAppearanceSmall" />
+
+            <com.oriondev.moneywallet.ui.view.theme.ThemedMaterialEditText
+                android:id="@+id/import_wallet_edit_text"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="@dimen/material_activity_body_edit_text_margin_bottom"
+                android:hint="@string/hint_wallet"
+                android:inputType="textNoSuggestions"
+                app:met_mode="floatingLabel"
+                app:met_leftIcon="@drawable/ic_folder_black_24dp" />
+
+            <com.oriondev.moneywallet.ui.view.theme.ThemedMaterialEditText
+                android:id="@+id/import_date_column_edit_text"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="@dimen/material_activity_body_edit_text_margin_bottom"
+                android:hint="@string/csv_import_date_column"
+                android:inputType="textNoSuggestions"
+                app:met_mode="floatingLabel"
+                app:met_leftIcon="@drawable/ic_format_columns_24dp" />
+
+            <com.oriondev.moneywallet.ui.view.theme.ThemedMaterialEditText
+                android:id="@+id/import_amount_column_edit_text"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="@dimen/material_activity_body_edit_text_margin_bottom"
+                android:hint="@string/csv_import_amount_column"
+                android:inputType="textNoSuggestions"
+                app:met_mode="floatingLabel"
+                app:met_leftIcon="@drawable/ic_format_columns_24dp" />
+
+            <com.oriondev.moneywallet.ui.view.theme.ThemedMaterialEditText
+                android:id="@+id/import_description_column_edit_text"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="@dimen/material_activity_body_edit_text_margin_bottom"
+                android:hint="@string/csv_import_description_column"
+                android:inputType="textNoSuggestions"
+                app:met_mode="floatingLabel"
+                app:met_leftIcon="@drawable/ic_format_columns_24dp" />
+
+            <com.oriondev.moneywallet.ui.view.theme.ThemedMaterialEditText
+                android:id="@+id/import_note_column_edit_text"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="@dimen/material_activity_body_edit_text_margin_bottom"
+                android:hint="@string/csv_import_note_column"
+                android:inputType="textNoSuggestions"
+                app:met_mode="floatingLabel"
+                app:met_leftIcon="@drawable/ic_format_columns_24dp" />
+
+            <com.oriondev.moneywallet.ui.view.theme.ThemedMaterialEditText
+                android:id="@+id/import_category_column_edit_text"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="@dimen/material_activity_body_edit_text_margin_bottom"
+                android:hint="@string/csv_import_category_column"
+                android:inputType="textNoSuggestions"
+                app:met_mode="floatingLabel"
+                app:met_leftIcon="@drawable/ic_format_columns_24dp" />
+
+            <com.oriondev.moneywallet.ui.view.theme.ThemedMaterialEditText
+                android:id="@+id/import_date_format_edit_text"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="@dimen/material_activity_body_edit_text_margin_bottom"
+                android:hint="@string/csv_import_date_format"
+                android:inputType="textNoSuggestions"
+                app:met_mode="floatingLabel"
+                app:met_leftIcon="@drawable/ic_today_black_24dp" />
+
+            <com.oriondev.moneywallet.ui.view.theme.ThemedMaterialEditText
+                android:id="@+id/import_decimal_separator_edit_text"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="@dimen/material_activity_body_edit_text_margin_bottom"
+                android:hint="@string/csv_import_decimal_separator"
+                android:inputType="textNoSuggestions"
+                app:met_mode="floatingLabel"
+                app:met_leftIcon="@drawable/ic_file_table" />
+
+            <com.oriondev.moneywallet.ui.view.theme.ThemedCheckBox
+                android:id="@+id/import_spending_positive_checkbox"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/material_activity_body_check_box_top_bottom_margin"
+                android:layout_marginLeft="@dimen/material_activity_body_check_box_start_end_margin"
+                android:layout_marginRight="@dimen/material_activity_body_check_box_start_end_margin"
+                android:layout_marginBottom="@dimen/material_activity_body_check_box_top_bottom_margin"
+                android:paddingLeft="@dimen/material_activity_body_check_box_start_padding"
+                android:paddingStart="@dimen/material_activity_body_check_box_start_padding"
+                android:text="@string/csv_import_spending_positive" />
+
+        </LinearLayout>
 
         <com.oriondev.moneywallet.ui.view.theme.ThemedMaterialEditText
             android:id="@+id/export_folder_edit_text"
@@ -106,6 +218,17 @@
             android:paddingStart="@dimen/material_activity_body_check_box_start_padding"
             android:text="@string/hint_export_unique_wallet"
             android:checked="true" />
+
+        <com.oriondev.moneywallet.ui.view.theme.ThemedTextView
+            android:id="@+id/export_csv_no_transfers_text_view"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginLeft="@dimen/material_activity_body_check_box_start_end_margin"
+            android:layout_marginRight="@dimen/material_activity_body_check_box_start_end_margin"
+            android:layout_marginBottom="@dimen/material_activity_body_check_box_top_bottom_margin"
+            android:text="@string/hint_export_csv_no_transfers"
+            android:textAppearance="?android:attr/textAppearanceSmall"
+            android:visibility="gone" />
 
     </LinearLayout>
 

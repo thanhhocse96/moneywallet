@@ -47,6 +47,7 @@ public class SyncContentProvider extends ContentProvider {
     public static final Uri CONTENT_WALLETS = Uri.parse("content://" + AUTHORITY + "/wallets");
     public static final Uri CONTENT_CATEGORIES = Uri.parse("content://" + AUTHORITY + "/categories");
     public static final Uri CONTENT_EVENTS = Uri.parse("content://" + AUTHORITY + "/events");
+    public static final Uri CONTENT_CATEGORY_RULES = Uri.parse("content://" + AUTHORITY + "/category_rules");
     public static final Uri CONTENT_PLACES = Uri.parse("content://" + AUTHORITY + "/places");
     public static final Uri CONTENT_PEOPLE = Uri.parse("content://" + AUTHORITY + "/people");
     public static final Uri CONTENT_EVENT_PEOPLE = Uri.parse("content://" + AUTHORITY + "/event_people");
@@ -54,11 +55,13 @@ public class SyncContentProvider extends ContentProvider {
     public static final Uri CONTENT_DEBT_PEOPLE = Uri.parse("content://" + AUTHORITY + "/debt_people");
     public static final Uri CONTENT_BUDGET = Uri.parse("content://" + AUTHORITY + "/budget");
     public static final Uri CONTENT_BUDGET_WALLET = Uri.parse("content://" + AUTHORITY + "/budget_wallets");
+    public static final Uri CONTENT_BUDGET_CATEGORY = Uri.parse("content://" + AUTHORITY + "/budget_categories");
     public static final Uri CONTENT_SAVING = Uri.parse("content://" + AUTHORITY + "/savings");
     public static final Uri CONTENT_RECURRENT_TRANSACTION = Uri.parse("content://" + AUTHORITY + "/recurrent_transactions");
     public static final Uri CONTENT_RECURRENT_TRANSFER = Uri.parse("content://" + AUTHORITY + "/recurrent_transfers");
     public static final Uri CONTENT_TRANSACTION = Uri.parse("content://" + AUTHORITY + "/transactions");
     public static final Uri CONTENT_TRANSACTION_PEOPLE = Uri.parse("content://" + AUTHORITY + "/transaction_people");
+    public static final Uri CONTENT_TRANSACTION_SPLIT = Uri.parse("content://" + AUTHORITY + "/transaction_splits");
     public static final Uri CONTENT_TRANSACTION_MODEL = Uri.parse("content://" + AUTHORITY + "/transaction_model");
     public static final Uri CONTENT_TRANSFER = Uri.parse("content://" + AUTHORITY + "/transfers");
     public static final Uri CONTENT_TRANSFER_PEOPLE = Uri.parse("content://" + AUTHORITY + "/transfer_people");
@@ -78,6 +81,7 @@ public class SyncContentProvider extends ContentProvider {
     private static final int TABLE_DEBT_PEOPLE = 9;
     private static final int TABLE_BUDGETS = 10;
     private static final int TABLE_BUDGET_WALLETS = 11;
+    private static final int TABLE_BUDGET_CATEGORIES = 24;
     private static final int TABLE_SAVINGS = 12;
     private static final int TABLE_RECURRENT_TRANSACTIONS = 13;
     private static final int TABLE_RECURRENT_TRANSFERS = 14;
@@ -90,6 +94,8 @@ public class SyncContentProvider extends ContentProvider {
     private static final int TABLE_ATTACHMENTS = 21;
     private static final int TABLE_TRANSACTION_ATTACHMENTS = 22;
     private static final int TABLE_TRANSFER_ATTACHMENTS = 23;
+    private static final int TABLE_CATEGORY_RULES = 25;
+    private static final int TABLE_TRANSACTION_SPLITS = 26;
 
     private static final UriMatcher mUriMatcher = createUriMatcher();
 
@@ -99,6 +105,7 @@ public class SyncContentProvider extends ContentProvider {
         matcher.addURI(AUTHORITY, "wallets", TABLE_WALLETS);
         matcher.addURI(AUTHORITY, "categories", TABLE_CATEGORIES);
         matcher.addURI(AUTHORITY, "events", TABLE_EVENTS);
+        matcher.addURI(AUTHORITY, "category_rules", TABLE_CATEGORY_RULES);
         matcher.addURI(AUTHORITY, "places", TABLE_PLACES);
         matcher.addURI(AUTHORITY, "people", TABLE_PEOPLE);
         matcher.addURI(AUTHORITY, "event_people", TABLE_EVENT_PEOPLE);
@@ -106,11 +113,13 @@ public class SyncContentProvider extends ContentProvider {
         matcher.addURI(AUTHORITY, "debt_people", TABLE_DEBT_PEOPLE);
         matcher.addURI(AUTHORITY, "budget", TABLE_BUDGETS);
         matcher.addURI(AUTHORITY, "budget_wallets", TABLE_BUDGET_WALLETS);
+        matcher.addURI(AUTHORITY, "budget_categories", TABLE_BUDGET_CATEGORIES);
         matcher.addURI(AUTHORITY, "savings", TABLE_SAVINGS);
         matcher.addURI(AUTHORITY, "recurrent_transactions", TABLE_RECURRENT_TRANSACTIONS);
         matcher.addURI(AUTHORITY, "recurrent_transfers", TABLE_RECURRENT_TRANSFERS);
         matcher.addURI(AUTHORITY, "transactions", TABLE_TRANSACTIONS);
         matcher.addURI(AUTHORITY, "transaction_people", TABLE_TRANSACTION_PEOPLE);
+        matcher.addURI(AUTHORITY, "transaction_splits", TABLE_TRANSACTION_SPLITS);
         matcher.addURI(AUTHORITY, "transaction_model", TABLE_TRANSACTION_MODELS);
         matcher.addURI(AUTHORITY, "transfers", TABLE_TRANSFERS);
         matcher.addURI(AUTHORITY, "transfer_people", TABLE_TRANSFER_PEOPLE);
@@ -121,12 +130,22 @@ public class SyncContentProvider extends ContentProvider {
         return matcher;
     }
 
-    private SQLDatabase mDatabase;
+    /**
+     * The same helper DataContentProvider uses, read on every use instead of held in a field.
+     * One helper means one connection on one file, so the two providers cannot end up with a
+     * transaction on one and a write on the other. A field would be a closed handle after a
+     * restore, since resetShared closes what it replaces.
+     *
+     * A restore resolves its own staging helper through here. Its rows travel through this
+     * provider on the one thread the import runs on, and getShared answers that thread with the
+     * file the import is building instead of with the live ledger.
+     */
+    private SQLDatabase db() {
+        return SQLDatabase.getShared(getContext());
+    }
 
     @Override
     public boolean onCreate() {
-        Context context = getContext();
-        mDatabase = new SQLDatabase(context);
         return true;
     }
 
@@ -140,6 +159,8 @@ public class SyncContentProvider extends ContentProvider {
                 return Schema.Category.TABLE;
             case TABLE_EVENTS:
                 return Schema.Event.TABLE;
+            case TABLE_CATEGORY_RULES:
+                return Schema.CategoryRule.TABLE;
             case TABLE_PLACES:
                 return Schema.Place.TABLE;
             case TABLE_PEOPLE:
@@ -154,6 +175,8 @@ public class SyncContentProvider extends ContentProvider {
                 return Schema.Budget.TABLE;
             case TABLE_BUDGET_WALLETS:
                 return Schema.BudgetWallet.TABLE;
+            case TABLE_BUDGET_CATEGORIES:
+                return Schema.BudgetCategory.TABLE;
             case TABLE_SAVINGS:
                 return Schema.Saving.TABLE;
             case TABLE_RECURRENT_TRANSACTIONS:
@@ -164,6 +187,8 @@ public class SyncContentProvider extends ContentProvider {
                 return Schema.Transaction.TABLE;
             case TABLE_TRANSACTION_PEOPLE:
                 return Schema.TransactionPeople.TABLE;
+            case TABLE_TRANSACTION_SPLITS:
+                return Schema.TransactionSplit.TABLE;
             case TABLE_TRANSACTION_MODELS:
                 return Schema.TransactionModel.TABLE;
             case TABLE_TRANSFERS:
@@ -188,7 +213,7 @@ public class SyncContentProvider extends ContentProvider {
     public Cursor query(@NonNull Uri uri, @Nullable String[] projection, @Nullable String selection, @Nullable String[] selectionArgs, @Nullable String sortOrder) {
         String table = getTable(uri);
         if (table != null) {
-            return mDatabase.getReadableDatabase().query(table, projection, selection, selectionArgs, null, null, sortOrder);
+            return db().getReadableDatabase().query(table, projection, selection, selectionArgs, null, null, sortOrder);
         }
         return null;
     }
@@ -204,7 +229,7 @@ public class SyncContentProvider extends ContentProvider {
     public Uri insert(@NonNull Uri uri, @Nullable ContentValues values) {
         String table = getTable(uri);
         if (table != null) {
-            long id = mDatabase.getWritableDatabase().insertWithOnConflict(table, null, values, SQLiteDatabase.CONFLICT_REPLACE);
+            long id = db().getWritableDatabase().insertWithOnConflict(table, null, values, SQLiteDatabase.CONFLICT_REPLACE);
             return ContentUris.withAppendedId(uri, id);
         }
         return null;
@@ -214,7 +239,7 @@ public class SyncContentProvider extends ContentProvider {
     public int delete(@NonNull Uri uri, @Nullable String selection, @Nullable String[] selectionArgs) {
         String table = getTable(uri);
         if (table != null) {
-            return mDatabase.getWritableDatabase().delete(table, selection, selectionArgs);
+            return db().getWritableDatabase().delete(table, selection, selectionArgs);
         }
         return 0;
     }
@@ -223,7 +248,7 @@ public class SyncContentProvider extends ContentProvider {
     public int update(@NonNull Uri uri, @Nullable ContentValues values, @Nullable String selection, @Nullable String[] selectionArgs) {
         String table = getTable(uri);
         if (table != null) {
-            return mDatabase.getWritableDatabase().update(table, values, selection, selectionArgs);
+            return db().getWritableDatabase().update(table, values, selection, selectionArgs);
         }
         return 0;
     }
@@ -235,10 +260,7 @@ public class SyncContentProvider extends ContentProvider {
         if (client != null) {
             ContentProvider contentProvider = client.getLocalContentProvider();
             if (contentProvider instanceof SyncContentProvider) {
-                if (((SyncContentProvider) contentProvider).mDatabase != null) {
-                    ((SyncContentProvider) contentProvider).mDatabase.close();
-                }
-                ((SyncContentProvider) contentProvider).mDatabase = new SQLDatabase(context);
+                SQLDatabase.resetShared(context);
             }
             client.close();
         }

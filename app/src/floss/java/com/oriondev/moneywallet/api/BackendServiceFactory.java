@@ -20,17 +20,19 @@
 package com.oriondev.moneywallet.api;
 
 import android.content.Context;
-import android.os.Build;
 
 import com.oriondev.moneywallet.R;
 import com.oriondev.moneywallet.api.disk.DiskBackendService;
 import com.oriondev.moneywallet.api.disk.DiskBackendServiceAPI;
 import com.oriondev.moneywallet.api.saf.SAFBackendService;
 import com.oriondev.moneywallet.api.saf.SAFBackendServiceAPI;
+import com.oriondev.moneywallet.api.webdav.WebDAVBackendService;
+import com.oriondev.moneywallet.api.webdav.WebDAVBackendServiceAPI;
 import com.oriondev.moneywallet.model.BackupService;
 import com.oriondev.moneywallet.model.IFile;
 import com.oriondev.moneywallet.model.LocalFile;
 import com.oriondev.moneywallet.model.SAFFile;
+import com.oriondev.moneywallet.model.WebDAVFile;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -42,46 +44,105 @@ public class BackendServiceFactory {
 
     public static final String SERVICE_ID_EXTERNAL_MEMORY = "external_memory";
     public static final String SERVICE_ID_SAF = "storage_access_framework";
+    public static final String SERVICE_ID_WEBDAV = "webdav";
 
-    public static AbstractBackendServiceDelegate getServiceById(String backendId, AbstractBackendServiceDelegate.BackendServiceStatusListener listener) {
-        switch (backendId) {
-            case SERVICE_ID_EXTERNAL_MEMORY:
+    private static final List<BackendDescriptor> DESCRIPTORS = buildDescriptors();
+
+    private static List<BackendDescriptor> buildDescriptors() {
+        List<BackendDescriptor> descriptors = new ArrayList<>();
+        descriptors.add(new BackendDescriptor(SERVICE_ID_EXTERNAL_MEMORY, R.drawable.ic_sd_24dp) {
+            @Override
+            public IFile getDefaultFolder() {
+                return DiskBackendServiceAPI.getDefaultFolder();
+            }
+
+            @Override
+            public AbstractBackendServiceDelegate createDelegate(AbstractBackendServiceDelegate.BackendServiceStatusListener listener) {
                 return new DiskBackendService(listener);
-            case SERVICE_ID_SAF:
+            }
+
+            @Override
+            public IBackendServiceAPI createServiceApi(Context context) throws BackendException {
+                return new DiskBackendServiceAPI();
+            }
+
+            @Override
+            public IFile createFile(String encoded) {
+                return new LocalFile(encoded);
+            }
+        });
+        descriptors.add(new BackendDescriptor(SERVICE_ID_SAF, R.drawable.ic_storage_black_24dp) {
+            @Override
+            public AbstractBackendServiceDelegate createDelegate(AbstractBackendServiceDelegate.BackendServiceStatusListener listener) {
                 return new SAFBackendService(listener);
+            }
+
+            @Override
+            public IBackendServiceAPI createServiceApi(Context context) throws BackendException {
+                return new SAFBackendServiceAPI(context);
+            }
+
+            @Override
+            public IFile createFile(String encoded) {
+                return SAFFile.decode(encoded);
+            }
+        });
+        descriptors.add(new BackendDescriptor(SERVICE_ID_WEBDAV, R.drawable.ic_webdav_24dp) {
+            @Override
+            public AbstractBackendServiceDelegate createDelegate(AbstractBackendServiceDelegate.BackendServiceStatusListener listener) {
+                return new WebDAVBackendService(listener);
+            }
+
+            @Override
+            public IBackendServiceAPI createServiceApi(Context context) throws BackendException {
+                return new WebDAVBackendServiceAPI(context);
+            }
+
+            @Override
+            public IFile createFile(String encoded) {
+                return WebDAVFile.decode(encoded);
+            }
+        });
+        return descriptors;
+    }
+
+    private static BackendDescriptor findDescriptor(String backendId) {
+        for (BackendDescriptor descriptor : DESCRIPTORS) {
+            if (descriptor.getId().equals(backendId)) {
+                return descriptor;
+            }
         }
         return null;
     }
 
+    public static AbstractBackendServiceDelegate getServiceById(String backendId, AbstractBackendServiceDelegate.BackendServiceStatusListener listener) {
+        BackendDescriptor descriptor = findDescriptor(backendId);
+        return descriptor != null ? descriptor.createDelegate(listener) : null;
+    }
+
     public static IBackendServiceAPI getServiceAPIById(Context context, String backendId) throws BackendException {
-        switch (backendId) {
-            case SERVICE_ID_EXTERNAL_MEMORY:
-                return new DiskBackendServiceAPI();
-            case SERVICE_ID_SAF:
-                return new SAFBackendServiceAPI(context);
-            default:
-                throw new BackendException("Invalid backend");
+        BackendDescriptor descriptor = findDescriptor(backendId);
+        if (descriptor == null) {
+            throw new BackendException("Invalid backend");
         }
+        return descriptor.createServiceApi(context);
     }
 
     public static List<BackupService> getBackupServices() {
         List<BackupService> services = new ArrayList<>();
-        services.add(new BackupService(SERVICE_ID_EXTERNAL_MEMORY, R.drawable.ic_sd_24dp, R.string.service_backup_external_memory));
-        if (Build.VERSION.SDK_INT >= 21) {
-            services.add(new BackupService(SERVICE_ID_SAF, R.drawable.ic_storage_black_24dp, R.string.service_backup_storage_access_framework));
+        for (BackendDescriptor descriptor : DESCRIPTORS) {
+            if (descriptor.isAvailable()) {
+                services.add(new BackupService(descriptor.getId(), descriptor.getIconRes(), descriptor.getNameRes()));
+            }
         }
         return services;
     }
 
     public static IFile getFile(String backendId, String encoded) {
-        if (encoded != null) {
-            switch (backendId) {
-                case SERVICE_ID_EXTERNAL_MEMORY:
-                    return new LocalFile(encoded);
-                case SERVICE_ID_SAF:
-                    return new SAFFile(encoded);
-            }
+        BackendDescriptor descriptor = findDescriptor(backendId);
+        if (descriptor == null) {
+            return null;
         }
-        return null;
+        return encoded != null ? descriptor.createFile(encoded) : descriptor.getDefaultFolder();
     }
 }

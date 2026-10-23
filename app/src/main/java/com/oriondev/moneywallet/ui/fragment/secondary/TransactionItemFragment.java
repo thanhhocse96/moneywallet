@@ -20,9 +20,9 @@
 package com.oriondev.moneywallet.ui.fragment.secondary;
 
 import android.app.Activity;
-import android.content.ContentResolver;
 import android.content.ContentUris;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
@@ -40,14 +40,11 @@ import android.view.ViewGroup;
 import android.widget.CheckBox;
 import android.widget.TextView;
 
-import com.afollestad.materialdialogs.DialogAction;
-import com.afollestad.materialdialogs.MaterialDialog;
 import com.oriondev.moneywallet.R;
 import com.oriondev.moneywallet.model.Attachment;
 import com.oriondev.moneywallet.model.CurrencyUnit;
 import com.oriondev.moneywallet.storage.database.Contract;
 import com.oriondev.moneywallet.storage.database.DataContentProvider;
-import com.oriondev.moneywallet.storage.database.SQLiteDataException;
 import com.oriondev.moneywallet.ui.activity.NewEditItemActivity;
 import com.oriondev.moneywallet.ui.activity.NewEditTransactionActivity;
 import com.oriondev.moneywallet.ui.fragment.base.SecondaryPanelFragment;
@@ -70,6 +67,7 @@ public class TransactionItemFragment extends SecondaryPanelFragment implements L
     private static final int TRANSACTION_LOADER_ID = 54347;
     private static final int PEOPLE_LOADER_ID = 54348;
     private static final int ATTACHMENTS_LOADER_ID = 54349;
+    private static final int SPLITS_LOADER_ID = 54350;
 
     private View mProgressLayout;
     private View mMainLayout;
@@ -79,6 +77,7 @@ public class TransactionItemFragment extends SecondaryPanelFragment implements L
 
     private TextView mDescriptionTextView;
     private TextView mCategoryTextView;
+    private TextView mSplitTextView;
     private TextView mDateTimeTextView;
     private TextView mWalletTextView;
     private TextView mEventTextView;
@@ -90,6 +89,11 @@ public class TransactionItemFragment extends SecondaryPanelFragment implements L
     private AttachmentView mAttachmentView;
 
     private MoneyFormatter mMoneyFormatter = MoneyFormatter.getInstance();
+
+    private List<Part> mParts;
+    private Part mMainLine;
+    private CurrencyUnit mCurrency;
+    private boolean mSplitCounted;
 
     @Override
     protected void onCreateHeaderView(LayoutInflater inflater, @NonNull ViewGroup parent, @Nullable Bundle savedInstanceState) {
@@ -105,6 +109,7 @@ public class TransactionItemFragment extends SecondaryPanelFragment implements L
         mMainLayout = view.findViewById(R.id.secondary_panel_layout);
         mDescriptionTextView = view.findViewById(R.id.description_text_view);
         mCategoryTextView = view.findViewById(R.id.category_text_view);
+        mSplitTextView = view.findViewById(R.id.split_text_view);
         mDateTimeTextView = view.findViewById(R.id.date_time_text_view);
         mWalletTextView = view.findViewById(R.id.wallet_text_view);
         mEventTextView = view.findViewById(R.id.event_text_view);
@@ -125,73 +130,75 @@ public class TransactionItemFragment extends SecondaryPanelFragment implements L
 
     @Override
     protected int onInflateMenu() {
-        return R.menu.menu_edit_delete_item;
+        return R.menu.menu_duplicate_edit_delete_item;
     }
 
     @Override
     public boolean onMenuItemClick(MenuItem item) {
-        switch (item.getItemId()) {
-            case R.id.action_edit_item:
-                Intent intent = new Intent(getActivity(), NewEditTransactionActivity.class);
-                intent.putExtra(NewEditItemActivity.MODE, NewEditItemActivity.Mode.EDIT_ITEM);
-                intent.putExtra(NewEditItemActivity.ID, getItemId());
-                startActivity(intent);
-                break;
-            case R.id.action_delete_item:
-                showDeleteDialog(getActivity());
-                break;
+        int itemId = item.getItemId();
+        if (itemId == R.id.action_edit_item) {
+            Intent intent = new Intent(getActivity(), NewEditTransactionActivity.class);
+            intent.putExtra(NewEditItemActivity.MODE, NewEditItemActivity.Mode.EDIT_ITEM);
+            intent.putExtra(NewEditItemActivity.ID, getItemId());
+            startActivity(intent);
+        } else if (itemId == R.id.action_duplicate_item) {
+            Intent intent = new Intent(getActivity(), NewEditTransactionActivity.class);
+            intent.putExtra(NewEditItemActivity.MODE, NewEditItemActivity.Mode.NEW_ITEM);
+            intent.putExtra(NewEditTransactionActivity.DUPLICATE_ID, getItemId());
+            startActivity(intent);
+        } else if (itemId == R.id.action_delete_item) {
+            showDeleteDialog(getActivity());
         }
         return false;
     }
 
     private void showDeleteDialog(Context context) {
         ThemedDialog.buildMaterialDialog(context)
-                .title(R.string.title_warning)
-                .content(R.string.message_delete_transaction)
-                .positiveText(android.R.string.ok)
-                .negativeText(android.R.string.cancel)
-                .onPositive(new MaterialDialog.SingleButtonCallback() {
+                .setTitle(R.string.title_warning)
+                .setMessage(R.string.message_delete_transaction)
+                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
 
                     @Override
-                    public void onClick(@NonNull MaterialDialog dialog, @NonNull DialogAction which) {
-                        Activity activity = getActivity();
-                        if (activity != null) {
-                            try {
-                                Uri uri = ContentUris.withAppendedId(DataContentProvider.CONTENT_TRANSACTIONS, getItemId());
-                                ContentResolver contentResolver = activity.getContentResolver();
-                                contentResolver.delete(uri, null, null);
-                                navigateBackSafely();
-                                showItemId(0L);
-                            } catch (SQLiteDataException e) {
-                                if (e.getErrorCode() == Contract.ErrorCode.TRANSACTION_USED_IN_TRANSFER) {
-                                    ThemedDialog.buildMaterialDialog(activity)
-                                            .title(R.string.title_error)
-                                            .content(R.string.message_error_delete_transaction_of_transfer)
-                                            .positiveText(android.R.string.ok)
-                                            .show();
-                                }
+                    public void onClick(DialogInterface dialog, int which) {
+                        Uri uri = ContentUris.withAppendedId(DataContentProvider.CONTENT_TRANSACTIONS, getItemId());
+                        deleteItemInBackground(uri, e -> {
+                            if (e.getErrorCode() == Contract.ErrorCode.TRANSACTION_USED_IN_TRANSFER) {
+                                ThemedDialog.buildMaterialDialog(requireActivity())
+                                        .setTitle(R.string.title_error)
+                                        .setMessage(R.string.message_error_delete_transaction_of_transfer)
+                                        .setPositiveButton(android.R.string.ok, null)
+                                        .show();
                             }
-                        }
+                        });
                     }
 
                 })
+                .setNegativeButton(android.R.string.cancel, null)
                 .show();
     }
 
     @Override
     protected void onShowItemId(long itemId) {
         setLoadingScreen(true);
-        getLoaderManager().restartLoader(TRANSACTION_LOADER_ID, null, this);
-        getLoaderManager().restartLoader(PEOPLE_LOADER_ID, null, this);
-        getLoaderManager().restartLoader(ATTACHMENTS_LOADER_ID, null, this);
+        LoaderManager.getInstance(this).restartLoader(TRANSACTION_LOADER_ID, null, this);
+        LoaderManager.getInstance(this).restartLoader(PEOPLE_LOADER_ID, null, this);
+        LoaderManager.getInstance(this).restartLoader(ATTACHMENTS_LOADER_ID, null, this);
+        LoaderManager.getInstance(this).restartLoader(SPLITS_LOADER_ID, null, this);
     }
 
     private void setLoadingScreen(boolean loading) {
         if (loading) {
+            // The toolbar sits above the part this hides, so it stays tappable. Whether a copy
+            // is offered is only known once the row has been read.
+            setMenuItemVisibility(R.id.action_duplicate_item, false);
             mMoneyTextView.setText(null);
             mCurrencyTextView.setText(null);
             mDescriptionTextView.setText(null);
             mCategoryTextView.setText(null);
+            mSplitTextView.setText(null);
+            mSplitTextView.setVisibility(View.GONE);
+            mParts = null;
+            mMainLine = null;
             mDateTimeTextView.setText(null);
             mWalletTextView.setText(null);
             mEventTextView.setText(null);
@@ -233,6 +240,13 @@ public class TransactionItemFragment extends SecondaryPanelFragment implements L
                         Contract.Attachment.SIZE
                 };
                 return new CursorLoader(getActivity(), Uri.withAppendedPath(uri, "attachments"), projection, null, null, null);
+            } else if (id == SPLITS_LOADER_ID) {
+                String[] projection = new String[] {
+                        Contract.TransactionSplit.CATEGORY_NAME,
+                        Contract.TransactionSplit.MONEY,
+                        Contract.TransactionSplit.NOTE
+                };
+                return new CursorLoader(getActivity(), Uri.withAppendedPath(uri, "splits"), projection, null, null, null);
             }
         }
         return null;
@@ -249,6 +263,10 @@ public class TransactionItemFragment extends SecondaryPanelFragment implements L
                 } else {
                     mCurrencyTextView.setText("?");
                 }
+                // Only a plain transaction is offered a copy, and the toolbar is tappable while
+                // this loads, so the item is hidden until the row says which kind this is.
+                setMenuItemVisibility(R.id.action_duplicate_item, cursor.getInt(
+                        cursor.getColumnIndex(Contract.Transaction.TYPE)) == NewEditTransactionActivity.TYPE_STANDARD);
                 long money = cursor.getLong(cursor.getColumnIndex(Contract.Transaction.MONEY));
                 mMoneyTextView.setText(mMoneyFormatter.getNotTintedString(currency, money, MoneyFormatter.CurrencyMode.ALWAYS_HIDDEN));
                 String description = cursor.getString(cursor.getColumnIndex(Contract.Transaction.DESCRIPTION));
@@ -260,6 +278,10 @@ public class TransactionItemFragment extends SecondaryPanelFragment implements L
                 }
                 String category = cursor.getString(cursor.getColumnIndex(Contract.Transaction.CATEGORY_NAME));
                 mCategoryTextView.setText(category);
+                mCurrency = currency;
+                mMainLine = new Part(category, money, null);
+                mSplitCounted = cursor.getInt(cursor.getColumnIndexOrThrow(Contract.Transaction.SPLIT_CATEGORIES)) > 0;
+                showSplit();
                 Date datetime = DateUtils.getDateFromSQLDateTimeString(cursor.getString(cursor.getColumnIndex(Contract.Transaction.DATE)));
                 DateFormatter.applyDateTime(mDateTimeTextView, datetime);
                 String wallet = cursor.getString(cursor.getColumnIndex(Contract.Transaction.WALLET_NAME));
@@ -306,6 +328,17 @@ public class TransactionItemFragment extends SecondaryPanelFragment implements L
             } else {
                 mPeopleTextView.setVisibility(View.GONE);
             }
+        } else if (loader.getId() == SPLITS_LOADER_ID) {
+            mParts = new ArrayList<>();
+            if (cursor != null && cursor.moveToFirst()) {
+                do {
+                    mParts.add(new Part(
+                            cursor.getString(cursor.getColumnIndexOrThrow(Contract.TransactionSplit.CATEGORY_NAME)),
+                            cursor.getLong(cursor.getColumnIndexOrThrow(Contract.TransactionSplit.MONEY)),
+                            cursor.getString(cursor.getColumnIndexOrThrow(Contract.TransactionSplit.NOTE))));
+                } while (cursor.moveToNext());
+            }
+            showSplit();
         } else if (loader.getId() == ATTACHMENTS_LOADER_ID) {
             if (cursor != null && cursor.moveToFirst()) {
                 List<Attachment> attachments = new ArrayList<>();
@@ -329,6 +362,55 @@ public class TransactionItemFragment extends SecondaryPanelFragment implements L
     @Override
     public void onLoaderReset(Loader<Cursor> loader) {
         // nothing to release
+    }
+
+    /**
+     * Lists every live part and what the parts leave under the main category. Parts that read as
+     * nothing are listed too, so the user can see what the editor will ask to fix, with a line
+     * saying no total counts them.
+     */
+    private void showSplit() {
+        if (mParts == null || mMainLine == null) {
+            return;
+        }
+        if (mParts.isEmpty()) {
+            mSplitTextView.setVisibility(View.GONE);
+            return;
+        }
+        StringBuilder builder = new StringBuilder();
+        long remainder = mMainLine.mMoney;
+        for (Part part : mParts) {
+            builder.append(builder.length() > 0 ? "\n" : "").append(describe(part));
+            remainder -= part.mMoney;
+        }
+        if (!mSplitCounted) {
+            builder.append("\n").append(getString(R.string.split_not_counted));
+        } else if (remainder > 0L) {
+            builder.append("\n").append(getString(R.string.split_remainder, mMainLine.mCategory,
+                    mMoneyFormatter.getNotTintedString(mCurrency, remainder)));
+        }
+        mSplitTextView.setText(builder);
+        mSplitTextView.setVisibility(View.VISIBLE);
+    }
+
+    private String describe(Part part) {
+        String category = part.mCategory != null ? part.mCategory : "?";
+        String money = mMoneyFormatter.getNotTintedString(mCurrency, part.mMoney);
+        return TextUtils.isEmpty(part.mNote) ? getString(R.string.split_part, category, money)
+                : getString(R.string.split_part_with_note, category, money, part.mNote);
+    }
+
+    private static class Part {
+
+        private final String mCategory;
+        private final long mMoney;
+        private final String mNote;
+
+        private Part(String category, long money, String note) {
+            mCategory = category;
+            mMoney = money;
+            mNote = note;
+        }
     }
 
     @Override

@@ -57,6 +57,14 @@ public class CategoryMultiPanelViewPagerFragment extends MultiPanelViewPagerItem
     }
 
     @Override
+    protected int getDefaultViewPagerPosition() {
+        // most people record far more expenses than income, so open on the expense tab. The
+        // category picker reached from a new transaction already does this; this is the standalone
+        // Categories screen catching up rather than a new idea.
+        return 1;
+    }
+
+    @Override
     protected int getTitleRes() {
         return R.string.menu_category;
     }
@@ -69,22 +77,21 @@ public class CategoryMultiPanelViewPagerFragment extends MultiPanelViewPagerItem
 
     @Override
     public boolean onMenuItemClick(MenuItem item) {
-        switch (item.getItemId()) {
-            case R.id.action_sort_items:
-                Intent intent = new Intent(getActivity(), CategorySortActivity.class);
-                switch (getViewPagerPosition()) {
-                    case 0:
-                        intent.putExtra(CategorySortActivity.TYPE, Contract.CategoryType.INCOME);
-                        break;
-                    case 1:
-                        intent.putExtra(CategorySortActivity.TYPE, Contract.CategoryType.EXPENSE);
-                        break;
-                    case 2:
-                        intent.putExtra(CategorySortActivity.TYPE, Contract.CategoryType.SYSTEM);
-                        break;
-                }
-                startActivity(intent);
-                break;
+        int itemId = item.getItemId();
+        if (itemId == R.id.action_sort_items) {
+            Intent intent = new Intent(getActivity(), CategorySortActivity.class);
+            switch (getViewPagerPosition()) {
+                case 0:
+                    intent.putExtra(CategorySortActivity.TYPE, Contract.CategoryType.INCOME);
+                    break;
+                case 1:
+                    intent.putExtra(CategorySortActivity.TYPE, Contract.CategoryType.EXPENSE);
+                    break;
+                case 2:
+                    intent.putExtra(CategorySortActivity.TYPE, Contract.CategoryType.SYSTEM);
+                    break;
+            }
+            startActivity(intent);
         }
         return false;
     }

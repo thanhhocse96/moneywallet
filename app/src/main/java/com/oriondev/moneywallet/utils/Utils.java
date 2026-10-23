@@ -19,16 +19,22 @@
 
 package com.oriondev.moneywallet.utils;
 
+import android.Manifest;
 import android.app.Activity;
+import android.content.Context;
+import android.content.pm.PackageManager;
+import android.database.Cursor;
 import android.graphics.Color;
-import android.graphics.drawable.Drawable;
 import android.os.Build;
 import androidx.annotation.IdRes;
+import androidx.core.content.ContextCompat;
 import android.view.View;
 import android.view.ViewGroup;
 
 import com.oriondev.moneywallet.R;
 import com.oriondev.moneywallet.model.IFile;
+import com.oriondev.moneywallet.storage.database.Contract;
+import com.oriondev.moneywallet.storage.preference.PreferenceManager;
 import com.oriondev.moneywallet.storage.database.backup.BackupManager;
 
 import java.text.DecimalFormat;
@@ -83,18 +89,20 @@ public class Utils {
         return new DecimalFormat("#,##0.#").format(size/Math.pow(1024, digitGroups)) + " " + units[digitGroups];
     }
 
-    public static boolean isAtLeastLollipop() {
-        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP;
-    }
-
-    public static void setBackgroundCompat(View view, Drawable drawable) {
-        if (view != null) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
-                view.setBackground(drawable);
-            } else {
-                view.setBackgroundDrawable(drawable);
-            }
-        }
+    /**
+     * From Android 13 POST_NOTIFICATIONS is a runtime permission, and an app targeting 33 or
+     * later gets no prompt from the system, so anything that speaks through a notification has
+     * to ask for itself.
+     *
+     * <p>At most once per install. Android treats a second refusal as permanent, and the caller
+     * cannot tell a never asked state from an exhausted one, so the count is kept here instead.
+     * Callers record the ask with {@link PreferenceManager#setAskedNotificationPermission()}.
+     */
+    public static boolean shouldAskNotificationPermission(Context context) {
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                && !PreferenceManager.hasAskedNotificationPermission()
+                && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)
+                        != PackageManager.PERMISSION_GRANTED;
     }
 
     public static int getFileIcon(String extension) {
@@ -143,6 +151,18 @@ public class Utils {
             if (view != null) {
                 return view;
             }
+        }
+        return null;
+    }
+
+    /**
+     * @param cursor a wallet row cursor whose projection includes the name. Moved to its first
+     *               row, but not closed: the caller, or its loader, still owns it.
+     * @return the wallet name, or null when the cursor is null or holds no row.
+     */
+    public static String readWalletName(Cursor cursor) {
+        if (cursor != null && cursor.moveToFirst()) {
+            return cursor.getString(cursor.getColumnIndexOrThrow(Contract.Wallet.NAME));
         }
         return null;
     }

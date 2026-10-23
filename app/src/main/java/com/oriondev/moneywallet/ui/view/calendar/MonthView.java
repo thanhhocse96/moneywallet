@@ -1,6 +1,9 @@
 /*
  * Copyright (c) 2018.
  *
+ * Portions derived from datepicker-timeline, Copyright (c) 2015 Yann Badoual,
+ * MIT License.
+ *
  * This file is part of MoneyWallet.
  *
  * MoneyWallet is free software: you can redistribute it and/or modify
@@ -20,11 +23,12 @@
 package com.oriondev.moneywallet.ui.view.calendar;
 
 import android.content.Context;
-import android.os.Build;
 import androidx.annotation.Nullable;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
+import android.text.TextPaint;
 import android.util.AttributeSet;
+import android.util.TypedValue;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -32,13 +36,16 @@ import android.widget.TextView;
 
 import com.oriondev.moneywallet.R;
 
-import java.text.DateFormatSymbols;
+import android.icu.text.DateFormatSymbols;
 import java.util.Calendar;
 import java.util.Locale;
 
 public class MonthView extends RecyclerView {
 
-    private static String[] MONTHS = DateFormatSymbols.getInstance().getShortMonths();
+    // per instance so the names follow an app language change, which rebuilds this view
+    private final String[] months = abbreviatedMonths();
+
+    private float labelSize = 0f;
 
     private MonthAdapter adapter;
     private LinearLayoutManager layoutManager;
@@ -48,7 +55,6 @@ public class MonthView extends RecyclerView {
 
     private int startYear = 1970, startMonth = 0;
     private int yearDigitCount = 2;
-    private boolean yearOnNewLine = false;
 
     private int selectedYear, selectedMonth;
     private int selectedPosition = -1;
@@ -67,6 +73,79 @@ public class MonthView extends RecyclerView {
     public MonthView(Context context, @Nullable AttributeSet attrs, int defStyle) {
         super(context, attrs, defStyle);
         init();
+    }
+
+    /**
+     * The abbreviated month names, indexed by the {@link Calendar#JANUARY} to
+     * {@link Calendar#DECEMBER} values.
+     *
+     * Standalone rather than the form a full date uses, because this strip names a month on its
+     * own rather than inside a date. Catalan is the case that showed it here: its formatting
+     * abbreviations are de gen., de febr. and so on, so cutting them to three characters left
+     * five of the seven visible cells reading DE.
+     */
+    private static String[] abbreviatedMonths() {
+        return new DateFormatSymbols(Locale.getDefault()).getMonths(
+                DateFormatSymbols.STANDALONE, DateFormatSymbols.ABBREVIATED);
+    }
+
+    private String monthName(int month) {
+        return months[month].toUpperCase(Locale.getDefault());
+    }
+
+    /**
+     * Every label this strip can render, each carrying a stand in for its year.
+     *
+     * The year differs per cell, so the stand in is the widest digit repeated rather than one
+     * chosen year, which keeps the derived size from depending on which months and years
+     * happened to be on screen when it was derived.
+     */
+    private String[] widestLabels(TextPaint paint) {
+        String year = widestYear(paint);
+        String[] labels = new String[months.length];
+        for (int month = 0; month < months.length; month++) {
+            labels[month] = monthName(month) + year;
+        }
+        return labels;
+    }
+
+    private String widestYear(TextPaint paint) {
+        if (yearDigitCount <= 0) {
+            return "";
+        }
+        // the digits as the locale writes them, which is not the Latin set in every language
+        String widest = String.format(Locale.getDefault(), "%d", 0);
+        float widestWidth = paint.measureText(widest);
+        for (int value = 1; value <= 9; value++) {
+            String rendered = String.format(Locale.getDefault(), "%d", value);
+            float width = paint.measureText(rendered);
+            if (width > widestWidth) {
+                widestWidth = width;
+                widest = rendered;
+            }
+        }
+        StringBuilder year = new StringBuilder(" ");
+        for (int digit = 0; digit < yearDigitCount; digit++) {
+            year.append(widest);
+        }
+        return year.toString();
+    }
+
+    /**
+     * One text size for every month label, small enough that each of them measures within a
+     * cell.
+     *
+     * Sized rather than cut, because cutting to a character count is the defect this change
+     * removes, and sized rather than left to wrap: read off the running strip in Malayalam,
+     * master renders month labels at two different heights in one row.
+     */
+    private float labelSize(TextView sample, View cell) {
+        if (labelSize > 0f) {
+            return labelSize;
+        }
+        int available = cell.getLayoutParams().width - cell.getPaddingLeft() - cell.getPaddingRight();
+        labelSize = LabelFit.sizeToFit(sample.getPaint(), widestLabels(sample.getPaint()), available);
+        return labelSize;
     }
 
     private void init() {
@@ -110,6 +189,12 @@ public class MonthView extends RecyclerView {
             if (centerOnPosition) {
                 centerOnPosition(selectedPosition);
             }
+            // the month tapped is the one already marked. That used to be a request for the month
+            // the selected day was already in, and the listener was skipped; the mark now follows
+            // a strip that scrolls, so this is somebody asking to go to the month they can see
+            if (callListener && onMonthSelectedListener != null) {
+                onMonthSelectedListener.onMonthSelected(year, month, selectedPosition);
+            }
             return;
         }
 
@@ -137,12 +222,8 @@ public class MonthView extends RecyclerView {
     }
 
     public void centerOnPosition(int position) {
-        if (getChildCount() == 0) {
+        if (getChildCount() == 0 || !isLaidOut()) {
             return;
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-            if (!isLaidOut()) {
-                return;
-            }
         }
         // Animate scroll
         int offset = getMeasuredWidth() / 2 - getItemWidth() / 2;
@@ -158,12 +239,8 @@ public class MonthView extends RecyclerView {
     }
 
     void scrollToYearPosition(int year, int offsetYear) {
-        if (getChildCount() == 0) {
+        if (getChildCount() == 0 || !isLaidOut()) {
             return;
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-            if (!isLaidOut()) {
-                return;
-            }
         }
         // Animate scroll
         layoutManager.scrollToPositionWithOffset(getPositionForDate(year + 1, 0),
@@ -250,14 +327,6 @@ public class MonthView extends RecyclerView {
         return yearDigitCount;
     }
 
-    public void setYearOnNewLine(boolean yearOnNewLine) {
-        this.yearOnNewLine = yearOnNewLine;
-    }
-
-    public boolean isYearOnNewLine() {
-        return yearOnNewLine;
-    }
-
     public void setFirstDate(int startYear, int startMonth) {
         this.startYear = startYear;
         this.startMonth = startMonth;
@@ -329,6 +398,7 @@ public class MonthView extends RecyclerView {
 
             indicator = root.findViewById(R.id.mti_view_indicator);
             lbl = root.findViewById(R.id.mti_month_lbl);
+            lbl.setTextSize(TypedValue.COMPLEX_UNIT_PX, labelSize(lbl, root));
 
             root.setOnClickListener(new OnClickListener() {
                 @Override
@@ -342,11 +412,13 @@ public class MonthView extends RecyclerView {
             this.year = year;
             this.month = month;
 
-            String text = MONTHS[month];
-            text = text.substring(0, Math.min(text.length(), 3)).toUpperCase(Locale.US);
+            String text = monthName(month);
             if (yearDigitCount > 0) {
-                text += yearOnNewLine ? "\n" : " ";
-                text += year % (int) Math.pow(10, yearDigitCount);
+                text += " ";
+                // padded, because a year ending in 00 through 09 leaves a remainder of one
+                // digit, and 2009 unpadded reads as the year 9
+                text += String.format(Locale.getDefault(), "%0" + yearDigitCount + "d",
+                        year % (int) Math.pow(10, yearDigitCount));
             }
             lbl.setText(text);
             int color = selected ? colorSelected : beforeSelection ? colorBeforeSelection : defaultColor;

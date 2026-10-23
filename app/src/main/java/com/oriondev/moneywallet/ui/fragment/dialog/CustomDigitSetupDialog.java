@@ -21,18 +21,17 @@ package com.oriondev.moneywallet.ui.fragment.dialog;
 
 import android.app.Activity;
 import android.app.Dialog;
+import android.content.DialogInterface;
 import android.os.Bundle;
 import androidx.annotation.NonNull;
+import androidx.appcompat.app.AlertDialog;
 import androidx.fragment.app.DialogFragment;
 import androidx.appcompat.widget.SwitchCompat;
 import android.view.View;
 import android.widget.CompoundButton;
 import android.widget.TextView;
 
-import com.afollestad.materialdialogs.DialogAction;
-import com.afollestad.materialdialogs.MaterialDialog;
 import com.oriondev.moneywallet.R;
-import com.oriondev.moneywallet.model.CurrencyUnit;
 import com.oriondev.moneywallet.storage.preference.PreferenceManager;
 import com.oriondev.moneywallet.ui.view.theme.ThemedDialog;
 import com.oriondev.moneywallet.utils.CurrencyManager;
@@ -48,7 +47,6 @@ public class CustomDigitSetupDialog extends DialogFragment {
     private static final String SS_ROUNDING_ENABLED = "CustomDigitSetupDialog::SavedState::RoundingEnabled";
     private static final String SS_SYMBOL_ENABLED = "CustomDigitSetupDialog::SavedState::SymbolEnabled";
 
-    private static final CurrencyUnit DEFAULT_CURRENCY = CurrencyManager.getDefaultCurrency();
     private static final long DEFAULT_MONEY = 1258972L;
 
     private TextView mDisplayTextView;
@@ -66,23 +64,19 @@ public class CustomDigitSetupDialog extends DialogFragment {
         if (activity == null) {
             return super.onCreateDialog(savedInstanceState);
         }
-        MaterialDialog dialog = ThemedDialog.buildMaterialDialog(activity)
-                .customView(R.layout.layout_dialog_custom_digit_setup, false)
-                .positiveText(android.R.string.ok)
-                .negativeText(android.R.string.cancel)
-                .onPositive(new MaterialDialog.SingleButtonCallback() {
+        View view = getLayoutInflater().inflate(R.layout.layout_dialog_custom_digit_setup, null);
+        AlertDialog dialog = ThemedDialog.buildMaterialDialog(activity)
+                .setView(view)
+                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
 
                     @Override
-                    public void onClick(@NonNull MaterialDialog dialog, @NonNull DialogAction which) {
+                    public void onClick(DialogInterface dialog, int which) {
                         onSaveChanges();
                     }
 
                 })
-                .build();
-        View view = dialog.getCustomView();
-        if (view == null) {
-            throw new IllegalStateException("Custom view has been inflated but the returned view is null");
-        }
+                .setNegativeButton(android.R.string.cancel, null)
+                .create();
         mDisplayTextView = view.findViewById(R.id.display_text_view);
         SwitchCompat currencyEnabledSwitch = view.findViewById(R.id.show_currency_switch);
         SwitchCompat groupingEnabledSwitch = view.findViewById(R.id.group_digits_switch);
@@ -152,7 +146,8 @@ public class CustomDigitSetupDialog extends DialogFragment {
     }
 
     private void refreshDisplay() {
-        mFormatter.applyNotTinted(mDisplayTextView, DEFAULT_CURRENCY, DEFAULT_MONEY);
+        // read live, since the currency follows the app language and that can change
+        mFormatter.applyNotTinted(mDisplayTextView, CurrencyManager.getDefaultCurrency(), DEFAULT_MONEY);
     }
 
     private void onSaveChanges() {

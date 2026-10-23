@@ -1,0 +1,852 @@
+package com.oriondev.moneywallet.ui.activity;
+
+import android.content.ContentResolver;
+import android.content.ContentUris;
+import android.content.ContentValues;
+import android.content.Context;
+import android.content.Intent;
+import android.net.Uri;
+import android.os.Looper;
+import android.view.Menu;
+import android.view.MenuItem;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.CheckedTextView;
+import android.widget.ImageView;
+import android.widget.TextView;
+
+import androidx.appcompat.widget.Toolbar;
+import androidx.core.view.GravityCompat;
+import androidx.drawerlayout.widget.DrawerLayout;
+import androidx.fragment.app.Fragment;
+import androidx.localbroadcastmanager.content.LocalBroadcastManager;
+import androidx.test.core.app.ActivityScenario;
+import androidx.test.core.app.ApplicationProvider;
+
+import com.google.android.material.elevation.ElevationOverlayProvider;
+import com.google.android.material.floatingactionbutton.FloatingActionButton;
+import com.google.android.material.navigation.NavigationView;
+import com.google.android.material.shape.MaterialShapeDrawable;
+import com.oriondev.moneywallet.R;
+import com.oriondev.moneywallet.broadcast.LocalAction;
+import com.oriondev.moneywallet.model.Money;
+import com.oriondev.moneywallet.model.WalletAccount;
+import com.oriondev.moneywallet.service.BackupHandlerIntentService;
+import com.oriondev.moneywallet.storage.database.Contract;
+import com.oriondev.moneywallet.storage.database.DataContentProvider;
+import com.oriondev.moneywallet.storage.database.TestDatabases;
+import com.oriondev.moneywallet.storage.preference.PreferenceManager;
+import com.oriondev.moneywallet.ui.fragment.multipanel.CategoryMultiPanelViewPagerFragment;
+import com.oriondev.moneywallet.ui.fragment.multipanel.TransactionMultiPanelViewPagerFragment;
+import com.oriondev.moneywallet.ui.fragment.singlepanel.OverviewSinglePanelFragment;
+import com.oriondev.moneywallet.ui.view.theme.ThemeEngine;
+import com.oriondev.moneywallet.utils.MoneyFormatter;
+
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.robolectric.RobolectricTestRunner;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
+import static org.robolectric.Shadows.shadowOf;
+
+/**
+ * Drives the main screen's drawer on the JVM against the real content provider: which section
+ * opens, what back does, and which wallet the header and the preference end up on.
+ */
+@RunWith(RobolectricTestRunner.class)
+public class MainActivityTest {
+
+    private static final String ICON = "{\"type\":\"color\",\"color\":\"#000000\",\"name\":\"T\"}";
+    private static final String VECTOR_ICON = "{\"type\":\"resource\",\"resource\":\"ic_icon_slippers\"}";
+    private static final int TOTAL_ITEM = MainActivity.ID_WALLET_FIRST + (int) PreferenceManager.TOTAL_WALLET_ID;
+
+    private ContentResolver mResolver;
+    private long mFirstWallet;
+    private long mSecondWallet;
+
+    @Before
+    public void setUp() {
+        Context context = ApplicationProvider.getApplicationContext();
+        TestDatabases.useFreshDatabase(context);
+        mResolver = context.getContentResolver();
+        PreferenceManager.setCurrentWallet(context, PreferenceManager.NO_CURRENT_WALLET);
+        PreferenceManager.setHiddenDrawerEntries(Collections.<String>emptySet());
+        // named against their order, so a list sorted by name instead of by index shows
+        mFirstWallet = insertWallet("Cash", 0, 0L, true, false);
+        mSecondWallet = insertWallet("Bank", 1, 0L, true, false);
+    }
+
+    @Test
+    public void theFirstLaunchOpensTransactionsOnTheFirstWallet() {
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                awaitWallets(activity);
+                assertEquals(mFirstWallet, PreferenceManager.getCurrentWallet());
+                assertEquals("Cash", headerName(activity));
+                assertEquals(MainActivity.ID_SECTION_TRANSACTIONS, drawer(activity).getCheckedItem().getItemId());
+                assertTrue(section(activity) instanceof TransactionMultiPanelViewPagerFragment);
+                ImageView icon = activity.findViewById(R.id.wallet_icon_image_view);
+                assertNotNull(icon.getDrawable());
+                assertNotNull(icon.getBackground());
+                assertNotNull(drawer(activity).getItemBackground());
+                assertNull(drawer(activity).getItemIconTintList());
+                assertTrue(drawer(activity).getClipToOutline());
+                assertTrue(drawer(activity).getBackground() instanceof MaterialShapeDrawable);
+                assertEquals(ThemeEngine.getTheme().getDrawerBackgroundColor(), ((MaterialShapeDrawable) drawer(activity).getBackground()).getFillColor().getDefaultColor());
+                assertFalse(new ElevationOverlayProvider(activity).isThemeElevationOverlayEnabled());
+            });
+        }
+    }
+
+    @Test
+    public void theMainScreenInflatesItsFloatingActionButton() {
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                awaitWallets(activity);
+                View fab = activity.findViewById(R.id.floating_action_button);
+                assertTrue(fab instanceof FloatingActionButton);
+            });
+        }
+    }
+
+    @Test
+    public void aLaunchOpensOnTheWalletThePreferenceNames() {
+        PreferenceManager.setCurrentWallet(ApplicationProvider.getApplicationContext(), mSecondWallet);
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                awaitWallets(activity);
+                assertEquals("Bank", headerName(activity));
+                assertEquals(mSecondWallet, PreferenceManager.getCurrentWallet());
+            });
+        }
+    }
+
+    @Test
+    public void anEmptyLedgerShowsNoWalletAndOffersOnlyTheTwoActions() {
+        for (long id : new long[] {mFirstWallet, mSecondWallet}) {
+            mResolver.delete(ContentUris.withAppendedId(DataContentProvider.CONTENT_WALLETS, id), null, null);
+        }
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                awaitWallets(activity);
+                assertEquals(activity.getString(R.string.msg_no_wallet_found), headerName(activity));
+                assertEquals(PreferenceManager.NO_CURRENT_WALLET, PreferenceManager.getCurrentWallet());
+                Menu menu = drawer(activity).getMenu();
+                assertNull(menu.findItem(TOTAL_ITEM));
+                activity.findViewById(R.id.navigation_drawer_header).performClick();
+                assertTrue(menu.findItem(MainActivity.ID_ACTION_NEW_WALLET).isVisible());
+                assertTrue(menu.findItem(MainActivity.ID_ACTION_MANAGE_WALLET).isVisible());
+                assertEquals(View.GONE, activity.findViewById(R.id.first_wallet_image_view).getVisibility());
+            });
+        }
+    }
+
+    @Test
+    public void aReloadRebuildsTheWalletRowsInsteadOfStackingThem() {
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                awaitWallets(activity);
+                Menu menu = drawer(activity).getMenu();
+                assertEquals(3, walletRows(menu));
+                // a restore from backup asks the drawer to load the wallets again
+                Intent restored = new Intent(LocalAction.ACTION_BACKUP_SERVICE_FINISHED)
+                        .putExtra(BackupHandlerIntentService.ACTION, BackupHandlerIntentService.ACTION_RESTORE);
+                LocalBroadcastManager.getInstance(activity).sendBroadcast(restored);
+                ((TextView) activity.findViewById(R.id.wallet_name_text_view)).setText("");
+                awaitWallets(activity);
+                assertEquals(3, walletRows(menu));
+                assertFalse(menu.findItem(walletItem(mFirstWallet)).isVisible());
+                assertEquals("Cash", headerName(activity));
+            });
+        }
+    }
+
+    /**
+     * The guard on the whole feature. Nobody in this fixture has named a group, so the wallet list
+     * is the wallets in the loader's order and then the Total, which is what the release before
+     * groups drew, and not one header row is added.
+     */
+    @Test
+    public void aDatabaseWithNoGroupNamedDrawsTheListItAlwaysDrew() {
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                awaitWallets(activity);
+                Menu menu = drawer(activity).getMenu();
+                assertEquals(List.of("Cash", "Bank", "Total"), walletSection(menu));
+                assertEquals(3, walletRows(menu));
+            });
+        }
+    }
+
+    /**
+     * Groups come first in alphabetical order, each one led by its own header, then the wallets in
+     * no group, then the Total. The Total belongs to no group, so it lands at the end of the
+     * ungrouped run without the drawer ever naming it.
+     */
+    @Test
+    public void groupsComeFirstAlphabeticallyAndTheTotalStaysLast() {
+        insertWallet("Pension", 2, 0L, true, false, "Retirement");
+        insertWallet("Rainy day", 3, 0L, true, false, "Savings");
+        insertWallet("Holiday", 4, 0L, true, false, "Savings");
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                awaitWallets(activity);
+                Menu menu = drawer(activity).getMenu();
+                assertEquals(List.of("Retirement", "Pension", "Savings", "Rainy day", "Holiday",
+                        "Cash", "Bank", "Total"), walletSection(menu));
+                // the headers are not wallets, and the wallet count is untouched by them
+                assertEquals(6, walletRows(menu));
+            });
+        }
+    }
+
+    /**
+     * A header carries the money of the wallets drawn under it, a wallet left out of the Total
+     * included, since the figure answers what is in that group and not what the app totals.
+     *
+     * Read off the laid out row and not off the MenuItem, because the MenuItem hands back the
+     * same TextView the drawer built two frames earlier and a disabled row is the one thing here
+     * the library could decline to bind.
+     */
+    @Test
+    public void aGroupHeaderCarriesTheMoneyOfTheWalletsUnderIt() {
+        insertWallet("Rainy day", 2, 30000L, true, false, "Savings");
+        insertWallet("Holiday", 3, 12500L, false, false, "Savings");
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                awaitWallets(activity);
+                activity.findViewById(R.id.navigation_drawer_header).performClick();
+                shadowOf(Looper.getMainLooper()).idle();
+                ViewGroup header = rowLabelled(rows(drawer(activity)), "Savings");
+                String expected = MoneyFormatter.getInstance().getNotTintedString(new Money("EUR", 42500L));
+                assertEquals(expected, ((TextView) actionArea(header).getChildAt(0)).getText().toString());
+            });
+        }
+    }
+
+    /**
+     * Two names differing only by case are two groups with their own headers, and the order
+     * ignores case so that Bills does not land between them. Nothing in the editor can produce
+     * that pair, but a restore and the content provider both write the name verbatim.
+     */
+    @Test
+    public void namesDifferingOnlyByCaseStayTwoGroups() {
+        insertWallet("Deposit", 2, 25000L, true, false, "Apartment");
+        insertWallet("Rent", 3, 10000L, true, false, "apartment");
+        insertWallet("Utilities", 4, 0L, true, false, "Bills");
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                awaitWallets(activity);
+                assertEquals(List.of("Apartment", "Deposit", "apartment", "Rent", "Bills",
+                        "Utilities", "Cash", "Bank", "Total"), walletSection(drawer(activity).getMenu()));
+            });
+        }
+    }
+
+    /**
+     * Archiving a wallet, bringing it back and dragging the wallet list into a new order each
+     * send one column and nothing else. The group has to survive a write that never mentions it,
+     * and a reorder sends one of those writes per wallet in the ledger.
+     */
+    @Test
+    public void aWriteNamingOneOtherColumnLeavesTheGroupWhereItIs() {
+        long wallet = insertWallet("Rainy day", 2, 0L, true, false, "Savings");
+        ContentValues reorder = new ContentValues();
+        reorder.put(Contract.Wallet.INDEX, 9);
+        Uri uri = ContentUris.withAppendedId(DataContentProvider.CONTENT_WALLETS, wallet);
+        assertEquals(1, mResolver.update(uri, reorder, null, null));
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                awaitWallets(activity);
+                assertEquals(List.of("Savings", "Rainy day", "Cash", "Bank", "Total"),
+                        walletSection(drawer(activity).getMenu()));
+            });
+        }
+    }
+
+    /**
+     * A header is not a wallet and must not behave like one. It is disabled, so the library never
+     * calls performClick on it and it can neither switch the wallet nor take the checked mark off
+     * the one that is open.
+     */
+    @Test
+    public void aGroupHeaderCannotBeTappedOrChecked() {
+        insertWallet("Rainy day", 2, 0L, true, false, "Savings");
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                awaitWallets(activity);
+                MenuItem header = groupHeader(drawer(activity).getMenu(), "Savings");
+                assertFalse(header.isEnabled());
+                assertFalse(header.isCheckable());
+            });
+        }
+    }
+
+    @Test
+    public void aPreferenceNamingNoListedWalletShowsTheFirstAndIsLeftAlone() {
+        PreferenceManager.setCurrentWallet(ApplicationProvider.getApplicationContext(), 999L);
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                awaitWallets(activity);
+                assertEquals("Cash", headerName(activity));
+                assertEquals(999L, PreferenceManager.getCurrentWallet());
+            });
+        }
+    }
+
+    @Test
+    public void aSectionTapLoadsItsFragmentAndBackReturnsToTransactions() {
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                Menu menu = drawer(activity).getMenu();
+                assertTrue(menu.performIdentifierAction(MainActivity.ID_SECTION_CATEGORIES, 0));
+                runPending(activity);
+                assertTrue(section(activity) instanceof CategoryMultiPanelViewPagerFragment);
+                activity.onBackPressed();
+                runPending(activity);
+                assertTrue(section(activity) instanceof TransactionMultiPanelViewPagerFragment);
+                assertEquals(MainActivity.ID_SECTION_TRANSACTIONS, drawer(activity).getCheckedItem().getItemId());
+                assertFalse(activity.isFinishing());
+                activity.onBackPressed();
+                assertTrue(activity.isFinishing());
+            });
+        }
+    }
+
+    @Test
+    public void backClosesAnOpenDrawerAndLeavesTheSectionAlone() {
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                Menu menu = drawer(activity).getMenu();
+                activity.onNavigationItemSelected(menu.findItem(MainActivity.ID_SECTION_CATEGORIES));
+                runPending(activity);
+                DrawerLayout layout = activity.findViewById(R.id.drawer_layout);
+                layout.openDrawer(GravityCompat.START, false);
+                assertTrue(layout.isDrawerOpen(GravityCompat.START));
+                // the close animates, and the JVM never draws a frame; what back must not do
+                // is move the section or finish the activity while the drawer had it
+                activity.onBackPressed();
+                runPending(activity);
+                assertTrue(section(activity) instanceof CategoryMultiPanelViewPagerFragment);
+                assertEquals(MainActivity.ID_SECTION_CATEGORIES, drawer(activity).getCheckedItem().getItemId());
+                assertFalse(activity.isFinishing());
+            });
+        }
+    }
+
+    @Test
+    public void theSectionSurvivesARecreate() {
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                activity.onNavigationItemSelected(drawer(activity).getMenu().findItem(MainActivity.ID_SECTION_CATEGORIES));
+                runPending(activity);
+            });
+            scenario.recreate();
+            scenario.onActivity(activity -> {
+                runPending(activity);
+                assertTrue(section(activity) instanceof CategoryMultiPanelViewPagerFragment);
+                assertEquals(MainActivity.ID_SECTION_CATEGORIES, drawer(activity).getCheckedItem().getItemId());
+            });
+        }
+    }
+
+    @Test
+    public void aToolTapOpensItsScreenAndLeavesTheSectionAlone() {
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                Menu menu = drawer(activity).getMenu();
+                assertFalse(activity.onNavigationItemSelected(menu.findItem(MainActivity.ID_SECTION_CALCULATOR)));
+                Intent next = shadowOf(activity).getNextStartedActivity();
+                assertEquals(CalculatorActivity.class.getName(), next.getComponent().getClassName());
+                runPending(activity);
+                assertTrue(section(activity) instanceof TransactionMultiPanelViewPagerFragment);
+                assertEquals(MainActivity.ID_SECTION_TRANSACTIONS, drawer(activity).getCheckedItem().getItemId());
+            });
+        }
+    }
+
+    @Test
+    public void pickingAWalletFromTheListMovesTheHeaderAndThePreference() {
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                awaitWallets(activity);
+                Menu menu = drawer(activity).getMenu();
+                activity.findViewById(R.id.navigation_drawer_header).performClick();
+                assertFalse(menu.findItem(MainActivity.ID_SECTION_TRANSACTIONS).isVisible());
+                assertFalse(menu.findItem(MainActivity.ID_SECTION_CALCULATOR).isVisible());
+                assertFalse(menu.findItem(MainActivity.ID_SECTION_SETTING).isVisible());
+                MenuItem bank = menu.findItem(walletItem(mSecondWallet));
+                assertEquals("Bank", bank.getTitle().toString());
+                assertTrue(bank.isVisible());
+                assertEquals(walletItem(mFirstWallet), drawer(activity).getCheckedItem().getItemId());
+                assertFalse(activity.onNavigationItemSelected(bank));
+                assertEquals(mSecondWallet, PreferenceManager.getCurrentWallet());
+                assertEquals("Bank", headerName(activity));
+                assertTrue(menu.findItem(MainActivity.ID_SECTION_TRANSACTIONS).isVisible());
+                assertTrue(menu.findItem(MainActivity.ID_SECTION_CALCULATOR).isVisible());
+                assertTrue(menu.findItem(MainActivity.ID_SECTION_SETTING).isVisible());
+                assertFalse(menu.findItem(walletItem(mSecondWallet)).isVisible());
+                assertEquals(MainActivity.ID_SECTION_TRANSACTIONS, drawer(activity).getCheckedItem().getItemId());
+                activity.findViewById(R.id.navigation_drawer_header).performClick();
+                assertEquals(walletItem(mSecondWallet), drawer(activity).getCheckedItem().getItemId());
+            });
+        }
+    }
+
+    @Test
+    public void pickingAWalletNamesItInTheToolbarBeforeItsLoaderLands() {
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                awaitWallets(activity);
+                Toolbar toolbar = section(activity).requireView().findViewById(R.id.primary_toolbar);
+                awaitSubtitle(toolbar, "Cash");
+                activity.findViewById(R.id.navigation_drawer_header).performClick();
+                shadowOf(Looper.getMainLooper()).idle();
+                assertFalse(activity.onNavigationItemSelected(drawer(activity).getMenu().findItem(walletItem(mSecondWallet))));
+                // only the change broadcast, which the switch queues first. Idling could also
+                // deliver the reloaded row and hide an empty subtitle in between
+                shadowOf(Looper.getMainLooper()).runOneTask();
+                assertEquals("Bank", String.valueOf(toolbar.getSubtitle()));
+                awaitSubtitle(toolbar, "Bank");
+                for (int i = 0; i < 20; i++) {
+                    shadowOf(Looper.getMainLooper()).idle();
+                    sleep();
+                }
+                assertEquals("Bank", String.valueOf(toolbar.getSubtitle()));
+                ContentValues values = new ContentValues();
+                values.put(Contract.Wallet.NAME, "Savings");
+                mResolver.update(ContentUris.withAppendedId(DataContentProvider.CONTENT_WALLETS, mSecondWallet), values, null, null);
+                awaitSubtitle(toolbar, "Savings");
+            });
+        }
+    }
+
+    @Test
+    public void pickingAWalletNamesItInTheOverviewToolbarBeforeItsLoaderLands() {
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                awaitWallets(activity);
+                assertTrue(drawer(activity).getMenu().performIdentifierAction(MainActivity.ID_SECTION_OVERVIEW, 0));
+                runPending(activity);
+                assertTrue(section(activity) instanceof OverviewSinglePanelFragment);
+                Toolbar toolbar = section(activity).requireView().findViewById(R.id.primary_toolbar);
+                awaitSubtitle(toolbar, "Cash");
+                activity.findViewById(R.id.navigation_drawer_header).performClick();
+                shadowOf(Looper.getMainLooper()).idle();
+                assertFalse(activity.onNavigationItemSelected(drawer(activity).getMenu().findItem(walletItem(mSecondWallet))));
+                shadowOf(Looper.getMainLooper()).runOneTask();
+                assertEquals("Bank", String.valueOf(toolbar.getSubtitle()));
+                awaitSubtitle(toolbar, "Bank");
+                for (int i = 0; i < 20; i++) {
+                    shadowOf(Looper.getMainLooper()).idle();
+                    sleep();
+                }
+                assertEquals("Bank", String.valueOf(toolbar.getSubtitle()));
+                ContentValues values = new ContentValues();
+                values.put(Contract.Wallet.NAME, "Savings");
+                mResolver.update(ContentUris.withAppendedId(DataContentProvider.CONTENT_WALLETS, mSecondWallet), values, null, null);
+                awaitSubtitle(toolbar, "Savings");
+            });
+        }
+    }
+
+    @Test
+    public void aRowNamingAWalletThatIsGoneIsIgnored() {
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                awaitWallets(activity);
+                Menu menu = drawer(activity).getMenu();
+                activity.findViewById(R.id.navigation_drawer_header).performClick();
+                // a row bound before a reload carries the id of a wallet the list no longer has
+                MenuItem stale = menu.add(4, MainActivity.ID_WALLET_FIRST + 999, Menu.NONE, "Gone");
+                assertFalse(activity.onNavigationItemSelected(stale));
+                assertEquals(mFirstWallet, PreferenceManager.getCurrentWallet());
+                assertEquals("Cash", headerName(activity));
+                assertTrue(menu.findItem(MainActivity.ID_SECTION_TRANSACTIONS).isVisible());
+            });
+        }
+    }
+
+    @Test
+    public void theTotalEntryComesAfterTheWalletsAndIsItsOwnCurrentWallet() {
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                awaitWallets(activity);
+                MenuItem total = drawer(activity).getMenu().findItem(TOTAL_ITEM);
+                assertEquals(activity.getString(R.string.total_wallet_name), total.getTitle().toString());
+                activity.onNavigationItemSelected(total);
+                assertEquals(PreferenceManager.TOTAL_WALLET_ID, PreferenceManager.getCurrentWallet());
+                assertEquals(activity.getString(R.string.total_wallet_name), headerName(activity));
+            });
+        }
+    }
+
+    @Test
+    public void anArchivedWalletStaysOutOfTheListAndInTheTotalAndAnExcludedOneStaysOut() {
+        insertWallet("Old", 2, 50000L, true, true);
+        insertWallet("Side", 3, 70000L, false, false);
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                awaitWallets(activity);
+                Menu menu = drawer(activity).getMenu();
+                activity.findViewById(R.id.navigation_drawer_header).performClick();
+                assertNull(findByTitle(menu, "Old"));
+                assertTrue(findByTitle(menu, "Side").isVisible());
+                String expected = MoneyFormatter.getInstance().getNotTintedString(new Money("EUR", 50000L));
+                assertEquals(expected, ((TextView) menu.findItem(TOTAL_ITEM).getActionView()).getText().toString());
+                activity.onNavigationItemSelected(menu.findItem(TOTAL_ITEM));
+                assertEquals(expected, ((TextView) activity.findViewById(R.id.wallet_money_text_view)).getText().toString());
+            });
+        }
+    }
+
+    @Test
+    public void theQuickSwitchIconsHoldTheNextTwoWalletsAndSwitchToThem() {
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                awaitWallets(activity);
+                View first = activity.findViewById(R.id.first_wallet_image_view);
+                View second = activity.findViewById(R.id.second_wallet_image_view);
+                assertEquals(mSecondWallet, quickWallet(first).getId());
+                assertEquals(PreferenceManager.TOTAL_WALLET_ID, quickWallet(second).getId());
+                assertEquals(View.VISIBLE, second.getVisibility());
+                assertNotNull(((ImageView) first).getDrawable());
+                assertEquals("Bank", first.getContentDescription().toString());
+                first.performClick();
+                assertEquals(mSecondWallet, PreferenceManager.getCurrentWallet());
+                assertEquals("Bank", headerName(activity));
+                assertEquals(mFirstWallet, quickWallet(first).getId());
+                assertEquals("Cash", first.getContentDescription().toString());
+                assertEquals(PreferenceManager.TOTAL_WALLET_ID, quickWallet(second).getId());
+                second.performClick();
+                assertEquals(PreferenceManager.TOTAL_WALLET_ID, PreferenceManager.getCurrentWallet());
+                assertEquals(mFirstWallet, quickWallet(first).getId());
+                assertEquals(mSecondWallet, quickWallet(second).getId());
+            });
+        }
+    }
+
+    @Test
+    public void aQuickSwitchWalletWithAPickerIconLoadsWithoutACrash() {
+        ContentValues values = new ContentValues();
+        values.put(Contract.Wallet.ICON, VECTOR_ICON);
+        mResolver.update(ContentUris.withAppendedId(DataContentProvider.CONTENT_WALLETS, mSecondWallet), values, null, null);
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                awaitWallets(activity);
+                ImageView first = activity.findViewById(R.id.first_wallet_image_view);
+                assertEquals(mSecondWallet, quickWallet(first).getId());
+                assertEquals(View.VISIBLE, first.getVisibility());
+                // the picker icon comes through Glide, which lands on the main looper later
+                for (int i = 0; i < 80 && first.getDrawable() == null; i++) {
+                    shadowOf(Looper.getMainLooper()).idle();
+                    try {
+                        Thread.sleep(25);
+                    } catch (InterruptedException e) {
+                        throw new AssertionError(e);
+                    }
+                }
+                assertNotNull(first.getDrawable());
+            });
+        }
+    }
+
+    @Test
+    public void noWalletCountingInTheTotalMeansNoTotalEntry() {
+        ContentValues values = new ContentValues();
+        values.put(Contract.Wallet.COUNT_IN_TOTAL, false);
+        for (long id : new long[] {mFirstWallet, mSecondWallet}) {
+            mResolver.update(ContentUris.withAppendedId(DataContentProvider.CONTENT_WALLETS, id), values, null, null);
+        }
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                awaitWallets(activity);
+                assertNull(drawer(activity).getMenu().findItem(TOTAL_ITEM));
+                assertEquals(mSecondWallet, quickWallet(activity.findViewById(R.id.first_wallet_image_view)).getId());
+                assertEquals(View.GONE, activity.findViewById(R.id.second_wallet_image_view).getVisibility());
+            });
+        }
+    }
+
+    @Test
+    public void newWalletOpensTheEditorAndPutsTheSectionsBack() {
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                awaitWallets(activity);
+                Menu menu = drawer(activity).getMenu();
+                activity.findViewById(R.id.navigation_drawer_header).performClick();
+                assertFalse(activity.onNavigationItemSelected(menu.findItem(MainActivity.ID_ACTION_NEW_WALLET)));
+                Intent next = shadowOf(activity).getNextStartedActivity();
+                assertEquals(NewEditWalletActivity.class.getName(), next.getComponent().getClassName());
+                assertTrue(menu.findItem(MainActivity.ID_SECTION_TRANSACTIONS).isVisible());
+                assertEquals(MainActivity.ID_SECTION_TRANSACTIONS, drawer(activity).getCheckedItem().getItemId());
+            });
+        }
+    }
+
+    /**
+     * The wallet rows and the section rows are one menu, and the library skips a null action
+     * view instead of clearing the one already sitting there, so a wallet balance stayed on the
+     * section row that took its place. Every entry carries an empty action view now, and it has
+     * to be a Space, a plain View takes the row's width away from the label and leaves every
+     * row blank in a right to left locale.
+     */
+    @Test
+    public void goingBackToTheSectionsLeavesNoBalanceOnThemAndNoRoomForOne() {
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                awaitWallets(activity);
+                View header = activity.findViewById(R.id.navigation_drawer_header);
+                header.performClick();
+                shadowOf(Looper.getMainLooper()).idle();
+                // the wallet rows really are carrying a balance first, or a clean section row
+                // afterwards proves nothing
+                List<ViewGroup> wallets = rows(drawer(activity));
+                assertEquals("Cash", label(wallets.get(0)));
+                assertTrue(actionArea(wallets.get(0)).getChildAt(0) instanceof TextView);
+                header.performClick();
+                shadowOf(Looper.getMainLooper()).idle();
+                List<ViewGroup> sections = rows(drawer(activity));
+                assertEquals("Transactions", label(sections.get(0)));
+                for (ViewGroup row : sections) {
+                    ViewGroup area = actionArea(row);
+                    assertFalse(label(row) + " kept a wallet balance", area.getChildAt(0) instanceof TextView);
+                    assertEquals(label(row) + " left the label no room", 0, area.getWidth());
+                }
+            });
+        }
+    }
+
+    @Test
+    public void aHiddenEntryIsLeftOutOfTheDrawer() {
+        hide(String.valueOf(MainActivity.ID_SECTION_BUDGETS), String.valueOf(MainActivity.ID_SECTION_CALCULATOR));
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                Menu menu = drawer(activity).getMenu();
+                assertNull(menu.findItem(MainActivity.ID_SECTION_BUDGETS));
+                assertNull(menu.findItem(MainActivity.ID_SECTION_CALCULATOR));
+                assertNotNull(menu.findItem(MainActivity.ID_SECTION_TRANSACTIONS));
+                assertNotNull(menu.findItem(MainActivity.ID_SECTION_SETTING));
+                assertNotNull(menu.findItem(MainActivity.ID_SECTION_ABOUT));
+            });
+        }
+    }
+
+    /**
+     * The header arrow sets every entry of a group visible when it hides the wallet list, so an
+     * entry that was added and then hidden would come back here.
+     */
+    @Test
+    public void aHiddenEntryStaysOutAfterTheWalletListIsShownAndHidden() {
+        hide(String.valueOf(MainActivity.ID_SECTION_BUDGETS));
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                awaitWallets(activity);
+                Menu menu = drawer(activity).getMenu();
+                assertFalse(isShown(menu, MainActivity.ID_SECTION_BUDGETS));
+                View header = activity.findViewById(R.id.navigation_drawer_header);
+                header.performClick();
+                assertTrue(menu.findItem(walletItem(mFirstWallet)).isVisible());
+                header.performClick();
+                assertTrue(menu.findItem(MainActivity.ID_SECTION_TRANSACTIONS).isVisible());
+                assertFalse(isShown(menu, MainActivity.ID_SECTION_BUDGETS));
+            });
+        }
+    }
+
+    @Test
+    public void transactionsAndSettingsCannotBeHidden() {
+        hide("unknown", String.valueOf(MainActivity.ID_SECTION_TRANSACTIONS), String.valueOf(MainActivity.ID_SECTION_SETTING));
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                Menu menu = drawer(activity).getMenu();
+                assertNotNull(menu.findItem(MainActivity.ID_SECTION_TRANSACTIONS));
+                assertNotNull(menu.findItem(MainActivity.ID_SECTION_SETTING));
+            });
+        }
+    }
+
+    private static boolean isShown(Menu menu, int id) {
+        MenuItem item = menu.findItem(id);
+        return item != null && item.isVisible();
+    }
+
+    private static void hide(String... ids) {
+        Set<String> hidden = new HashSet<>();
+        Collections.addAll(hidden, ids);
+        PreferenceManager.setHiddenDrawerEntries(hidden);
+    }
+
+    /**
+     * Every drawer row the menu is currently showing, after a layout pass at a fixed width.
+     * A row is a label and an action area; the header and the dividers have one child each.
+     */
+    private static List<ViewGroup> rows(NavigationView drawer) {
+        drawer.measure(View.MeasureSpec.makeMeasureSpec(960, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(1600, View.MeasureSpec.EXACTLY));
+        drawer.layout(0, 0, drawer.getMeasuredWidth(), drawer.getMeasuredHeight());
+        List<ViewGroup> rows = new ArrayList<>();
+        ViewGroup list = (ViewGroup) drawer.getChildAt(0);
+        for (int i = 0; i < list.getChildCount(); i++) {
+            View child = list.getChildAt(i);
+            if (child instanceof ViewGroup && ((ViewGroup) child).getChildCount() == 2
+                    && ((ViewGroup) child).getChildAt(0) instanceof CheckedTextView) {
+                rows.add((ViewGroup) child);
+            }
+        }
+        assertFalse("the drawer laid out no rows", rows.isEmpty());
+        return rows;
+    }
+
+    private static String label(ViewGroup row) {
+        return ((CheckedTextView) row.getChildAt(0)).getText().toString();
+    }
+
+    private static ViewGroup rowLabelled(List<ViewGroup> rows, String text) {
+        for (ViewGroup row : rows) {
+            if (text.equals(label(row))) {
+                return row;
+            }
+        }
+        throw new AssertionError("no drawer row is labelled " + text);
+    }
+
+    private static ViewGroup actionArea(ViewGroup row) {
+        return (ViewGroup) row.getChildAt(1);
+    }
+
+    private static int walletItem(long walletId) {
+        return MainActivity.ID_WALLET_FIRST + (int) walletId;
+    }
+
+    private static WalletAccount quickWallet(View icon) {
+        return (WalletAccount) icon.getTag(icon.getId());
+    }
+
+    /**
+     * Every row of the wallet list in the order it is drawn, group headers included. The two
+     * actions sit below the group band, so they are out of this by their own ids.
+     */
+    private static List<String> walletSection(Menu menu) {
+        List<String> titles = new ArrayList<>();
+        for (int i = 0; i < menu.size(); i++) {
+            MenuItem item = menu.getItem(i);
+            if (item.getItemId() >= MainActivity.ID_GROUP_FIRST) {
+                titles.add(item.getTitle().toString());
+            }
+        }
+        return titles;
+    }
+
+    /**
+     * The group header of that name. Found by its id band and not by its title alone, because a
+     * group can be named after a drawer section, and the Savings section is one of them.
+     */
+    private static MenuItem groupHeader(Menu menu, String name) {
+        for (int i = 0; i < menu.size(); i++) {
+            MenuItem item = menu.getItem(i);
+            if (item.getItemId() >= MainActivity.ID_GROUP_FIRST
+                    && item.getItemId() < MainActivity.ID_WALLET_FIRST
+                    && name.contentEquals(item.getTitle())) {
+                return item;
+            }
+        }
+        return null;
+    }
+
+    private static int walletRows(Menu menu) {
+        int rows = 0;
+        for (int i = 0; i < menu.size(); i++) {
+            if (menu.getItem(i).getItemId() >= MainActivity.ID_WALLET_FIRST) {
+                rows++;
+            }
+        }
+        return rows;
+    }
+
+    private static MenuItem findByTitle(Menu menu, String title) {
+        for (int i = 0; i < menu.size(); i++) {
+            if (title.contentEquals(menu.getItem(i).getTitle())) {
+                return menu.getItem(i);
+            }
+        }
+        return null;
+    }
+
+    private static NavigationView drawer(MainActivity activity) {
+        return activity.findViewById(R.id.navigation_view);
+    }
+
+    private static Fragment section(MainActivity activity) {
+        return activity.getSupportFragmentManager().findFragmentById(R.id.fragment_container);
+    }
+
+    private static String headerName(MainActivity activity) {
+        return ((TextView) activity.findViewById(R.id.wallet_name_text_view)).getText().toString();
+    }
+
+    private static void runPending(MainActivity activity) {
+        activity.getSupportFragmentManager().executePendingTransactions();
+    }
+
+    /**
+     * The wallets arrive through a cursor loader on a background thread and land on the main
+     * looper, which the test drives by hand.
+     */
+    private static void awaitWallets(MainActivity activity) {
+        for (int i = 0; i < 200 && headerName(activity).isEmpty(); i++) {
+            shadowOf(Looper.getMainLooper()).idle();
+            try {
+                Thread.sleep(25);
+            } catch (InterruptedException e) {
+                throw new AssertionError(e);
+            }
+        }
+        assertFalse("the wallets never loaded", headerName(activity).isEmpty());
+    }
+
+    private static void awaitSubtitle(Toolbar toolbar, String subtitle) {
+        for (int i = 0; i < 200 && !subtitle.equals(String.valueOf(toolbar.getSubtitle())); i++) {
+            shadowOf(Looper.getMainLooper()).idle();
+            sleep();
+        }
+        assertEquals(subtitle, String.valueOf(toolbar.getSubtitle()));
+    }
+
+    private static void sleep() {
+        try {
+            Thread.sleep(25);
+        } catch (InterruptedException e) {
+            throw new AssertionError(e);
+        }
+    }
+
+    private long insertWallet(String name, int index, long startMoney, boolean countInTotal, boolean archived) {
+        return insertWallet(name, index, startMoney, countInTotal, archived, null);
+    }
+
+    private long insertWallet(String name, int index, long startMoney, boolean countInTotal,
+                              boolean archived, String group) {
+        ContentValues values = new ContentValues();
+        values.put(Contract.Wallet.NAME, name);
+        values.put(Contract.Wallet.ICON, ICON);
+        values.put(Contract.Wallet.CURRENCY, "EUR");
+        values.put(Contract.Wallet.START_MONEY, startMoney);
+        values.put(Contract.Wallet.COUNT_IN_TOTAL, countInTotal);
+        values.put(Contract.Wallet.ARCHIVED, archived);
+        values.put(Contract.Wallet.INDEX, index);
+        values.put(Contract.Wallet.GROUP, group);
+        return ContentUris.parseId(mResolver.insert(DataContentProvider.CONTENT_WALLETS, values));
+    }
+}

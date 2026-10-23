@@ -21,26 +21,28 @@ package com.oriondev.moneywallet.ui.activity;
 
 import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.os.Bundle;
+import android.widget.EditText;
 import androidx.annotation.MenuRes;
-import androidx.annotation.NonNull;
+import androidx.appcompat.app.AlertDialog;
+import androidx.lifecycle.Lifecycle;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import android.text.InputType;
 import android.text.TextUtils;
+import android.widget.Toast;
 import android.view.LayoutInflater;
-import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 
-import com.afollestad.materialdialogs.MaterialDialog;
 import com.oriondev.moneywallet.R;
-import com.oriondev.moneywallet.api.disk.DiskBackendServiceAPI;
+import com.oriondev.moneywallet.api.BackendServiceFactory;
 import com.oriondev.moneywallet.broadcast.LocalAction;
 import com.oriondev.moneywallet.model.IFile;
 import com.oriondev.moneywallet.service.BackendHandlerIntentService;
@@ -58,13 +60,8 @@ import java.util.List;
 public class BackendExplorerActivity extends SinglePanelActivity implements SwipeRefreshLayout.OnRefreshListener, BackupFileAdapter.Controller {
 
     public static final String BACKEND_ID = "BackendExplorerActivity::Arguments::BackendId";
-    public static final String MODE = "BackendExplorerActivity::Arguments::Mode";
 
     public static final String RESULT_FILE = "BackendExplorerActivity::Result::File";
-
-    public static final int MODE_EXPLORER = 0;
-    public static final int MODE_FILE_PICKER = 1;
-    public static final int MODE_FOLDER_PICKER = 2;
 
     private static final IFile ROOT_FOLDER = null;
 
@@ -72,29 +69,35 @@ public class BackendExplorerActivity extends SinglePanelActivity implements Swip
     private BackupFileAdapter mAdapter;
 
     private String mBackendId;
-    private int mActivityMode;
     private List<IFile> mFileStack;
 
     private LocalBroadcastManager mLocalBroadcastManager;
+
+    private boolean mReloadOnStart;
 
     @Override
     protected void onCreatePanelView(LayoutInflater inflater, ViewGroup parent, Bundle savedInstanceState) {
         View view = inflater.inflate(R.layout.layout_activity_single_panel_body_list, parent, true);
         mAdvancedRecyclerView = view.findViewById(R.id.advanced_recycler_view);
         mAdvancedRecyclerView.setLayoutManager(new LinearLayoutManager(this));
-        mAdvancedRecyclerView.setEmptyText(R.string.message_no_icon_found);
+        mAdvancedRecyclerView.setEmptyText(R.string.message_no_file_found);
         mAdapter = new BackupFileAdapter(this);
         mAdvancedRecyclerView.setAdapter(mAdapter);
         mAdvancedRecyclerView.setOnRefreshListener(this);
         // unpack intent info
         Intent intent = getIntent();
         mBackendId = intent.getStringExtra(BACKEND_ID);
-        mActivityMode = intent.getIntExtra(MODE, MODE_EXPLORER);
         mFileStack = new ArrayList<>();
+        // open where a backup would go, the same folder the backup screen opens on
+        IFile defaultFolder = BackendServiceFactory.getFile(mBackendId, null);
+        if (defaultFolder != null) {
+            mFileStack.add(defaultFolder);
+        }
         // attach the activity to the service
         IntentFilter intentFilter = new IntentFilter();
         intentFilter.addAction(LocalAction.ACTION_BACKEND_SERVICE_STARTED);
         intentFilter.addAction(LocalAction.ACTION_BACKEND_SERVICE_FINISHED);
+        intentFilter.addAction(LocalAction.ACTION_BACKEND_SERVICE_FAILED);
         mLocalBroadcastManager = LocalBroadcastManager.getInstance(this);
         mLocalBroadcastManager.registerReceiver(mLocalBroadcastReceiver, intentFilter);
     }
@@ -109,6 +112,16 @@ public class BackendExplorerActivity extends SinglePanelActivity implements Swip
         super.onSetupFloatingActionButton(floatingActionButton);
         if (floatingActionButton != null) {
             floatingActionButton.setImageResource(R.drawable.ic_create_new_folder_black_24dp);
+            floatingActionButton.setContentDescription(getString(R.string.hint_new_folder));
+        }
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        if (mReloadOnStart) {
+            mReloadOnStart = false;
+            loadCurrentFolder();
         }
     }
 
@@ -122,15 +135,7 @@ public class BackendExplorerActivity extends SinglePanelActivity implements Swip
 
     @Override
     protected int getActivityTitleRes() {
-        switch (mActivityMode) {
-            case MODE_EXPLORER:
-                return R.string.title_activity_backend_explorer;
-            case MODE_FILE_PICKER:
-                return R.string.title_activity_backend_file_picker;
-            case MODE_FOLDER_PICKER:
-                return R.string.title_activity_backend_folder_picker;
-        }
-        return 0;
+        return R.string.title_activity_backend_folder_picker;
     }
 
     @MenuRes
@@ -139,36 +144,25 @@ public class BackendExplorerActivity extends SinglePanelActivity implements Swip
     }
 
     @Override
-    protected void onMenuCreated(Menu menu) {
-        switch (mActivityMode) {
-            case MODE_EXPLORER:
-                menu.findItem(R.id.action_select_folder).setVisible(false);
-                break;
-            case MODE_FILE_PICKER:
-                menu.findItem(R.id.action_select_folder).setVisible(false);
-                break;
-            case MODE_FOLDER_PICKER:
-                menu.findItem(R.id.action_select_folder).setVisible(true);
-                break;
-        }
-    }
-
-    @Override
     public boolean onMenuItemClick(MenuItem item) {
-        switch (item.getItemId()) {
-            case R.id.action_select_folder:
-                if (mActivityMode == MODE_FOLDER_PICKER) {
-                    IFile folder = getCurrentFolder();
-                    if (folder == null) {
-                        // return the root folder of the device instead of null
-                        folder = DiskBackendServiceAPI.getRootFolder();
-                    }
-                    Intent intent = new Intent();
-                    intent.putExtra(RESULT_FILE, folder);
-                    setResult(RESULT_OK, intent);
-                    finish();
-                }
-                break;
+        int itemId = item.getItemId();
+        if (itemId == R.id.action_select_folder) {
+            IFile folder = getCurrentFolder();
+            if (folder == null) {
+                // this backend's own default, rather than a local path it cannot decode
+                folder = BackendServiceFactory.getFile(mBackendId, null);
+            }
+            if (folder == null) {
+                // The top of the list is not a folder this backend can name. Choosing it used
+                // to send back a result carrying no file, and the settings dialog read that as
+                // the answer and dropped the folder it already held.
+                Toast.makeText(this, R.string.message_backend_open_a_folder, Toast.LENGTH_LONG).show();
+                return false;
+            }
+            Intent intent = new Intent();
+            intent.putExtra(RESULT_FILE, folder);
+            setResult(RESULT_OK, intent);
+            finish();
         }
         return false;
     }
@@ -189,11 +183,6 @@ public class BackendExplorerActivity extends SinglePanelActivity implements Swip
             mFileStack.add(file);
             mAdvancedRecyclerView.setState(AdvancedRecyclerView.State.LOADING);
             loadFolder(file);
-        } else if (mActivityMode == MODE_FILE_PICKER) {
-            Intent intent = new Intent();
-            intent.putExtra(RESULT_FILE, file);
-            setResult(RESULT_OK, intent);
-            finish();
         }
     }
 
@@ -220,26 +209,30 @@ public class BackendExplorerActivity extends SinglePanelActivity implements Swip
 
     @Override
     protected void onFloatingActionButtonClick() {
-        ThemedDialog.buildMaterialDialog(this)
-                .title(R.string.title_backend_create_folder)
-                .content(R.string.message_backend_create_folder)
-                .positiveText(android.R.string.ok)
-                .negativeText(android.R.string.cancel)
-                .inputType(InputType.TYPE_CLASS_TEXT)
-                .input(R.string.hint_new_folder, 0, false, new MaterialDialog.InputCallback() {
+        View inputView = LayoutInflater.from(this).inflate(R.layout.dialog_input, null);
+        final EditText inputEditText = inputView.findViewById(R.id.dialog_input_edit_text);
+        inputEditText.setHint(R.string.hint_new_folder);
+        inputEditText.setInputType(InputType.TYPE_CLASS_TEXT);
+        AlertDialog dialog = ThemedDialog.buildMaterialDialog(this)
+                .setTitle(R.string.title_backend_create_folder)
+                .setMessage(R.string.message_backend_create_folder)
+                .setView(inputView)
+                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
 
                     @Override
-                    public void onInput(@NonNull MaterialDialog dialog, CharSequence input) {
+                    public void onClick(DialogInterface dialog, int which) {
                         Intent intent = new Intent(BackendExplorerActivity.this, BackendHandlerIntentService.class);
                         intent.putExtra(BackendHandlerIntentService.BACKEND_ID, mBackendId);
                         intent.putExtra(BackendHandlerIntentService.ACTION, BackendHandlerIntentService.ACTION_CREATE_FOLDER);
                         intent.putExtra(BackendHandlerIntentService.PARENT_FOLDER, getCurrentFolder());
-                        intent.putExtra(BackendHandlerIntentService.FOLDER_NAME, input.toString());
+                        intent.putExtra(BackendHandlerIntentService.FOLDER_NAME, inputEditText.getText().toString());
                         startService(intent);
                     }
 
                 })
-                .show();
+                .setNegativeButton(android.R.string.cancel, null)
+                .create();
+        ThemedDialog.showWithInput(dialog, inputEditText, false);
     }
 
     private BroadcastReceiver mLocalBroadcastReceiver = new BroadcastReceiver() {
@@ -263,8 +256,21 @@ public class BackendExplorerActivity extends SinglePanelActivity implements Swip
                         mAdvancedRecyclerView.setState(AdvancedRecyclerView.State.READY);
                     }
                 } else if (operation == BackendHandlerIntentService.ACTION_CREATE_FOLDER) {
-                    IFile folder = intent.getParcelableExtra(BackendHandlerIntentService.CREATED_FILE);
-                    mAdapter.addFileToList(folder);
+                    if (getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.STARTED)) {
+                        loadCurrentFolder();
+                    } else {
+                        // starting a service from the background can throw, so reload once the screen is back
+                        mReloadOnStart = true;
+                    }
+                }
+            } else if (TextUtils.equals(action, LocalAction.ACTION_BACKEND_SERVICE_FAILED)) {
+                int operation = intent.getIntExtra(BackendHandlerIntentService.ACTION, 0);
+                if (operation == BackendHandlerIntentService.ACTION_LIST) {
+                    mAdapter.setFileList(null, false);
+                    mAdvancedRecyclerView.setErrorText(R.string.message_error_backend_recoverable);
+                    mAdvancedRecyclerView.setState(AdvancedRecyclerView.State.ERROR);
+                } else if (operation == BackendHandlerIntentService.ACTION_CREATE_FOLDER) {
+                    Toast.makeText(context, R.string.message_error_backend_recoverable, Toast.LENGTH_LONG).show();
                 }
             }
         }

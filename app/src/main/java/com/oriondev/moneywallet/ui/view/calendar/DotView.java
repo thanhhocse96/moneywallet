@@ -1,6 +1,9 @@
 /*
  * Copyright (c) 2018.
  *
+ * Portions derived from datepicker-timeline, Copyright (c) 2015 Yann Badoual,
+ * MIT License.
+ *
  * This file is part of MoneyWallet.
  *
  * MoneyWallet is free software: you can redistribute it and/or modify
@@ -19,12 +22,10 @@
 
 package com.oriondev.moneywallet.ui.view.calendar;
 
-import android.annotation.TargetApi;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
-import android.os.Build;
 import androidx.annotation.ColorInt;
 import androidx.annotation.ColorRes;
 import androidx.core.content.ContextCompat;
@@ -51,7 +52,6 @@ public class DotView extends View {
         init();
     }
 
-    @TargetApi(Build.VERSION_CODES.LOLLIPOP)
     public DotView(Context context, AttributeSet attrs, int defStyleAttr, int defStyleRes) {
         super(context, attrs, defStyleAttr, defStyleRes);
         init();

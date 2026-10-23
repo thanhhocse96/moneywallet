@@ -28,15 +28,16 @@ import android.view.ViewGroup;
 import com.github.mikephil.charting.charts.BarChart;
 import com.github.mikephil.charting.charts.LineChart;
 import com.github.mikephil.charting.charts.RadarChart;
-import com.github.mikephil.charting.components.AxisBase;
 import com.github.mikephil.charting.components.XAxis;
 import com.github.mikephil.charting.components.YAxis;
 import com.github.mikephil.charting.data.BarData;
 import com.github.mikephil.charting.data.LineData;
 import com.github.mikephil.charting.data.RadarData;
-import com.github.mikephil.charting.formatter.IAxisValueFormatter;
+import com.github.mikephil.charting.formatter.ValueFormatter;
 import com.oriondev.moneywallet.R;
 import com.oriondev.moneywallet.model.OverviewData;
+
+import java.util.Locale;
 
 /**
  * Created by andrea on 17/08/18.
@@ -48,6 +49,15 @@ public class OverviewChartViewPagerAdapter extends PagerAdapter {
     private static final int POSITION_BAR_CHART = 0;
     private static final int POSITION_LINE_CHART = 1;
     private static final int POSITION_RADAR_CHART = 2;
+
+    private static final ValueFormatter PERIOD_NUMBER_FORMATTER = new ValueFormatter() {
+
+        @Override
+        public String getFormattedValue(float value) {
+            return String.format(Locale.getDefault(), "%d", (int) value + 1);
+        }
+
+    };
 
     private OverviewData mOverviewData;
 
@@ -73,18 +83,12 @@ public class OverviewChartViewPagerAdapter extends PagerAdapter {
                         if (barData.getDataSetCount() > 1) {
                             xAxis.setCenterAxisLabels(true);
                             xAxis.setAxisMinimum(0f);
+                            xAxis.setAxisMaximum(mOverviewData.getPeriodCount());
                         } else {
-                            xAxis.setAxisMinimum(-1f);
+                            xAxis.setAxisMinimum(-0.5f);
+                            xAxis.setAxisMaximum(mOverviewData.getPeriodCount() - 0.5f);
                         }
-                        xAxis.setAxisMaximum(mOverviewData.getPeriodCount());
-                        xAxis.setValueFormatter(new IAxisValueFormatter() {
-
-                            @Override
-                            public String getFormattedValue(float value, AxisBase axis) {
-                                return String.valueOf((int) value + 1);
-                            }
-
-                        });
+                        xAxis.setValueFormatter(PERIOD_NUMBER_FORMATTER);
                         YAxis leftAxis = barChart.getAxisLeft();
                         leftAxis.setSpaceTop(35f);
                         barChart.getAxisRight().setEnabled(false);
@@ -104,16 +108,9 @@ public class OverviewChartViewPagerAdapter extends PagerAdapter {
                         lineData.setHighlightEnabled(false);
                         XAxis xAxis = lineChart.getXAxis();
                         xAxis.setGranularity(1f);
-                        xAxis.setAxisMinimum(-1f);
-                        xAxis.setAxisMaximum(mOverviewData.getPeriodCount());
-                        xAxis.setValueFormatter(new IAxisValueFormatter() {
-
-                            @Override
-                            public String getFormattedValue(float value, AxisBase axis) {
-                                return String.valueOf((int) value + 1);
-                            }
-
-                        });
+                        xAxis.setAxisMinimum(-0.5f);
+                        xAxis.setAxisMaximum(mOverviewData.getPeriodCount() - 0.5f);
+                        xAxis.setValueFormatter(PERIOD_NUMBER_FORMATTER);
                         YAxis leftAxis = lineChart.getAxisLeft();
                         leftAxis.setSpaceTop(35f);
                         lineChart.getAxisRight().setEnabled(false);
@@ -131,6 +128,7 @@ public class OverviewChartViewPagerAdapter extends PagerAdapter {
                     radarChart.setData(radarData);
                     if (radarData != null) {
                         XAxis xAxis = radarChart.getXAxis();
+                        xAxis.setValueFormatter(PERIOD_NUMBER_FORMATTER);
                         radarData.setValueTextColor(xAxis.getTextColor());
                     }
                 }

@@ -66,6 +66,11 @@ public class TransactionMultiPanelViewPagerFragment extends MultiPanelViewPagerM
         return R.string.menu_transaction;
     }
 
+    @Override
+    protected boolean showsCurrentWallet() {
+        return true;
+    }
+
     @MenuRes
     protected int onInflateMenu() {
         return R.menu.menu_transaction_multipanel_fragment;
@@ -73,15 +78,19 @@ public class TransactionMultiPanelViewPagerFragment extends MultiPanelViewPagerM
 
     @Override
     public boolean onMenuItemClick(MenuItem item) {
-        switch (item.getItemId()) {
-            case R.id.action_search_item:
-                startActivity(new Intent(getActivity(), SearchActivity.class));
-                break;
-            case R.id.action_open_calendar:
-                startActivity(new Intent(getActivity(), CalendarActivity.class));
-                break;
+        int itemId = item.getItemId();
+        if (itemId == R.id.action_search_item) {
+            startActivity(new Intent(getActivity(), SearchActivity.class));
+        } else if (itemId == R.id.action_open_calendar) {
+            startActivity(new Intent(getActivity(), CalendarActivity.class));
         }
         return false;
+    }
+
+    @Override
+    public void onPageSelected(int position) {
+        // the transactions page draws its selection on this toolbar, which the transfers page shares
+        finishSelectionMode();
     }
 
     @Override

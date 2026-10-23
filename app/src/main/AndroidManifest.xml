@@ -23,12 +23,14 @@
     package="com.oriondev.moneywallet">
 
     <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.USE_FINGERPRINT" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:icon="@mipmap/ic_launcher"
@@ -39,15 +41,14 @@
         android:theme="@style/MoneyWalletAppTheme"
         android:requestLegacyExternalStorage="true"
         android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         tools:ignore="GoogleAppIndexingWarning">
-        <activity android:name=".ui.activity.LauncherActivity">
+        <activity android:name=".ui.activity.LauncherActivity"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <meta-data
-                android:name="android.app.shortcuts"
-                android:resource="@xml/shortcuts" />
         </activity>
         <activity android:name=".ui.activity.MainActivity" />
         <activity android:name=".ui.activity.TutorialActivity" />
@@ -55,7 +56,8 @@
         <activity android:name=".ui.activity.BackupListActivity" />
         <activity android:name=".ui.activity.NewEditCurrencyActivity" />
         <activity android:name=".ui.activity.NewEditWalletActivity" />
-        <activity android:name=".ui.activity.NewEditTransactionActivity">
+        <activity android:name=".ui.activity.NewEditTransactionActivity"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -65,6 +67,10 @@
                 <action android:name="android.intent.action.SEND_MULTIPLE" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="*/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="io.github.herrerad85.tallybook.action.ADD_TRANSACTION" />
+                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
         <activity android:name=".ui.activity.NewEditTransferActivity" />
@@ -81,28 +87,70 @@
         <activity android:name=".ui.activity.NewEditPersonActivity" />
         <activity android:name=".ui.activity.WalletSortActivity" />
         <activity android:name=".ui.activity.CurrencyListActivity" />
+        <activity android:name=".ui.activity.CategoryRuleListActivity" />
+        <activity android:name=".ui.activity.NewEditCategoryRuleActivity" />
         <activity android:name=".ui.activity.CategoryPickerActivity" />
         <activity android:name=".ui.activity.CategorySortActivity" />
+        <activity android:name=".ui.activity.CategoryRuleSortActivity" />
         <activity android:name=".ui.activity.IconListActivity" />
-        <activity android:name=".ui.activity.CalculatorActivity" />
+        <activity
+            android:name=".ui.activity.CalculatorActivity"
+            android:windowSoftInputMode="stateAlwaysHidden" />
         <activity android:name=".ui.activity.CurrencyConverterActivity" />
         <activity android:name=".ui.activity.AboutActivity" />
-        <activity android:name=".ui.activity.SearchActivity" />
+        <activity
+            android:name=".ui.activity.SearchActivity"
+            android:windowSoftInputMode="adjustResize" />
         <activity android:name=".ui.activity.CalendarActivity" />
         <activity android:name=".ui.activity.MapActivity" />
         <activity android:name=".ui.activity.PeriodDetailActivity" />
         <activity android:name=".ui.activity.TransactionListActivity" />
         <activity android:name=".ui.activity.LockActivity" />
         <activity android:name=".ui.activity.BackendExplorerActivity" />
-        <activity android:name=".ui.activity.DonationActivity" />
         <activity android:name=".ui.activity.ImportExportActivity" />
+        <!--
+          ~ Exported because the launcher is a different app and starts this itself on every
+          ~ version this app runs on. Only Android 12 and later can start a configuration screen
+          ~ that is not exported, through the host, and this app runs from API 24.
+          ~
+          ~ It hands out nothing. It is handed a widget id by whoever starts it, shows the wallet
+          ~ picker, and writes the choice against that id.
+          -->
+        <activity
+            android:name="com.oriondev.moneywallet.ui.widget.WalletWidgetConfigureActivity"
+            android:exported="true" >
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          ~ Written out in full instead of as .ui.widget.WalletWidgetProvider on purpose. A
+          ~ relative name is expanded against the namespace in app/build.gradle, so renaming that
+          ~ namespace would change the component name the launcher is holding on the user's
+          ~ behalf, and every placed widget would disappear on the next update with no warning.
+          ~ The namespace here is still com.oriondev.moneywallet while the app ships as
+          ~ io.github.herrerad85.tallybook, so that rename is a thing someone may reasonably do.
+          ~
+          ~ The configuration activity above is written out for the same reason, since
+          ~ widget_wallet_info names it as a literal string that no rename would follow.
+          -->
+        <receiver
+            android:name="com.oriondev.moneywallet.ui.widget.WalletWidgetProvider"
+            android:exported="false"
+            android:label="@string/widget_label" >
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_wallet_info" />
+        </receiver>
 
         <provider
             android:name=".storage.database.DataContentProvider"
             android:authorities="${applicationId}.storage.data"
-            android:readPermission="${applicationId}.permission.READ_DATA"
-            android:writePermission="${applicationId}.permission.WRITE_DATA"
-            android:exported="true" />
+            android:exported="false" />
         <provider
             android:name=".storage.database.SyncContentProvider"
             android:authorities="${applicationId}.storage.sync"
@@ -117,10 +165,18 @@
                 android:resource="@xml/file_provider_paths" />
         </provider>
 
-        <service android:name=".service.openexchangerates.OpenExchangeRatesCurrencyRateDownloadIntentService" />
+        <service
+            android:name=".service.openexchangerates.OpenExchangeRatesCurrencyRateDownloadIntentService"
+            android:foregroundServiceType="dataSync" />
         <service android:name=".service.AttachmentHandlerIntentService" />
-        <service android:name=".service.BackupHandlerIntentService" />
+        <service
+            android:name=".service.BackupHandlerIntentService"
+            android:foregroundServiceType="dataSync" />
         <service android:name=".service.BackendHandlerIntentService" />
+        <service
+            android:name=".service.AutoBackupJobService"
+            android:permission="android.permission.BIND_JOB_SERVICE"
+            android:exported="false" />
         <service
             android:name=".service.RecurrenceHandlerIntentService"
             android:permission="android.permission.BIND_JOB_SERVICE"
@@ -130,11 +186,18 @@
 
         <receiver android:name=".broadcast.DailyBroadcastReceiver" />
         <receiver android:name=".broadcast.RecurrenceBroadcastReceiver" />
-        <receiver android:name=".broadcast.AutoBackupBroadcastReceiver" />
         <receiver android:name=".broadcast.NotificationBroadcastReceiver" />
-        <receiver android:name=".broadcast.BootBroadcastReceiver">
+        <receiver android:name=".broadcast.BootBroadcastReceiver"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED"/>
+            </intent-filter>
+        </receiver>
+        <receiver android:name=".broadcast.AddTransactionReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="io.github.herrerad85.tallybook.action.SAVE_TRANSACTION"/>
+                <category android:name="android.intent.category.DEFAULT"/>
             </intent-filter>
         </receiver>
 

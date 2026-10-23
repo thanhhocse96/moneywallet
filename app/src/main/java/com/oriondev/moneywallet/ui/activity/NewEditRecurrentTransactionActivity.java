@@ -19,6 +19,7 @@
 
 package com.oriondev.moneywallet.ui.activity;
 
+import android.Manifest;
 import android.content.ContentResolver;
 import android.content.ContentUris;
 import android.content.ContentValues;
@@ -26,6 +27,7 @@ import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
 import androidx.annotation.NonNull;
+import androidx.core.app.ActivityCompat;
 import androidx.fragment.app.FragmentManager;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -54,8 +56,10 @@ import com.oriondev.moneywallet.ui.view.text.MaterialEditText;
 import com.oriondev.moneywallet.ui.view.text.Validator;
 import com.oriondev.moneywallet.utils.CurrencyManager;
 import com.oriondev.moneywallet.utils.DateUtils;
+import com.oriondev.moneywallet.utils.DefaultWallet;
 import com.oriondev.moneywallet.utils.IconLoader;
 import com.oriondev.moneywallet.utils.MoneyFormatter;
+import com.oriondev.moneywallet.utils.Utils;
 
 import java.util.Date;
 
@@ -95,7 +99,20 @@ public class NewEditRecurrentTransactionActivity extends NewEditItemActivity imp
     private EventPicker mEventPicker;
     private PlacePicker mPlacePicker;
 
+    private static final int REQUEST_CODE_NOTIFICATION_PERMISSION = 35627;
+
     private MoneyFormatter mMoneyFormatter = MoneyFormatter.getInstance();
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        if (getMode() == Mode.NEW_ITEM && Utils.shouldAskNotificationPermission(this)) {
+            PreferenceManager.setAskedNotificationPermission();
+            ActivityCompat.requestPermissions(this,
+                    new String[]{Manifest.permission.POST_NOTIFICATIONS},
+                    REQUEST_CODE_NOTIFICATION_PERMISSION);
+        }
+    }
     
     @Override
     protected void onCreateHeaderView(LayoutInflater inflater, ViewGroup parent, Bundle savedInstanceState) {
@@ -329,11 +346,13 @@ public class NewEditRecurrentTransactionActivity extends NewEditItemActivity imp
                         Contract.Wallet.START_MONEY,
                         Contract.Wallet.TOTAL_MONEY
                 };
-                long currentWallet = PreferenceManager.getCurrentWallet();
+                long currentWallet = DefaultWallet.resolveNewItemWallet(contentResolver);
                 Cursor cursor;
                 if (currentWallet == PreferenceManager.TOTAL_WALLET_ID) {
                     Uri uri = DataContentProvider.CONTENT_WALLETS;
-                    cursor = contentResolver.query(uri, projection, null, null, null);
+                    cursor = contentResolver.query(uri, projection,
+                            Contract.Wallet.ARCHIVED + " = 0", null,
+                            Contract.Wallet.INDEX + " ASC, " + Contract.Wallet.NAME + " ASC");
                 } else {
                     Uri uri = ContentUris.withAppendedId(DataContentProvider.CONTENT_WALLETS, currentWallet);
                     cursor = contentResolver.query(uri, projection, null, null, null);

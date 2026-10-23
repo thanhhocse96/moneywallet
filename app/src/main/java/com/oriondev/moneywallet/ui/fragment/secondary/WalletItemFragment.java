@@ -20,10 +20,10 @@
 package com.oriondev.moneywallet.ui.fragment.secondary;
 
 import android.app.Activity;
-import android.content.ContentResolver;
 import android.content.ContentUris;
 import android.content.ContentValues;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
@@ -42,14 +42,11 @@ import android.widget.CheckBox;
 import android.widget.ImageView;
 import android.widget.TextView;
 
-import com.afollestad.materialdialogs.DialogAction;
-import com.afollestad.materialdialogs.MaterialDialog;
 import com.oriondev.moneywallet.R;
 import com.oriondev.moneywallet.model.CurrencyUnit;
 import com.oriondev.moneywallet.model.Icon;
 import com.oriondev.moneywallet.storage.database.Contract;
 import com.oriondev.moneywallet.storage.database.DataContentProvider;
-import com.oriondev.moneywallet.storage.database.SQLiteDataException;
 import com.oriondev.moneywallet.ui.activity.NewEditItemActivity;
 import com.oriondev.moneywallet.ui.activity.NewEditWalletActivity;
 import com.oriondev.moneywallet.ui.fragment.base.SecondaryPanelFragment;
@@ -72,6 +69,7 @@ public class WalletItemFragment extends SecondaryPanelFragment implements Loader
     private TextView mNameTextView;
     private TextView mCurrencyTextView;
     private TextView mStartMoneyTextView;
+    private TextView mGroupTextView;
     private TextView mNoteTextView;
     private CheckBox mNotExcludeTotalCheckBox;
 
@@ -91,6 +89,7 @@ public class WalletItemFragment extends SecondaryPanelFragment implements Loader
         mMainLayout = view.findViewById(R.id.secondary_panel_layout);
         mCurrencyTextView = view.findViewById(R.id.currency_text_view);
         mStartMoneyTextView = view.findViewById(R.id.start_money_text_view);
+        mGroupTextView = view.findViewById(R.id.group_text_view);
         mNoteTextView = view.findViewById(R.id.note_text_view);
         mNotExcludeTotalCheckBox = view.findViewById(R.id.not_exclude_total_check_box);
     }
@@ -107,36 +106,30 @@ public class WalletItemFragment extends SecondaryPanelFragment implements Loader
 
     @Override
     public boolean onMenuItemClick(MenuItem item) {
-        switch (item.getItemId()) {
-            case R.id.action_archive_item:
-                showArchiveDialog(getActivity());
-                break;
-            case R.id.action_unarchive_item:
-                showUnarchiveDialog(getActivity());
-                break;
-            case R.id.action_edit_item:
-                Intent intent = new Intent(getActivity(), NewEditWalletActivity.class);
-                intent.putExtra(NewEditItemActivity.MODE, NewEditItemActivity.Mode.EDIT_ITEM);
-                intent.putExtra(NewEditItemActivity.ID, getItemId());
-                startActivity(intent);
-                break;
-            case R.id.action_delete_item:
-                showDeleteDialog(getActivity());
-                break;
+        int itemId = item.getItemId();
+        if (itemId == R.id.action_archive_item) {
+            showArchiveDialog(getActivity());
+        } else if (itemId == R.id.action_unarchive_item) {
+            showUnarchiveDialog(getActivity());
+        } else if (itemId == R.id.action_edit_item) {
+            Intent intent = new Intent(getActivity(), NewEditWalletActivity.class);
+            intent.putExtra(NewEditItemActivity.MODE, NewEditItemActivity.Mode.EDIT_ITEM);
+            intent.putExtra(NewEditItemActivity.ID, getItemId());
+            startActivity(intent);
+        } else if (itemId == R.id.action_delete_item) {
+            showDeleteDialog(getActivity());
         }
         return false;
     }
 
     private void showArchiveDialog(Context context) {
         ThemedDialog.buildMaterialDialog(context)
-                .title(R.string.title_warning)
-                .content(R.string.message_action_archive_wallet)
-                .positiveText(android.R.string.yes)
-                .negativeText(android.R.string.no)
-                .onPositive(new MaterialDialog.SingleButtonCallback() {
+                .setTitle(R.string.title_warning)
+                .setMessage(R.string.message_action_archive_wallet)
+                .setPositiveButton(android.R.string.yes, new DialogInterface.OnClickListener() {
 
                     @Override
-                    public void onClick(@NonNull MaterialDialog dialog, @NonNull DialogAction which) {
+                    public void onClick(DialogInterface dialog, int which) {
                         Activity activity = getActivity();
                         if (activity != null) {
                             Uri uri = ContentUris.withAppendedId(DataContentProvider.CONTENT_WALLETS, getItemId());
@@ -151,19 +144,18 @@ public class WalletItemFragment extends SecondaryPanelFragment implements Loader
                     }
 
                 })
+                .setNegativeButton(android.R.string.no, null)
                 .show();
     }
 
     private void showUnarchiveDialog(Context context) {
         ThemedDialog.buildMaterialDialog(context)
-                .title(R.string.title_warning)
-                .content(R.string.message_action_unarchive_wallet)
-                .positiveText(android.R.string.yes)
-                .negativeText(android.R.string.no)
-                .onPositive(new MaterialDialog.SingleButtonCallback() {
+                .setTitle(R.string.title_warning)
+                .setMessage(R.string.message_action_unarchive_wallet)
+                .setPositiveButton(android.R.string.yes, new DialogInterface.OnClickListener() {
 
                     @Override
-                    public void onClick(@NonNull MaterialDialog dialog, @NonNull DialogAction which) {
+                    public void onClick(DialogInterface dialog, int which) {
                         Activity activity = getActivity();
                         if (activity != null) {
                             Uri uri = ContentUris.withAppendedId(DataContentProvider.CONTENT_WALLETS, getItemId());
@@ -178,47 +170,39 @@ public class WalletItemFragment extends SecondaryPanelFragment implements Loader
                     }
 
                 })
+                .setNegativeButton(android.R.string.no, null)
                 .show();
     }
 
     private void showDeleteDialog(Context context) {
         ThemedDialog.buildMaterialDialog(context)
-                .title(R.string.title_warning)
-                .content(R.string.message_delete_wallet)
-                .positiveText(android.R.string.ok)
-                .negativeText(android.R.string.cancel)
-                .onPositive(new MaterialDialog.SingleButtonCallback() {
+                .setTitle(R.string.title_warning)
+                .setMessage(R.string.message_delete_wallet)
+                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
 
                     @Override
-                    public void onClick(@NonNull MaterialDialog dialog, @NonNull DialogAction which) {
-                        Activity activity = getActivity();
-                        if (activity != null) {
-                            try {
-                                Uri uri = ContentUris.withAppendedId(DataContentProvider.CONTENT_WALLETS, getItemId());
-                                ContentResolver contentResolver = activity.getContentResolver();
-                                contentResolver.delete(uri, null, null);
-                                navigateBackSafely();
-                                showItemId(0L);
-                            } catch (SQLiteDataException e) {
-                                if (e.getErrorCode() == Contract.ErrorCode.WALLET_USED_IN_TRANSFER) {
-                                    ThemedDialog.buildMaterialDialog(activity)
-                                            .title(R.string.title_error)
-                                            .content(R.string.message_error_delete_wallet_of_transfer)
-                                            .positiveText(android.R.string.ok)
-                                            .show();
-                                }
+                    public void onClick(DialogInterface dialog, int which) {
+                        Uri uri = ContentUris.withAppendedId(DataContentProvider.CONTENT_WALLETS, getItemId());
+                        deleteItemInBackground(uri, e -> {
+                            if (e.getErrorCode() == Contract.ErrorCode.WALLET_USED_IN_TRANSFER) {
+                                ThemedDialog.buildMaterialDialog(requireActivity())
+                                        .setTitle(R.string.title_error)
+                                        .setMessage(R.string.message_error_delete_wallet_of_transfer)
+                                        .setPositiveButton(android.R.string.ok, null)
+                                        .show();
                             }
-                        }
+                        });
                     }
 
                 })
+                .setNegativeButton(android.R.string.cancel, null)
                 .show();
     }
 
     @Override
     protected void onShowItemId(long itemId) {
         setLoadingScreen(true);
-        getLoaderManager().restartLoader(WALLET_LOADER_ID, null, this);
+        LoaderManager.getInstance(this).restartLoader(WALLET_LOADER_ID, null, this);
     }
 
     private void setLoadingScreen(boolean loading) {
@@ -227,6 +211,7 @@ public class WalletItemFragment extends SecondaryPanelFragment implements Loader
             mNameTextView.setText(null);
             mCurrencyTextView.setText(null);
             mStartMoneyTextView.setText(null);
+            mGroupTextView.setText(null);
             mNoteTextView.setText(null);
             mProgressLayout.setVisibility(View.VISIBLE);
             mMainLayout.setVisibility(View.GONE);
@@ -248,6 +233,7 @@ public class WalletItemFragment extends SecondaryPanelFragment implements Loader
                     Contract.Wallet.ICON,
                     Contract.Wallet.CURRENCY,
                     Contract.Wallet.START_MONEY,
+                    Contract.Wallet.GROUP,
                     Contract.Wallet.NOTE,
                     Contract.Wallet.COUNT_IN_TOTAL,
                     Contract.Wallet.ARCHIVED
@@ -263,10 +249,21 @@ public class WalletItemFragment extends SecondaryPanelFragment implements Loader
             Icon icon = IconLoader.parse(cursor.getString(cursor.getColumnIndex(Contract.Wallet.ICON)));
             IconLoader.loadInto(icon, mAvatarImageView);
             mNameTextView.setText(cursor.getString(cursor.getColumnIndex(Contract.Wallet.NAME)));
-            CurrencyUnit currency = CurrencyManager.getCurrency(cursor.getString(cursor.getColumnIndex(Contract.Wallet.CURRENCY)));
-            mCurrencyTextView.setText(currency.getName());
+            String currencyIso = cursor.getString(cursor.getColumnIndex(Contract.Wallet.CURRENCY));
+            CurrencyUnit currency = CurrencyManager.getCurrency(currencyIso);
+            // the wallet can name a currency this installation does not have, which a restore from
+            // another one leaves behind, and then the iso is the only name there is. The money
+            // below already reads a null currency, this line did not
+            mCurrencyTextView.setText(currency != null ? currency.getName() : currencyIso);
             long startMoney = cursor.getLong(cursor.getColumnIndex(Contract.Wallet.START_MONEY));
             mMoneyFormatter.applyNotTinted(mStartMoneyTextView, currency, startMoney);
+            String group = cursor.getString(cursor.getColumnIndexOrThrow(Contract.Wallet.GROUP));
+            if (!TextUtils.isEmpty(group)) {
+                mGroupTextView.setText(group);
+                mGroupTextView.setVisibility(View.VISIBLE);
+            } else {
+                mGroupTextView.setVisibility(View.GONE);
+            }
             String note = cursor.getString(cursor.getColumnIndex(Contract.Wallet.NOTE));
             if (!TextUtils.isEmpty(note)) {
                 mNoteTextView.setText(note);

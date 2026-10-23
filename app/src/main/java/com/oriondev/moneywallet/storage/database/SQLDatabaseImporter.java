@@ -25,6 +25,7 @@ import android.content.ContentValues;
 import android.net.Uri;
 
 import com.oriondev.moneywallet.storage.database.model.*;
+import java.util.UUID;
 
 /**
  * Created by andrea on 27/10/18.
@@ -32,6 +33,12 @@ import com.oriondev.moneywallet.storage.database.model.*;
 public class SQLDatabaseImporter {
 
     public static final String DATABASE_NAME = SQLDatabase.DATABASE_NAME;
+
+    /**
+     * The file a restore builds its import in, beside the live database so that putting it in
+     * place is a rename within one folder and not a copy across volumes.
+     */
+    public static final String STAGING_DATABASE_NAME = "database.staging";
 
     public static long insert(ContentResolver contentResolver, Currency currency) {
         ContentValues contentValues = new ContentValues();
@@ -59,6 +66,7 @@ public class SQLDatabaseImporter {
         contentValues.put(Schema.Wallet.NOTE, wallet.mNote);
         contentValues.put(Schema.Wallet.INDEX, wallet.mIndex);
         contentValues.put(Schema.Wallet.TAG, wallet.mTag);
+        contentValues.put(Schema.Wallet.GROUP, wallet.mGroup);
         contentValues.put(Schema.Wallet.UUID, wallet.mUUID);
         contentValues.put(Schema.Wallet.LAST_EDIT, wallet.mLastEdit);
         contentValues.put(Schema.Wallet.DELETED, wallet.mDeleted);
@@ -96,6 +104,19 @@ public class SQLDatabaseImporter {
         contentValues.put(Schema.Event.LAST_EDIT, event.mLastEdit);
         contentValues.put(Schema.Event.DELETED, event.mDeleted);
         Uri uri = SyncContentProvider.CONTENT_EVENTS;
+        uri = contentResolver.insert(uri, contentValues);
+        return ContentUris.parseId(uri);
+    }
+
+    public static long insert(ContentResolver contentResolver, CategoryRule categoryRule) {
+        ContentValues contentValues = new ContentValues();
+        contentValues.put(Schema.CategoryRule.PATTERN, categoryRule.mPattern);
+        contentValues.put(Schema.CategoryRule.CATEGORY, categoryRule.mCategory);
+        contentValues.put(Schema.CategoryRule.INDEX, categoryRule.mIndex);
+        contentValues.put(Schema.CategoryRule.UUID, categoryRule.mUUID);
+        contentValues.put(Schema.CategoryRule.LAST_EDIT, categoryRule.mLastEdit);
+        contentValues.put(Schema.CategoryRule.DELETED, categoryRule.mDeleted);
+        Uri uri = SyncContentProvider.CONTENT_CATEGORY_RULES;
         uri = contentResolver.insert(uri, contentValues);
         return ContentUris.parseId(uri);
     }
@@ -183,11 +204,48 @@ public class SQLDatabaseImporter {
         contentValues.put(Schema.Budget.END_DATE, budget.mEndDate);
         contentValues.put(Schema.Budget.MONEY, budget.mMoney);
         contentValues.put(Schema.Budget.CURRENCY, budget.mCurrency);
+        contentValues.put(Schema.Budget.RULE, budget.mRule);
+        contentValues.put(Schema.Budget.RULE_START, budget.mRuleStart);
         contentValues.put(Schema.Budget.TAG, budget.mTag);
         contentValues.put(Schema.Budget.UUID, budget.mUUID);
         contentValues.put(Schema.Budget.LAST_EDIT, budget.mLastEdit);
         contentValues.put(Schema.Budget.DELETED, budget.mDeleted);
         Uri uri = SyncContentProvider.CONTENT_BUDGET;
+        uri = contentResolver.insert(uri, contentValues);
+        return ContentUris.parseId(uri);
+    }
+
+    /**
+     * Puts the single category a budget carries into the join table. A backup written before the
+     * budget_categories array existed, and the legacy database, both name one category on the
+     * budget row itself, and the queries match on the join table alone, so a restore that skipped
+     * this would leave every category budget matching nothing at all.
+     *
+     * @param contentResolver resolver the restore is writing through.
+     * @param budgetId id the budget was given by this restore.
+     * @param categoryId category it names, ignored when null.
+     */
+    public static void insertBudgetCategory(ContentResolver contentResolver, long budgetId, Long categoryId) {
+        if (categoryId == null) {
+            return;
+        }
+        BudgetCategory budgetCategory = new BudgetCategory();
+        budgetCategory.mBudget = budgetId;
+        budgetCategory.mCategory = categoryId;
+        budgetCategory.mUUID = UUID.randomUUID().toString();
+        budgetCategory.mLastEdit = System.currentTimeMillis();
+        budgetCategory.mDeleted = false;
+        insert(contentResolver, budgetCategory);
+    }
+
+    public static long insert(ContentResolver contentResolver, BudgetCategory budgetCategory) {
+        ContentValues contentValues = new ContentValues();
+        contentValues.put(Schema.BudgetCategory.BUDGET, budgetCategory.mBudget);
+        contentValues.put(Schema.BudgetCategory.CATEGORY, budgetCategory.mCategory);
+        contentValues.put(Schema.BudgetCategory.UUID, budgetCategory.mUUID);
+        contentValues.put(Schema.BudgetCategory.LAST_EDIT, budgetCategory.mLastEdit);
+        contentValues.put(Schema.BudgetCategory.DELETED, budgetCategory.mDeleted);
+        Uri uri = SyncContentProvider.CONTENT_BUDGET_CATEGORY;
         uri = contentResolver.insert(uri, contentValues);
         return ContentUris.parseId(uri);
     }
@@ -281,7 +339,8 @@ public class SQLDatabaseImporter {
         contentValues.put(Schema.Transaction.DESCRIPTION, transaction.mDescription);
         contentValues.put(Schema.Transaction.CATEGORY, transaction.mCategory);
         contentValues.put(Schema.Transaction.DIRECTION, transaction.mDirection);
-        contentValues.put(Schema.Transaction.TYPE, transaction.mType);
+        contentValues.put(Schema.Transaction.TYPE, transaction.mType == Contract.TransactionType.MODEL
+                ? Contract.TransactionType.STANDARD : transaction.mType);
         contentValues.put(Schema.Transaction.WALLET, transaction.mWallet);
         contentValues.put(Schema.Transaction.PLACE, transaction.mPlace);
         contentValues.put(Schema.Transaction.NOTE, transaction.mNote);
@@ -296,6 +355,20 @@ public class SQLDatabaseImporter {
         contentValues.put(Schema.Transaction.LAST_EDIT, transaction.mLastEdit);
         contentValues.put(Schema.Transaction.DELETED, transaction.mDeleted);
         Uri uri = SyncContentProvider.CONTENT_TRANSACTION;
+        uri = contentResolver.insert(uri, contentValues);
+        return ContentUris.parseId(uri);
+    }
+
+    public static long insert(ContentResolver contentResolver, TransactionSplit transactionSplit) {
+        ContentValues contentValues = new ContentValues();
+        contentValues.put(Schema.TransactionSplit.TRANSACTION, transactionSplit.mTransaction);
+        contentValues.put(Schema.TransactionSplit.CATEGORY, transactionSplit.mCategory);
+        contentValues.put(Schema.TransactionSplit.MONEY, transactionSplit.mMoney);
+        contentValues.put(Schema.TransactionSplit.NOTE, transactionSplit.mNote);
+        contentValues.put(Schema.TransactionSplit.UUID, transactionSplit.mUUID);
+        contentValues.put(Schema.TransactionSplit.LAST_EDIT, transactionSplit.mLastEdit);
+        contentValues.put(Schema.TransactionSplit.DELETED, transactionSplit.mDeleted);
+        Uri uri = SyncContentProvider.CONTENT_TRANSACTION_SPLIT;
         uri = contentResolver.insert(uri, contentValues);
         return ContentUris.parseId(uri);
     }

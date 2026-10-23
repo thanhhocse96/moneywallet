@@ -1,83 +1,78 @@
-# MoneyWallet - Expense Manager [BETA]
-[![License](https://img.shields.io/badge/license-GPL%20V3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0.html)
-[![Release](https://img.shields.io/github/release/AndreAle94/moneywallet.svg)](https://github.com/AndreAle94/moneywallet/releases/latest)
-[![Donate](https://img.shields.io/badge/Donate-PayPal-green.svg)](https://www.paypal.me/andreale94)
+<div align="center">
 
-[<img src="https://play.google.com/intl/en_us/badges/images/generic/en_badge_web_generic.png" 
-      alt="Download from Google Play" 
-      height="80">](https://play.google.com/store/apps/details?id=com.oriondev.moneywallet)
-[<img src="https://f-droid.org/badge/get-it-on.png"
-      alt="Get it on F-Droid"
-      height="80">](https://f-droid.org/en/packages/com.oriondev.moneywallet)
-      
-![Showcase](https://github.com/AndreAle94/moneywallet/raw/master/pictures/showcase.png)
+<img src="app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" width="120" alt="">
 
-MoneyWallet is an application designed to help you keep track of your expenses. This repository contains the source code of the latest version, completely rewritten from scratch.
+# Tallybook
 
-### Redistributing this app as your own is NOT permitted.
+An expense and budget tracker for Android that keeps your money on your own phone.
 
-# Table of Contents
+[![License: GPLv3](https://img.shields.io/badge/license-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0.html)
+[![F-Droid](https://img.shields.io/f-droid/v/io.github.herrerad85.tallybook.svg)](https://f-droid.org/packages/io.github.herrerad85.tallybook/)
+[![GitHub release](https://img.shields.io/github/v/release/herrerad85/tallybook)](https://github.com/herrerad85/tallybook/releases/latest)
 
-1. [History](#history)
-2. [Donations](#donations)
-3. [Build](#build)
-4. [FAQ](#faq)
-5. [Credits](#credits)
-6. [License](#license)
+[<img src="https://fdroid.gitlab.io/artwork/badge/get-it-on.png" alt="Get it on F-Droid" height="70">](https://f-droid.org/packages/io.github.herrerad85.tallybook/)
 
-## History
-I have been working behind this project for a long time, originally born as a tool to learn Android development, it has evolved over time and has recently been completely revised as a university project for the DIMA course at Politecnico di Milano.
-As you may have noticed, the previous version on the PlayStore required a small in-app purchase to handle more than just one wallet. The idea was to invest the money earned to pay for my studies, unfortunately among the interest rates of the PlayStore and the local taxes of the individual countries the profit was practically derisory. I did not had the opportunity to continue the development with continuity due to the university and the little free time available. Only recently I had the opportunity to get the project in hand and I decided to make it open source. In this way, anyone who wants can contribute.
+</div>
 
-## Donations
-This project is completely free, I decided to completely remove the in-app purchase in favor of a donation policy. It contains no advertising and never will contain it. If you find this application useful you may consider the option of offering me a beer, in real life or through a donation. It would be a very appreciated gesture to support my work.
+Tallybook tracks what you spend and what you have, across as many wallets as you keep. It runs with no network connection and asks for no account. [PRIVACY.md](PRIVACY.md) lists every way data leaves the app.
 
-- PayPal: https://www.paypal.me/andreale94
-- BTC: 1J3APoaFT2jcqRzpb8bEt2rwUn3mDpWE5U
-- BCH: qzaw9naw5c367r4du2eg6fvmkr7smwagru53lt67zl
-- ETH: 0x4ee996Bf75a89c75B18b4f0509c8c77B87D81392
-- LTC: LZW1AUMWN4BdUvSu8fujEYVLgqWH2HsLZs
+The F-Droid build is reproducible and carries the developer signature, so the app from F-Droid and the APK attached to each [release](https://github.com/herrerad85/tallybook/releases) are interchangeable.
 
-## Build
-You can compile the application very simply: just clone this repository locally to your computer and Android Studio will take care of the rest.
-You have four different options to build it with two choices.
-The first choice is which version you want to build:
+<div align="center">
+<img src="fastlane/metadata/android/en-US/images/phoneScreenshots/02_transactions.png" width="24%">
+<img src="fastlane/metadata/android/en-US/images/phoneScreenshots/03_overview.png" width="24%">
+<img src="fastlane/metadata/android/en-US/images/phoneScreenshots/04_budgets.png" width="24%">
+<img src="fastlane/metadata/android/en-US/images/phoneScreenshots/05_add_transaction.png" width="24%">
+</div>
 
-- proprietary: this build flavor is designed to integrate Google Drive and Dropbox for a better user experience. It contains proprietary libraries (not open source) and requires the inclusion of valid api-keys to use these services. These keys must be registered in the file called gradle.properties in the root folder of the project before compiling.
-- floss: this build flavor is designed to contain only open source code and for this reason the integration with Google Drive and Dropbox has been removed.
+## What it does
 
-The second choice is which map provider you want to use and you can choose between:
+- **Wallets.** Keep as many as you need, each in its own currency.
+- **Categories.** Group spending into categories and subcategories, and open a category total into the ones underneath it.
+- **Budgets.** Set a limit for a period, cover more than one category with it, and let it repeat into the next period on its own.
+- **Recurring transactions.** Post on a schedule you set, including transfers between wallets.
+- **Debts and savings goals.** Track what you owe, what you are owed, and what you are putting aside.
+- **Reports.** See a period's income and spending, with charts by category.
+- **Calendar.** A day strip marks the days that have transactions.
+- **Widget.** A home screen widget shows one wallet's balance.
+- **Backup.** Write to a local folder, to your own WebDAV server such as Nextcloud or a NAS, or through Android's own backup.
+- **Import and export.** CSV in, and CSV, XLS or PDF out, plus the older MoneyWallet backup file.
+- **Lock.** An optional PIN, pattern or fingerprint when the app opens.
 
-- gmap: this build flavor uses Google Map as map provider and requires you to provide a valid API-key. This key must be registered in the file called gradle.properties in the root folder of the project before compiling.
-- osm: this build flavor uses OpenStreetMap as map provider.
+## Coming from MoneyWallet
 
-To decide what kind of build to compile, use the appropriate menu of gradle to choose the desired combination of build flavors.
-If you want to build only open source code (e.g. for the F-Droid market) you should use 'floss' and 'osm'.
+Tallybook is a maintained fork of [MoneyWallet](https://github.com/AndreAle94/moneywallet), which last had a release in 2021. It is a separate app with its own application id, so it installs beside the original and does not replace it or carry its data across on its own. [MIGRATION.md](MIGRATION.md) has the path that was tested.
 
-The current release in Google Play Store uses 'proprietary' and 'osm' with some changes to integrate also the Crashlytics framework and the In-App billing library.
+## Docs
 
-## FAQ
-1. why does the precompiled binary contain a huge icon pack while there are only a few icons in the source code?
-  The icon pack license clearly states that the icons can not be distributed publicly. If you want to have the same package of icons you will have to buy them on their website. The few icons in the repository come from their small free icon pack with a license that allows their free use.
-2. Is this project still in development? Currently I do not have much time to devote to the project, as already explained I am a university student close to graduation and very busy. I can work on it from time to time but I can't promise continued and lasting support.
-3. Can i contribute to this project? Oh yes! You can freely fork this project and open new pull requests. Translations in other languages are also welcome (you will be credited within the application).
+- [FAQ](docs/FAQ.md)
+- [Moving from MoneyWallet](MIGRATION.md)
+- [CSV import format](docs/CSV.md)
+- [Privacy](PRIVACY.md)
+- [Third party notices](THIRD_PARTY_NOTICES.md)
 
-## Credits
-- [Adam Lapinski](http://www.yeti-designs.com): author of the awesome logo.
-- [Freepik](https://www.freepik.com): source of first-start images.
-- [RoundIcons](https://roundicons.com): source of the internal icon-pack.
+Every release note is on the [releases page](https://github.com/herrerad85/tallybook/releases).
 
-## License
-    Copyright (c) 2018.
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
+## Build from source
 
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
+Build the `floss` + `osm` flavors, which use OpenStreetMap and no proprietary services:
 
-    You should have received a copy of the GNU General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+```
+./gradlew assembleFlossOsmDebug
+```
+
+Requirements: a recent Android SDK and JDK 17 or newer. Release builds use JDK 21, which is what the F-Droid build server uses, so a release built on an older JDK will not reproduce.
+
+## Contributing
+
+Bug reports and pull requests are welcome in the [issue tracker](https://github.com/herrerad85/tallybook/issues). Current direction and open work live in the pinned [roadmap issue](https://github.com/herrerad85/tallybook/issues/15).
+
+[CONTRIBUTING.md](CONTRIBUTING.md) has the bar a pull request is held to, including an AI written one, and the steps for translating.
+
+## Credits and license
+
+Tallybook is free software under the GNU General Public License v3.0 or later, the same license as the project it came from. See [LICENSE.md](LICENSE.md).
+
+MoneyWallet was written by AndreAle94 and its contributors, and this fork exists to keep that work usable. Tallybook is independent and is not endorsed by or affiliated with the original author.
+
+The app icon and the intro illustrations are original artwork for this fork, released under the GPLv3. The category picker icons place glyphs from Phosphor Icons (MIT), Tabler Icons (MIT), Lucide (ISC) and Bootstrap Icons (MIT) on original GPLv3 disc backgrounds, and a few are original artwork. The interface also uses Material Design Icons, licensed under Apache-2.0. Full license texts are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

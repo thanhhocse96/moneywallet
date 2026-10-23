@@ -1,22 +1,34 @@
 package com.oriondev.moneywallet.api.saf;
 
+import android.app.Activity;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
+import android.content.pm.ProviderInfo;
 import android.net.Uri;
+import android.provider.DocumentsContract;
+import android.util.Log;
 
-import com.afollestad.materialdialogs.DialogAction;
-import com.afollestad.materialdialogs.MaterialDialog;
 import com.oriondev.moneywallet.R;
 import com.oriondev.moneywallet.api.AbstractBackendServiceDelegate;
 import com.oriondev.moneywallet.api.BackendServiceFactory;
+import com.oriondev.moneywallet.model.IFile;
+import com.oriondev.moneywallet.model.SAFFile;
+import com.oriondev.moneywallet.storage.preference.BackendManager;
 import com.oriondev.moneywallet.ui.view.theme.ThemedDialog;
 
 import androidx.activity.ComponentActivity;
 import androidx.activity.result.ActivityResultCallback;
+import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.documentfile.provider.DocumentFile;
+import androidx.fragment.app.Fragment;
+
+import java.util.Objects;
 
 /**
  * Backend service used to access files over the android storage access framework.
@@ -34,6 +46,8 @@ public class SAFBackendService extends AbstractBackendServiceDelegate {
      * Preference key were the root uri is stored.
      */
     private static final String URI = "uri";
+
+    private ActivityResultLauncher<Uri> mFolderLauncher;
 
     public SAFBackendService(BackendServiceStatusListener listener) {
         super(listener);
@@ -81,48 +95,173 @@ public class SAFBackendService extends AbstractBackendServiceDelegate {
     }
 
     @Override
-    public void setup(final ComponentActivity activity) {
-        activity.registerForActivityResult(
+    public void registerLaunchers(@NonNull final Fragment fragment) {
+        mFolderLauncher = fragment.registerForActivityResult(
             new DocumentTreeContract(),
             new ActivityResultCallback<Uri>() {
                 @Override
                 public void onActivityResult(Uri uri) {
-                    boolean enabled = false;
+                    Activity activity = fragment.requireActivity();
                     if (uri != null) {
+                        Uri previous = getUri(activity);
                         activity.getContentResolver().takePersistableUriPermission(
                                 uri,
                                 FLAG_URI_READ_WRITE
                         );
                         storeUri(activity, uri);
-                        enabled = true;
+                        if (previous != null && !previous.equals(uri)) {
+                            onFolderChanged(activity.getApplicationContext(), previous, uri);
+                        }
                     }
-                    setBackendServiceEnabled(enabled);
+                    // a Change folder that was cancelled keeps the folder already in use
+                    setBackendServiceEnabled(getUri(activity) != null);
                 }
-            }).launch(null);
+            });
+    }
+
+    /**
+     * Moves auto backup to the new folder, then drops the permission on the folder being
+     * replaced. The auto backup folder is a document inside the old folder, and once that
+     * permission is gone every scheduled backup to it would fail, so the permission goes last:
+     * if the process dies first, auto backup still points at a folder the app can reach.
+     */
+    private static void onFolderChanged(final Context context, final Uri previous, final Uri current) {
+        new Thread(() -> {
+            // a second change can start before this one finishes, and the checks against the
+            // stored folder below only hold if the two do not interleave
+            synchronized (FOLDER_CHANGE_LOCK) {
+                String backendId = BackendServiceFactory.SERVICE_ID_SAF;
+                String encoded = BackendManager.getAutoBackupFolder(backendId);
+                Uri replaced = null;
+                // a quick change back finds auto backup still inside the folder it returns to
+                if (encoded != null && !current.equals(treeOf(encoded))) {
+                    DocumentFile root = DocumentFile.fromTreeUri(context, current);
+                    SAFFile folder = root != null ? new SAFFile(root) : null;
+                    if (!current.equals(getUri(context))) {
+                        // a later change replaced this folder and moves auto backup itself
+                    } else if (folder != null && folder.getName() != null) {
+                        BackendManager.setAutoBackupFolder(backendId, folder.encodeToString());
+                        replaced = treeOf(encoded);
+                    } else {
+                        // a descriptor with no name cannot be decoded again
+                        BackendManager.disableAutoBackupAfterFailure(backendId);
+                        BackendManager.setAutoBackupFolder(backendId, null);
+                        replaced = treeOf(encoded);
+                    }
+                }
+                releaseUnlessInUse(context, previous);
+                if (replaced != null && !replaced.equals(previous)) {
+                    releaseUnlessInUse(context, replaced);
+                }
+            }
+        }, "saf-auto-backup-folder").start();
+    }
+
+    private static final Object FOLDER_CHANGE_LOCK = new Object();
+
+    private static void releaseUnlessInUse(Context context, Uri tree) {
+        if (tree.equals(getUri(context))) {
+            return;
+        }
+        try {
+            context.getContentResolver().releasePersistableUriPermission(tree, FLAG_URI_READ_WRITE);
+        } catch (SecurityException e) {
+            Log.w("SAFBackendService", "No permission held on the replaced folder", e);
+        }
+    }
+
+    /**
+     * True for a Local folder file that does not lie in the folder connected now, which is what
+     * a disconnect or a replaced folder leaves behind in the auto backup settings. Its permission
+     * is gone, so a backup there can only fail. Every other file is false. Compares the decoded
+     * tree ids, since a provider may encode one differently from how the platform rebuilds it.
+     */
+    public static boolean isOutsideCurrentFolder(Context context, IFile file) {
+        if (!(file instanceof SAFFile)) {
+            return false;
+        }
+        Uri uri = ((SAFFile) file).getUri();
+        Uri root = getUri(context);
+        return root == null || !DocumentsContract.isTreeUri(uri)
+                || !Objects.equals(root.getAuthority(), uri.getAuthority())
+                || !DocumentsContract.getTreeDocumentId(root).equals(DocumentsContract.getTreeDocumentId(uri));
+    }
+
+    /**
+     * The picked folder an encoded auto backup folder lies in, or null when it names none.
+     */
+    private static Uri treeOf(String encoded) {
+        SAFFile folder = SAFFile.decode(encoded);
+        if (folder == null || !DocumentsContract.isTreeUri(folder.getUri())) {
+            return null;
+        }
+        Uri uri = folder.getUri();
+        return DocumentsContract.buildTreeDocumentUri(uri.getAuthority(), DocumentsContract.getTreeDocumentId(uri));
+    }
+
+    @Override
+    public boolean isDisconnectable() {
+        return false;
+    }
+
+    @Override
+    public boolean isFolderChangeable() {
+        return true;
+    }
+
+    @Override
+    public String describeLocation(Context context) {
+        Uri uri = getUri(context);
+        if (uri == null) {
+            return null;
+        }
+        DocumentFile root = DocumentFile.fromTreeUri(context, uri);
+        String folder = root != null ? root.getName() : null;
+        if (folder == null) {
+            return null;
+        }
+        PackageManager packageManager = context.getPackageManager();
+        ProviderInfo provider = packageManager.resolveContentProvider(uri.getAuthority(), 0);
+        if (provider == null) {
+            return folder;
+        }
+        return context.getString(R.string.backup_location_in_app, provider.loadLabel(packageManager), folder);
+    }
+
+    @Override
+    public void setup(final ComponentActivity activity) {
+        mFolderLauncher.launch(null);
     }
 
     @Override
     public void teardown(final ComponentActivity activity) {
-        final Uri uri = getUri(activity);
-        if (uri == null) {
+        if (getUri(activity) == null) {
             return;
         }
         ThemedDialog.buildMaterialDialog(activity)
-                .title(R.string.title_warning)
-                .content(R.string.message_backup_service_storage_access_framework_disconnect)
-                .positiveText(android.R.string.yes)
-                .negativeText(android.R.string.no)
-                .onPositive(new MaterialDialog.SingleButtonCallback() {
+                .setTitle(R.string.title_warning)
+                .setMessage(R.string.message_backup_service_storage_access_framework_disconnect)
+                .setPositiveButton(android.R.string.yes, new DialogInterface.OnClickListener() {
 
                     @Override
-                    public void onClick(@NonNull MaterialDialog dialog, @NonNull DialogAction which) {
-                        activity.getContentResolver()
-                                .releasePersistableUriPermission(uri, FLAG_URI_READ_WRITE);
+                    public void onClick(DialogInterface dialog, int which) {
+                        // read at the tap: Change folder can store a new folder while this
+                        // dialog is up, and the pending change releases the one it replaced
+                        Uri uri = getUri(activity);
+                        if (uri != null) {
+                            try {
+                                activity.getContentResolver()
+                                        .releasePersistableUriPermission(uri, FLAG_URI_READ_WRITE);
+                            } catch (SecurityException e) {
+                                Log.w("SAFBackendService", "No permission held on the folder", e);
+                            }
+                        }
                         clearUri(activity);
                         setBackendServiceEnabled(false);
                     }
 
                 })
+                .setNegativeButton(android.R.string.no, null)
                 .show();
     }
 

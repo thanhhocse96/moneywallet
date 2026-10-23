@@ -18,7 +18,7 @@
   -->
 
 <resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
-    <string name="app_name">MoneyWallet</string>
+    <string name="app_name">Tallybook</string>
 
     <string name="menu_transaction">"Transactions"</string>
     <string name="menu_category">"Catégories"</string>
@@ -33,10 +33,7 @@
     <string name="menu_people">"Personnes"</string>
     <string name="menu_converter">"Convertisseur"</string>
     <string name="menu_calculator">"Calculatrice"</string>
-    <string name="menu_search_atm">"Rechercher DAB"</string>
-    <string name="menu_search_bank">"Rechercher banque"</string>
     <string name="menu_setting">"Paramètres"</string>
-    <string name="menu_support_developer">"Soutenir le développeur"</string>
     <string name="menu_about">"À propos"</string>
 
     <!-- Transactions -->
@@ -79,7 +76,6 @@
     <string name="action_new">"Nouveau"</string>
     <string name="action_edit">"Éditer"</string>
     <string name="action_search">"Rechercher"</string>
-    <string name="action_filter">"Filtrer"</string>
     <string name="action_remove">"Supprimer"</string>
     <string name="action_open">"Ouvrir"</string>
     <string name="action_undo">"Annuler"</string>
@@ -124,6 +120,7 @@
     <string name="hint_type">"Type"</string>
     <string name="hint_incomes">"Bénéfices"</string>
     <string name="hint_expenses">"Dépenses"</string>
+    <string name="hint_transfers">"Transfert"</string>
     <string name="hint_net_incomes">"Bénéfices net"</string>
     <string name="hint_summary">"Résumé"</string>
     <string name="hint_address">"Adresse"</string>
@@ -133,8 +130,6 @@
     <string name="hint_directory">"Dossier"</string>
     <string name="hint_navigate_up">"Remonter"</string>
     <string name="hint_password">"Mot de passe"</string>
-    <string name="hint_atm_name">"Nom du Distributeur automatique de billets"</string>
-    <string name="hint_bank_name">"Nom de la banque"</string>
     <string name="hint_attachments">"Pièces jointes"</string>
     <string name="hint_operation_in_progress">"En cours…"</string>
     <string name="hint_search_something">"Rechercher quelque chose"</string>
@@ -160,7 +155,6 @@
     <string name="hint_auto_backup_only_if_data_changed">"Seulement si les données ont changé"</string>
     <string name="hint_auto_backup_every_n_hours">"Toutes les %d heures"</string>
     <string name="hint_auto_backup_folder">"Dossier"</string>
-    <string name="hint_auto_backup_root_folder">"Racine"</string>
 
     <string name="total_wallet_name">Total</string>
 
@@ -202,10 +196,7 @@
     <string name="title_activity_search_transaction">Rechercher</string>
     <string name="title_activity_calendar">Calendrier</string>
     <string name="title_activity_map">Carte</string>
-    <string name="title_activity_backend_explorer">"Explorer les services"</string>
-    <string name="title_activity_backend_file_picker">"Choisissez un fichier"</string>
     <string name="title_activity_backend_folder_picker">"Choisissez un dossier"</string>
-    <string name="title_activity_support_developer">Aider le développeur</string>
     <string name="title_activity_import_data">"Importer des données"</string>
     <string name="title_activity_export_data">"Exporter des données"</string>
 
@@ -241,9 +232,6 @@
     <string name="menu_action_import_data">"Importer des données"</string>
     <string name="menu_action_export_data">"Exporter des données"</string>
 
-    <string name="bottom_sheet_icon_picker_title">Personnaliser l\'îcone</string>
-    <string name="bottom_sheet_icon_picker_action_select_icon">Sélectionner une icône</string>
-    <string name="bottom_sheet_icon_picker_action_change_icon">Changer l\'îcone</string>
     <string name="bottom_sheet_icon_picker_action_remove_icon">Supprimer l\'îcone</string>
     <string name="bottom_sheet_icon_picker_action_change_bg_color">Changer la couleur de l\'arrière plan</string>
 
@@ -255,7 +243,6 @@
     <string name="dialog_budget_type_picker_title">"Types de budget"</string>
     <string name="dialog_place_picker_title">"Lieu"</string>
     <string name="dialog_people_picker_title">"Personne"</string>
-    <string name="dialog_filter_search_title">"Filtre"</string>
     <string name="dialog_change_log_title">"Change Log"</string>
     <string name="dialog_overview_setting_title">"Paramètres avancés"</string>
     <string name="dialog_recurrence_title">"Répéter"</string>
@@ -340,11 +327,7 @@
     <string name="message_error_backend_recoverable">"Problème de connection. Veuillez réessayer."</string>
 
     <string name="cover_message_backup_external_memory_title">L\'application peut créer et restaurer les sauvegardes directement depuis le stockage de votre appareil</string>
-    <string name="cover_message_backup_dropbox_title">L\'application peut créer et restaurer les sauvegardes depuis votre compte Dropbox</string>
-    <string name="cover_message_backup_google_drive_title">L\'application peut créer et restaurer les sauvegardes depuis votre compte Google Drive</string>
     <string name="cover_message_backup_external_memory_button">Continuer</string>
-    <string name="cover_message_backup_dropbox_button">Se connecter</string>
-    <string name="cover_message_backup_google_drive_button">Se connecter</string>
 
     <string name="empty_message_secondary_panel">Sélectionnez un élément sur le panneau de gauche pour voir les détails</string>
     <string name="empty_message_backup_cover">Sélectionnez le service que vous souhaitez utiliser pour stocker et retrouver vos sauvegardes</string>
@@ -359,8 +342,6 @@
     <string name="title_success">Succès</string>
     <string name="title_failed">Échec</string>
     <string name="title_error">Erreur</string>
-    <string name="title_atm_search">"Recherche DAB"</string>
-    <string name="title_bank_search">"Recherche banque"</string>
     <string name="title_changelog">"Changelog"</string>
     <string name="title_licenses">"Licenses"</string>
     <string name="title_debt_insert_master_transaction">"Bien joué"</string>
@@ -380,12 +361,10 @@
     <string name="message_backup_status_uploading">"Envoi du fichier de sauvegarde en cours…"</string>
     <string name="message_backup_status_downloading">"Téléchargement du fichier de sauvegarde en cours…"</string>
     <string name="message_backup_status_restoring">"Restauration du fichier de sauvegarde en cours…"</string>
-    <string name="message_backup_creation_success">"La sauvegarde c\'est terminé avec succès."</string>
-    <string name="message_backup_restoring_success">"La restauration c\'est terminé avec succès."</string>
+    <string name="message_backup_creation_success">"La sauvegarde s\'est terminée avec succès."</string>
+    <string name="message_backup_restoring_success">"La restauration s\'est terminée avec succès."</string>
     <string name="message_backup_creation_failed">"Échec lors de la création de la sauvegarde. Erreur : %s"</string>
     <string name="message_backup_restoring_failed">"Échec lors de la restauration de la sauvegarde. Erreur : %s"</string>
-    <string name="message_backup_service_dropbox_disconnect">"Êtes-vous sûr de vouloir vous déconnecter votre compte Dropbox?"</string>
-    <string name="message_backup_service_google_drive_disconnect">"Êtes-vous sûr de vouloir vous déconnecter votre compte Google drive?"</string>
     <string name="message_action_archive_wallet">"Êtes-vous sûr de vouloir archiver ce portefeuille? Il ne sera plus visible dans le menu."</string>
     <string name="message_action_unarchive_wallet">"Êtes-vous sûr de vouloir désarchiver ce portefeuille? Il sera à nouveau visible dans le menu."</string>
     <string name="message_action_archive_debt">"Êtes-vous sûr de vouloir archiver cette dette?"</string>
@@ -425,7 +404,7 @@
     <string name="message_data_export_running">"Exportation…"</string>
     <string name="message_data_import_failed">"Echec lors de la procédure d'importation. Message: %s"</string>
     <string name="message_data_export_failed">"Échec lors de la procédure d'exportation. Message: %s"</string>
-    <string name="message_data_import_success">"Données exportées correctement."</string>
+    <string name="message_data_import_success">"Données importées correctement."</string>
     <string name="message_data_export_success">"Données exportées correctement. Voulez-vous ouvrir le fichier créé?"</string>
 
     <string name="message_async_init">"Initialisation …"</string>
@@ -448,8 +427,6 @@
     <string name="spinner_item_start_date">"Du :   %s"</string>
     <string name="spinner_item_end_date">"Au :   %s"</string>
 
-    <string name="service_backup_drop_box">"DropBox"</string>
-    <string name="service_backup_google_drive">"Google Drive"</string>
     <string name="service_backup_external_memory">"Mémoire externe"</string>
 
     <string name="setting_title_user_interface">"Interface"</string>
@@ -469,13 +446,12 @@
     <string name="setting_title_ui_group_type">"Regroupement"</string>
     <string name="setting_title_ui_theme_color_primary">"Couleur primaire"</string>
     <string name="setting_title_ui_theme_color_accent">"Couleur secondaire"</string>
-    <string name="setting_title_ui_theme_type">"Affichage"</string>
 
     <string name="setting_category_utility_notification">"Notification"</string>
     <string name="setting_category_utility_security">"Sécurité"</string>
     <string name="setting_category_utility_exchange_rates">"Taux de change"</string>
     <string name="setting_title_daily_reminder">"Rappel quotidien"</string>
-    <string name="setting_summary_daily_reminder">"Chaque jour à : %02d:00"</string>
+    <string name="setting_summary_daily_reminder">"Chaque jour à : %1$s"</string>
     <string name="setting_title_security">"Protection"</string>
     <string name="setting_title_security_change_pin">"Changer le code PIN"</string>
     <string name="setting_title_security_change_sequence">"Changer le schéma"</string>
@@ -540,7 +516,6 @@
 
     <string name="about_hint_version">"Version"</string>
     <string name="about_hint_changelog">"Changelog"</string>
-    <string name="about_hint_support">Supporter le développement</string>
     <string name="about_hint_rate_app">Noter cette appli</string>
     <string name="about_hint_open_source_libraries">Bibliothèques open source</string>
     <string name="about_hint_report_bug">Signaler un bug</string>
@@ -557,20 +532,15 @@
     <string name="about_hint_translators">Traducteurs</string>
 
     <string name="activity_launcher_legacy_edition_upgrade_title">"Mise à jour…"</string>
-    <string name="activity_launcher_first_start_title">Bienvenue sur MoneyWallet</string>
-    <string name="activity_launcher_first_start_content">C\'est la première fois que vous utilisez cette application ou voulez-vous restaurer une sauvegarde?</string>
+    <string name="activity_launcher_first_start_title">Bienvenue sur Tallybook</string>
     <string name="activity_launcher_first_start_button_first_time">Première fois</string>
     <string name="activity_launcher_first_start_button_restore_backup">Restaurer une sauvegarde</string>
 
     <string name="activity_intro_title_slide_1">Plus de mauvaise surprises</string>
     <string name="activity_intro_title_slide_2">"Analyse et Planifie"</string>
     <string name="activity_intro_title_slide_3">Open source</string>
-    <string name="activity_intro_title_slide_4">Sauvegarde dans le cloud</string>
     <string name="activity_intro_title_slide_5">"C\'est parti"</string>
-    <string name="activity_intro_description_slide_1">Cette appli va vous aider à suivre toutes vos dépenses</string>
     <string name="activity_intro_description_slide_2">Vous pouvez analyser où vous dépenser beaucoup et mettre en place un budget</string>
-    <string name="activity_intro_description_slide_3">Le projet est open source et tout le monde peut y contribuer</string>
-    <string name="activity_intro_description_slide_4">Il supporte la plupart des services cloud afin de vous aider à ne jamais perdre vos données</string>
     <string name="activity_intro_description_slide_5">Vous allez être amené à créer votre premier portefeuille</string>
 
     <string name="help_create_new_pin_code">"Créer un nouveau code PIN"</string>
@@ -678,22 +648,5 @@
     <string name="notification_channel_name_exchange_rate">"Taux de change"</string>
     <string name="notification_channel_name_error">"Erreur"</string>
 
-    <string name="activity_donation_first_title">Merci!</string>
-    <string name="activity_donation_first_content">"Si vous aimez cette application et que vous la trouvez utile, envisagez de m'acheter une bière. Cela soutiendra ce projet et m'encouragera à maintenir le développement."</string>
-    <string name="activity_donation_second_title">Pourquoi le devrais-je?</string>
-    <string name="activity_donation_second_content">"Quelqu'un pourrait dire: «Les meilleures choses dans la vie sont gratuites» et je suis d'accord avec cela. Vous ne pouvez pas acheter d'amitié, d'amour ou un souvenir d'un beau lever de soleil. C'est pourquoi j'ai décidé de partager gratuitement le code source de cette application. Mais malheureusement, la vie n'est pas gratuite. Vous ne disposez que de 24 heures par jour et vous devez décider comment les dépenser pour subvenir à vos besoins. Si vous aimez ce projet et que vous souhaitez le voir évoluer à l'avenir, pensez à soutenir mon travail pour me permettre de consacrer plus de temps à celui-ci. Toute contribution fait une immense différence."</string>
-    <string name="activity_donation_third_title">"Vous ne pouvez pas contribuer de façon monétaire? Pas de problème, vous pouvez nous aidez de beaucoup d'autre manière!"</string>
-    <string name="activity_donation_crypto_address_copied">Adresse copiée</string>
-    <string name="activity_donation_action_share_title">Partager</string>
-    <string name="activity_donation_action_share_content">Passez le mot à vos amis</string>
-    <string name="activity_donation_action_share_message">Salut, jette un oeil à %s</string>
-    <string name="activity_donation_action_share_using">"Partager en utilisant"</string>
-    <string name="activity_donation_action_rate_title">Noter</string>
-    <string name="activity_donation_action_rate_content">"Mettez 5 étoiles si vous appréciez l'application."</string>
-    <string name="activity_donation_action_translate_title">Traduire</string>
-    <string name="activity_donation_action_translate_content">"Traduisez les chaîne de caractères dans votre langue"</string>
-    <string name="activity_donation_action_contribute_title">Contribuer</string>
-    <string name="activity_donation_action_contribute_content">Le code source est public et tout le monde peut venir y contribuer</string>
-    <string name="activity_donation_final_content">"Chaque contribution, monétaire ou non monétaire est égale et fait une différence substantielle pour moi. J'espère que vous l'apprécierez et merci encore d'avoir choisi d'utiliser cette application."</string>
 
 </resources>

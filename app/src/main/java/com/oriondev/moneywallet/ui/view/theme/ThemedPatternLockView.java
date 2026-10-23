@@ -57,7 +57,7 @@ public class ThemedPatternLockView extends PatternLockView implements ThemeEngin
     @Override
     public void onApplyTheme(ITheme theme) {
         int backgroundColor = getBackgroundColor(theme);
-        setCorrectStateColor(theme.getColorAccent());
+        setCorrectStateColor(Util.visibleOr(theme.getColorAccent(), backgroundColor, theme.getBestColor(backgroundColor)));
         setNormalStateColor(theme.getBestColor(backgroundColor));
         /* TODO: ensure this is visible over background color */
         setWrongStateColor(theme.getErrorColor());
@@ -66,7 +66,7 @@ public class ThemedPatternLockView extends PatternLockView implements ThemeEngin
     private int getBackgroundColor(ITheme theme) {
         if (mBackgroundColor != null) {
             if (mBackgroundColor == BackgroundColor.COLOR_PRIMARY) {
-                return theme.getColorPrimary();
+                return theme.getColorPrimaryBackground();
             } else {
                 return theme.getColorPrimaryDark();
             }

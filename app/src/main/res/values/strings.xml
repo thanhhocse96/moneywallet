@@ -18,7 +18,7 @@
   -->
 
 <resources>
-    <string name="app_name">MoneyWallet</string>
+    <string name="app_name">Tallybook</string>
 
     <string name="menu_transaction">"Transactions"</string>
     <string name="menu_category">"Categories"</string>
@@ -33,10 +33,7 @@
     <string name="menu_people">"People"</string>
     <string name="menu_converter">"Converter"</string>
     <string name="menu_calculator">"Calculator"</string>
-    <string name="menu_search_atm">"Search atm"</string>
-    <string name="menu_search_bank">"Search bank"</string>
     <string name="menu_setting">"Settings"</string>
-    <string name="menu_support_developer">"Support developer"</string>
     <string name="menu_about">"About"</string>
 
     <!-- Transactions -->
@@ -70,7 +67,11 @@
 
     <string name="action_new_wallet">"New wallet"</string>
     <string name="action_manage_wallets">"Manage wallets"</string>
+    <string name="action_new_wallet_group">"New group"</string>
+    <string name="wallet_group_none">"No group"</string>
     <string name="action_pay_debt">"Pay"</string>
+    <string name="action_pay_debt_in_full">"Pay in full"</string>
+    <string name="action_receive_debt_in_full">"Receive in full"</string>
     <string name="action_receive_debt">"Receive"</string>
     <string name="action_withdraw">"Withdraw"</string>
     <string name="action_deposit">"Deposit"</string>
@@ -79,11 +80,11 @@
     <string name="action_new">"New"</string>
     <string name="action_edit">"Edit"</string>
     <string name="action_search">"Search"</string>
-    <string name="action_filter">"Filter"</string>
     <string name="action_remove">"Remove"</string>
     <string name="action_open">"Open"</string>
     <string name="action_undo">"Undo"</string>
     <string name="action_skip">"Skip"</string>
+    <string name="action_back">"Back"</string>
 
     <string name="msg_no_wallet_found">"No wallet found"</string>
     <string name="msg_add_one_wallet">"Please add one wallet"</string>
@@ -91,16 +92,23 @@
     <string name="hint_total_sum">"Total"</string>
 
     <string name="hint_name">"Name"</string>
+    <string name="hint_webdav_url">"Server address"</string>
+    <string name="hint_webdav_username">"User name"</string>
+    <string name="hint_webdav_password">"Password"</string>
+    <string name="action_connect">"Connect"</string>
     <string name="hint_description">"Description"</string>
     <string name="hint_currency">"Currency"</string>
     <string name="hint_money">"Money"</string>
     <string name="hint_start_money">"Initial amount"</string>
     <string name="hint_not_exclude_wallet">"Show this wallet in the total count"</string>
     <string name="hint_category">"Category"</string>
+    <string name="hint_category_rule_pattern">"Text to look for"</string>
+    <string name="hint_categories">"Categories"</string>
     <string name="hint_parent_category">"Parent category"</string>
     <string name="hint_show_category_report">"Show this category inside the reports"</string>
     <string name="hint_show_category_report_on">"This category is included inside the reports"</string>
     <string name="hint_show_category_report_off">"This category is not included inside the reports"</string>
+    <string name="hint_show_category_report_off_parent">"This category is not included inside the reports, because %1$s is not"</string>
     <string name="hint_confirmed">"Confirmed"</string>
     <string name="hint_show_in_total">"Show in total wallet"</string>
     <string name="hint_income">"Income"</string>
@@ -116,14 +124,27 @@
     <string name="hint_wallet_to">"To"</string>
     <string name="hint_recurrence">"Recurrence"</string>
     <string name="hint_recurrence_invalid">"Invalid recurrence"</string>
+    <string name="hint_budget_repeat">"Repeat this budget"</string>
+    <string name="message_budget_period_superseded">"This budget has moved on to a later period since you opened it, so this one is now part of its history and cannot be set to repeat. Open the latest period instead."</string>
+    <string name="error_input_invalid_budget_recurrence">"This recurrence never repeats, so it cannot set the length of a period"</string>
     <string name="hint_event">"Event"</string>
     <string name="hint_people">"People"</string>
     <string name="hint_place">"Place"</string>
     <string name="hint_note">"Note"</string>
+    <string name="hint_split">"Split"</string>
+    <string name="hint_split_into_categories">"Split into categories"</string>
+    <string name="hint_split_add_part">"Add a part"</string>
+    <string name="hint_split_remaining">"Remaining under %1$s"</string>
+    <string name="split_part">"%1$s, %2$s"</string>
+    <string name="split_part_with_note">"%1$s, %2$s, %3$s"</string>
+    <string name="split_remainder">"%1$s, %2$s, the rest of the total"</string>
+    <string name="split_not_counted">"These parts are not counted until they are fixed in the editor."</string>
+    <string name="hint_wallet_group">"Group"</string>
     <string name="hint_tax">"Tax"</string>
     <string name="hint_type">"Type"</string>
     <string name="hint_incomes">"Incomes"</string>
     <string name="hint_expenses">"Expenses"</string>
+    <string name="hint_transfers">"Transfers"</string>
     <string name="hint_net_incomes">"Net incomes"</string>
     <string name="hint_summary">"Summary"</string>
     <string name="hint_address">"Address"</string>
@@ -133,8 +154,6 @@
     <string name="hint_directory">"Directory"</string>
     <string name="hint_navigate_up">"Navigate up"</string>
     <string name="hint_password">"Password"</string>
-    <string name="hint_atm_name">"ATM name"</string>
-    <string name="hint_bank_name">"Bank name"</string>
     <string name="hint_attachments">"Attachments"</string>
     <string name="hint_operation_in_progress">"In progress…"</string>
     <string name="hint_search_something">"Search something"</string>
@@ -147,6 +166,24 @@
     <string name="hint_export_folder">"Export folder"</string>
     <string name="hint_export_optional_columns">"Optional columns"</string>
     <string name="hint_export_unique_wallet">"Join transactions from different wallets"</string>
+    <string name="hint_export_csv_no_transfers">"The two sides of a transfer are left out of a CSV file, because nothing in it marks which two rows were one transfer. A transfer fee is still written, and the other formats include transfers in full."</string>
+    <string name="csv_import_mapping_intro">"This file was not written by Tallybook. Pick the column that holds each field."</string>
+    <string name="csv_import_date_column">"Date column"</string>
+    <string name="csv_import_amount_column">"Amount column"</string>
+    <string name="csv_import_description_column">"Description column"</string>
+    <string name="csv_import_note_column">"Note column"</string>
+    <string name="csv_import_category_column">"Category column"</string>
+    <string name="csv_import_date_format">"Date format"</string>
+    <string name="csv_import_decimal_separator">"Decimal separator"</string>
+    <string name="csv_import_decimal_dot">"Dot, 1,234.56"</string>
+    <string name="csv_import_decimal_comma">"Comma, 1.234,56"</string>
+    <string name="csv_import_spending_positive">"Spending is written as a positive number"</string>
+    <string name="csv_import_column_none">"None"</string>
+    <string name="csv_import_column_unnamed">"Column %d"</string>
+    <string name="csv_import_default_category">"Imported"</string>
+    <string name="csv_import_error_missing_date_column">"Select the date column"</string>
+    <string name="csv_import_error_missing_amount_column">"Select the amount column"</string>
+    <string name="csv_import_error_missing_date_format">"Select a date format"</string>
     <string name="hint_data_format_csv" translatable="false">"CSV"</string>
     <string name="hint_data_format_xls" translatable="false">"XLS"</string>
     <string name="hint_data_format_pdf" translatable="false">"PDF"</string>
@@ -161,9 +198,16 @@
     <string name="hint_auto_backup_enabled">"Service enabled"</string>
     <string name="hint_auto_backup_wifi_only">"Only on WiFi network"</string>
     <string name="hint_auto_backup_only_if_data_changed">"Only if data is changed"</string>
+    <string name="hint_auto_backup_export_csv">"Also export transactions as CSV"</string>
     <string name="hint_auto_backup_every_n_hours">"Every %d hours"</string>
     <string name="hint_auto_backup_folder">"Folder"</string>
-    <string name="hint_auto_backup_root_folder">"Root"</string>
+    <string name="hint_auto_backup_folder_not_chosen">"Not chosen"</string>
+    <string name="hint_auto_backup_folder_unavailable">"Not available"</string>
+    <string name="message_auto_backup_folder_required">"Choose a folder before turning automatic backup on."</string>
+    <string name="message_auto_backup_csv_not_password_protected">"The CSV file is not password protected."</string>
+    <string name="message_auto_backup_disabled_at_launch">"Automatic backup was turned off because a backup service stopped working. Open backups to check it."</string>
+    <string name="message_auto_backup_disabled_after_failure">"Automatic backup was turned off after this backup service failed. Check it before turning automatic backup back on."</string>
+    <string name="message_backend_open_a_folder">"Open a folder to choose it."</string>
 
     <string name="total_wallet_name">"Total"</string>
 
@@ -195,8 +239,12 @@
     <string name="title_activity_edit_person">"Edit person"</string>
     <string name="title_activity_wallet_sort">"Sort wallets"</string>
     <string name="title_activity_currency_list">"Currencies"</string>
+    <string name="title_activity_category_rule_list">"Automatic categories"</string>
+    <string name="title_activity_new_category_rule">"New rule"</string>
+    <string name="title_activity_edit_category_rule">"Edit rule"</string>
     <string name="title_activity_category_picker">"Pick a category"</string>
     <string name="title_activity_category_sort">"Sort categories"</string>
+    <string name="title_activity_category_rule_sort">"Sort rules"</string>
     <string name="title_activity_icon_list">"Icons"</string>
     <string name="title_activity_backup_services">"Backup services"</string>
     <string name="title_activity_about">"About"</string>
@@ -205,10 +253,7 @@
     <string name="title_activity_search_transaction">"Search"</string>
     <string name="title_activity_calendar">"Calendar"</string>
     <string name="title_activity_map">"Map"</string>
-    <string name="title_activity_backend_explorer">"Explore backend"</string>
-    <string name="title_activity_backend_file_picker">"Pick a file"</string>
     <string name="title_activity_backend_folder_picker">"Pick a folder"</string>
-    <string name="title_activity_support_developer">"Support developer"</string>
     <string name="title_activity_import_data">"Import data"</string>
     <string name="title_activity_export_data">"Export data"</string>
 
@@ -225,11 +270,19 @@
     <string name="title_fragment_item_place">"Place"</string>
     <string name="title_fragment_item_person">"Person"</string>
 
+    <string name="action_open_person_details">"Open person details"</string>
+    <string name="action_move_up">"Move up"</string>
+    <string name="action_move_down">"Move down"</string>
+    <string name="action_move_to_top">"Move to top"</string>
+    <string name="action_move_to_bottom">"Move to bottom"</string>
+
     <string name="menu_action_attach_file">"Attach file"</string>
     <string name="menu_action_save_changes">"Save changes"</string>
     <string name="menu_refresh_currency_rate">"Refresh currency rate"</string>
     <string name="menu_advanced_settings">"Advanced settings"</string>
+    <string name="menu_action_new_transaction_for_person">"New transaction"</string>
     <string name="menu_action_edit_item">"Edit"</string>
+    <string name="menu_action_duplicate_item">"Duplicate"</string>
     <string name="menu_action_delete_item">"Delete"</string>
     <string name="menu_action_archive_item">"Archive"</string>
     <string name="menu_action_unarchive_item">"Unarchive"</string>
@@ -237,16 +290,16 @@
     <string name="menu_action_open_calendar">"Calendar"</string>
     <string name="menu_action_open_map">"Map"</string>
     <string name="menu_action_sort_items">"Sort"</string>
+    <string name="menu_action_show_finished_only">"Show finished only"</string>
     <string name="menu_action_show_transaction_list">"Show transactions"</string>
     <string name="menu_action_service_disconnect">"Disconnect"</string>
+    <string name="menu_action_service_change_folder">"Change folder"</string>
+    <string name="backup_location_in_app" translatable="false">"%1$s › %2$s"</string>
     <string name="menu_action_service_auto_backup">"Auto backup"</string>
     <string name="menu_action_select_folder">"Select folder"</string>
     <string name="menu_action_import_data">"Import data"</string>
     <string name="menu_action_export_data">"Export data"</string>
 
-    <string name="bottom_sheet_icon_picker_title">"Personalize the icon"</string>
-    <string name="bottom_sheet_icon_picker_action_select_icon">"Select an icon"</string>
-    <string name="bottom_sheet_icon_picker_action_change_icon">"Change the icon"</string>
     <string name="bottom_sheet_icon_picker_action_remove_icon">"Remove the icon"</string>
     <string name="bottom_sheet_icon_picker_action_change_bg_color">"Change background color"</string>
 
@@ -258,7 +311,6 @@
     <string name="dialog_budget_type_picker_title">"Budget types"</string>
     <string name="dialog_place_picker_title">"Places"</string>
     <string name="dialog_people_picker_title">"People"</string>
-    <string name="dialog_filter_search_title">"Filter"</string>
     <string name="dialog_change_log_title">"Change Log"</string>
     <string name="dialog_overview_setting_title">"Advanced settings"</string>
     <string name="dialog_recurrence_title">"Repeat"</string>
@@ -275,11 +327,17 @@
     <string name="error_input_missing_wallet">"Select a wallet"</string>
     <string name="error_input_missing_multiple_wallets">"Select at least one wallet"</string>
     <string name="error_input_invalid_multiple_wallets">"Wallets must have the same currency"</string>
+    <string name="error_wallet_currency_not_consistent">"You can only move this to a wallet in the currency it uses now, or one its transactions are in."</string>
+    <string name="error_wallet_currency_has_split_repayment">"A debt or credit and one of its repayments sit in different wallets, and one of them is this wallet. Move the repayment into the debt's wallet or delete it, then change the currency."</string>
+    <string name="error_wallet_currency_has_split_saving">"A savings goal and some of its deposits or withdrawals sit in different wallets, and one of them is this wallet. Move the goal into the wallet that holds them, unarchiving that wallet first if needed, or delete the ones in the other wallet, then change the currency."</string>
+    <string name="error_debt_wallet_currency_not_consistent">"This would move the debt to a wallet in a different currency from its payments."</string>
     <string name="error_input_missing_date">"Select a date"</string>
     <string name="error_input_missing_start_date">"Select a start date"</string>
     <string name="error_input_missing_end_date">Select an end date</string>
     <string name="error_input_invalid_date_range">"Invalid date range"</string>
     <string name="error_input_missing_category">"Select a category"</string>
+    <string name="error_input_pattern_not_valid">"Type the text to look for"</string>
+    <string name="error_input_missing_categories">"Select at least one category"</string>
     <string name="error_input_missing_description">"Provide a description"</string>
     <string name="error_input_missing_format">"Select a file format"</string>
     <string name="error_input_missing_input_file">"Select an input file"</string>
@@ -324,13 +382,22 @@
     <string name="header_debts_to_pay">"To pay:"</string>
     <string name="header_debts_to_receive">"To receive:"</string>
     <string name="header_debts_archived">"Archived"</string>
+    <string name="header_debts_finished">"Finished"</string>
 
     <string name="message_no_currency_found">"No currency found"</string>
+    <string name="message_no_category_rule_found">"No rule yet. Add one to have a category filled in from what you type in the description."</string>
+    <string name="message_no_category_rule_found_sort">"No rule to sort"</string>
     <string name="message_no_wallet_found">"No wallet found"</string>
     <string name="message_no_transaction_found">"No transaction found"</string>
+    <string name="message_no_transaction_found_other_wallets">"No transaction found in the selected wallet. There are transactions in other wallets."</string>
+    <string name="message_no_transaction_found_future">"No transaction found in the selected wallet. There are transactions dated in the future."</string>
+    <string name="message_saved_dated_ahead">"Saved. Its date is ahead of now, so the balance does not count it."</string>
+    <string name="message_no_transaction_found_other_wallets_and_future">"No transaction found in the selected wallet. There are transactions in other wallets, and transactions dated in the future."</string>
     <string name="message_no_transfer_found">"No transfer found"</string>
+    <string name="message_no_transfer_found_future">"No transfer found in the selected wallet. There are transfers dated in the future."</string>
     <string name="message_no_category_found">"No category found"</string>
     <string name="message_no_debt_found">"No debt found"</string>
+    <string name="message_no_finished_debt_found">"No finished debt found"</string>
     <string name="message_no_budget_found">"No budget found"</string>
     <string name="message_no_saving_found">"No saving found"</string>
     <string name="message_no_event_found">"No event found"</string>
@@ -342,14 +409,12 @@
     <string name="message_no_file_found">"No file found"</string>
     <string name="message_error_backend_recoverable">"Connection problem. Please retry."</string>
 
-    <string name="cover_message_backup_storage_access_framework_title">"The application can create and restore the backups from any document provider (e.g. Nextcloud, Dropbox or your filesystem)"</string>
+    <string name="cover_message_backup_storage_access_framework_title">"Create and restore backups in a folder you choose on this device. Because it is an ordinary folder, you can keep it in sync with a tool such as Syncthing or your own setup, with no account required. Document providers like Nextcloud also work."</string>
     <string name="cover_message_backup_external_memory_title">"The application can create and restore the backups directly from the external storage of the device"</string>
-    <string name="cover_message_backup_dropbox_title">"The application can create and restore the backups from your personal Dropbox account"</string>
-    <string name="cover_message_backup_google_drive_title">"The application can create and restore the backups from your personal Google Drive account"</string>
     <string name="cover_message_backup_external_memory_button">"Continue"</string>
     <string name="cover_message_backup_storage_access_framework_button">"Continue"</string>
-    <string name="cover_message_backup_dropbox_button">"Login"</string>
-    <string name="cover_message_backup_google_drive_button">"Login"</string>
+    <string name="cover_message_backup_webdav_title">"Create and restore backups on your own WebDAV server, such as Nextcloud, ownCloud or a NAS. Nothing is sent to a third party service and no account with anyone is required."</string>
+    <string name="cover_message_backup_webdav_button">"Connect"</string>
 
     <string name="empty_message_secondary_panel">"Select one element from the left panel to see the details"</string>
     <string name="empty_message_backup_cover">"Select the service that you want to use to store and retrieve your personal backups"</string>
@@ -364,8 +429,11 @@
     <string name="title_success">"Success"</string>
     <string name="title_failed">"Failed"</string>
     <string name="title_error">"Error"</string>
-    <string name="title_atm_search">"Search ATM"</string>
-    <string name="title_bank_search">"Search bank"</string>
+    <string name="error_saving_withdraw_over_balance">"You cannot withdraw more than %1$s from this saving."</string>
+    <string name="error_split_total_below_parts">"The amount is less than the parts add up to. Raise the amount or lower the parts."</string>
+    <string name="error_split_part_not_positive">"Every part needs an amount above zero."</string>
+    <string name="error_split_part_wrong_type">"Every part needs a category of the same type as the main category, income or expense."</string>
+    <string name="error_split_not_saved">"These parts cannot be saved. Check the category of each part."</string>
     <string name="title_changelog">"Changelog"</string>
     <string name="title_licenses">"Licenses"</string>
     <string name="title_debt_insert_master_transaction">"Well done"</string>
@@ -389,9 +457,10 @@
     <string name="message_backup_restoring_success">"Backup restored correctly."</string>
     <string name="message_backup_creation_failed">"Failure during the creation of the backup. Message: %s"</string>
     <string name="message_backup_restoring_failed">"Failure during the restoring of the backup. Message: %s"</string>
-    <string name="message_backup_service_dropbox_disconnect">"Are you sure you want to disconnect your Dropbox account?"</string>
-    <string name="message_backup_service_storage_access_framework_disconnect">"Are you sure you want to release the current content provider? No files will be deleted."</string>
-    <string name="message_backup_service_google_drive_disconnect">"Are you sure you want to disconnect your Google Drive account?"</string>
+    <string name="message_backup_service_storage_access_framework_disconnect">"Are you sure you want to disconnect the current folder? No files will be deleted."</string>
+    <string name="message_backup_service_webdav_disconnect">"Are you sure you want to disconnect this server? The saved address and password will be removed from this device. No files will be deleted from the server."</string>
+    <string name="message_webdav_app_password">"If your server supports app passwords, such as Nextcloud, create one for Tallybook instead of using your account password."</string>
+    <string name="message_webdav_url_scheme">"The address must start with https:// and name a server. A plain http address is refused because it would send your password unencrypted, and Android blocks it."</string>
     <string name="message_action_archive_wallet">"Are you sure you want to archive this wallet? It will not be visible in the menu anymore."</string>
     <string name="message_action_unarchive_wallet">"Are you sure you want to unarchive this wallet? It will be visible in the menu again."</string>
     <string name="message_action_archive_debt">"Are you sure you want to archive this debt?"</string>
@@ -399,19 +468,60 @@
     <string name="message_action_archive_saving">"Are you sure you want to archive this saving?"</string>
     <string name="message_action_unarchive_saving">"Are you sure you want to unarchive this saving?"</string>
     <string name="message_error_activity_not_found">"No application found on this device to handle the request."</string>
+    <string name="message_error_negative_amount">"The amount cannot be negative. The minus key is for subtracting."</string>
     <string name="message_delete_currency">"Are you sure you want to delete this currency?"</string>
     <string name="message_error_delete_currency">"This currency cannot be deleted because it is in use."</string>
     <string name="message_delete_wallet">"Are you sure you want to delete this wallet? All the related data will be removed."</string>
     <string name="message_error_delete_wallet_of_transfer">"This wallet cannot be deleted because is used in one or more transfers. Please remove the related transfers to delete this wallet."</string>
-    <string name="message_delete_category">"Are you sure you want to delete this category?"</string>
+    <string name="message_delete_category">"Are you sure you want to delete this category? Its automatic category rules are deleted with it."</string>
+    <string name="message_delete_category_rule">"Are you sure you want to delete the rule for %1$s?"</string>
     <string name="message_error_insert_category_deep_hierarchy">"Nested child categories are not supported: the selected parent category is already a child of another category."</string>
     <string name="message_error_insert_category_not_consistent">"The selected parent category is not of the same type of this category."</string>
     <string name="message_error_update_category_deep_hierarchy">"Nested child categories are not supported: this category has one or more children and cannot be updated as child category."</string>
     <string name="message_error_update_category_not_consistent">"The selected parent category is not of the same type of this category."</string>
+    <string name="message_error_update_category_type_in_split">"The type of this category cannot be changed while a split transaction uses it."</string>
     <string name="message_error_delete_category_with_children">"This category cannot be deleted because it has one or more children. Please remove them before."</string>
     <string name="message_error_delete_category_in_use">"This category cannot be deleted because it is in use. Please remove any references to this category and retry."</string>
+    <string name="message_error_delete_category_in_split">"This category cannot be deleted because a split transaction uses it as a part, %1$s on %2$s. Remove that part in the transaction editor and retry."</string>
+    <plurals name="message_error_delete_category_in_more_splits">
+        <item quantity="one">"%d more split transaction uses it too."</item>
+        <item quantity="other">"%d more split transactions use it too."</item>
+    </plurals>
     <string name="message_error_delete_system_category">"This category cannot be deleted because it is a system category."</string>
     <string name="message_delete_transaction">"Are you sure you want to delete this transaction?"</string>
+    <plurals name="message_delete_selected_transactions">
+        <item quantity="one">"%d selected transaction will be deleted."</item>
+        <item quantity="other">"%d selected transactions will be deleted."</item>
+    </plurals>
+    <string name="menu_action_move_to_wallet">"Move to wallet"</string>
+    <string name="menu_action_change_category">"Change category"</string>
+    <plurals name="message_move_selected_transactions">
+        <item quantity="one">"Move %1$d transaction to %2$s?"</item>
+        <item quantity="other">"Move %1$d transactions to %2$s?"</item>
+    </plurals>
+    <plurals name="message_move_selected_transactions_other_currency">
+        <item quantity="one">"%d of them is in another currency. Its amount will be kept as shown, not converted."</item>
+        <item quantity="other">"%d of them are in another currency. Their amounts will be kept as shown, not converted."</item>
+    </plurals>
+    <plurals name="message_change_category_selected_transactions">
+        <item quantity="one">"Change the category of %1$d transaction to %2$s?"</item>
+        <item quantity="other">"Change the category of %1$d transactions to %2$s?"</item>
+    </plurals>
+    <plurals name="message_error_change_selected_transactions">
+        <item quantity="one">"%d transaction could not be changed. Transfers, debts and savings are changed from their own screens."</item>
+        <item quantity="other">"%d transactions could not be changed. Transfers, debts and savings are changed from their own screens."</item>
+    </plurals>
+    <plurals name="message_error_change_split_transactions">
+        <item quantity="one">"%d split transaction kept its category, because a split transaction cannot move between income and expense."</item>
+        <item quantity="other">"%d split transactions kept their category, because a split transaction cannot move between income and expense."</item>
+    </plurals>
+    <string name="title_transactions_selected">"%d selected"</string>
+    <string name="description_close_selection">"Close selection"</string>
+    <plurals name="description_split_categories">
+        <item quantity="one">"Split into %d category"</item>
+        <item quantity="other">"Split into %d categories"</item>
+    </plurals>
+    <string name="message_selection_changed_nothing_changed">"The selection changed, so nothing was changed."</string>
     <string name="message_delete_transfer">"Are you sure you want to delete this transfer?"</string>
     <string name="message_error_delete_transaction_of_transfer">"This transaction cannot be deleted because is part of a transfer. Please remove the related transfer to delete this transaction."</string>
     <string name="message_delete_debt">"Are you sure you want to delete this debt? All the related data will be removed."</string>
@@ -432,6 +542,8 @@
     <string name="message_data_import_failed">"Failure during the import procedure. Message: %s"</string>
     <string name="message_data_export_failed">"Failure during the export procedure. Message: %s"</string>
     <string name="message_data_import_success">"Data imported correctly."</string>
+    <string name="message_data_import_success_rounded">"Data imported correctly. Amounts the currency could not hold exactly were rounded to the nearest unit: %1$d."</string>
+    <string name="message_data_import_already_saved">"Rows already in the wallet were skipped: %1$d."</string>
     <string name="message_data_export_success">"Data exported correctly. Do you want to open the created file?"</string>
 
     <string name="message_async_init">"Initialization …"</string>
@@ -454,10 +566,9 @@
     <string name="spinner_item_start_date">"From:   %s"</string>
     <string name="spinner_item_end_date">"To:   %s"</string>
 
-    <string name="service_backup_drop_box">"DropBox"</string>
-    <string name="service_backup_google_drive">"Google Drive"</string>
     <string name="service_backup_external_memory">"External Memory"</string>
-    <string name="service_backup_storage_access_framework" translatable="false">"Storage Access Framework"</string>
+    <string name="service_backup_storage_access_framework" translatable="false">"Local folder"</string>
+    <string name="service_backup_webdav" translatable="false">"WebDAV"</string>
 
     <string name="setting_title_user_interface">"User interface"</string>
     <string name="setting_title_utility">"Utilities"</string>
@@ -466,23 +577,41 @@
 
     <string name="setting_category_ui_appearance">"Appearance"</string>
     <string name="setting_category_ui_theme">"Theme"</string>
+    <string name="setting_category_ui_new_transaction">"New transaction"</string>
+    <string name="setting_title_ui_auto_open_calculator">"Open the calculator first"</string>
+    <string name="setting_summary_ui_auto_open_calculator">"A new transaction starts on the calculator to enter the amount"</string>
+    <string name="setting_title_ui_default_wallet">"Default wallet"</string>
+    <string name="setting_default_wallet_current">"Current wallet"</string>
+    <string name="setting_default_wallet_archived">"%1$s (archived)"</string>
+    <string name="setting_title_ui_dot_matrix_icons">"Dot matrix icons"</string>
+    <string name="setting_summary_ui_dot_matrix_icons">"Draw category icons as dots on a round tile instead of the classic style"</string>
     <string name="setting_title_ui_income_color">"Income color"</string>
     <string name="setting_title_ui_expense_color">"Expense color"</string>
     <string name="setting_title_ui_custom_digits">"Display style of digits"</string>
     <string name="setting_summary_ui_custom_digits">"Personalize the display style of digits"</string>
     <string name="setting_title_ui_date_format">"Date format"</string>
+    <string name="setting_title_ui_time_format">"Time format"</string>
+    <string name="setting_summary_ui_time_format">"%1$s, set in your device settings"</string>
     <string name="setting_title_ui_first_day_week">"First day of week"</string>
     <string name="setting_title_ui_first_day_month">"First day of month"</string>
     <string name="setting_title_ui_group_type">"Grouping"</string>
+    <string name="setting_title_ui_drawer_entries">"Drawer entries"</string>
+    <string name="setting_title_ui_system_colors">"Use system colors"</string>
+    <string name="setting_summary_ui_system_colors">"Take the app colors from your wallpaper"</string>
     <string name="setting_title_ui_theme_color_primary">"Color primary"</string>
     <string name="setting_title_ui_theme_color_accent">"Color accent"</string>
-    <string name="setting_title_ui_theme_type">"Type"</string>
 
     <string name="setting_category_utility_notification">"Notification"</string>
     <string name="setting_category_utility_security">"Security"</string>
+    <string name="setting_category_utility_map">"Map"</string>
+    <string name="setting_title_map_tile_server">"Tile server"</string>
+    <string name="setting_hint_map_tile_server" translatable="false">"https://tiles.example.org/{z}/{x}/{y}.png"</string>
+    <string name="setting_summary_map_tile_server_default">"Using the default OpenStreetMap servers. Enter another https address, with {z}, {x} and {y} or with none of them."</string>
+    <string name="setting_summary_map_tile_server">"Loading tiles from %1$s"</string>
+    <string name="setting_summary_map_tile_server_invalid">"Not a usable address. Needs https, a server name, and {z}, {x} and {y} or none of them."</string>
     <string name="setting_category_utility_exchange_rates">"Exchange rates"</string>
     <string name="setting_title_daily_reminder">"Daily reminder"</string>
-    <string name="setting_summary_daily_reminder">"Every day at: %02d:00"</string>
+    <string name="setting_summary_daily_reminder">"Every day at: %1$s"</string>
     <string name="setting_title_security">"Access protection"</string>
     <string name="setting_title_security_change_pin">"Change pin code"</string>
     <string name="setting_title_security_change_sequence">"Change unlock sequence"</string>
@@ -492,8 +621,18 @@
     <string name="setting_summary_exchange_rate_api_key_missing">"Api-key is missing"</string>
     <string name="setting_title_exchange_rate_update">"Update exchange rates"</string>
     <string name="setting_summary_exchange_rate_update">"Last update: %s"</string>
+    <string name="setting_summary_exchange_rate_never_updated">"Not updated yet"</string>
     <string name="setting_title_currency_management">"Manage currencies"</string>
     <string name="setting_summary_currency_management">"Add custom currencies"</string>
+    <string name="setting_title_category_rules">"Automatic categories"</string>
+    <string name="setting_summary_category_rules">"Set a category from the description"</string>
+    <string name="setting_category_utility_automation">"Automation"</string>
+    <string name="setting_title_automation_save">"Let automation apps save without a tap"</string>
+    <string name="setting_title_automation_code">"Show the code"</string>
+    <string name="title_automation_code">"Automation code"</string>
+    <string name="message_automation_code">"Put this code in the code extra of every save request. Any app that has it can add transactions while the switch is on.\n\n%1$s"</string>
+    <string name="action_copy">"Copy"</string>
+    <string name="action_new_code">"New code"</string>
     <string name="setting_subtitle_user_interface">"Personalize it as you want"</string>
     <string name="setting_subtitle_utility">"Setup the available tools"</string>
     <string name="setting_subtitle_database">"Manage your data"</string>
@@ -530,6 +669,7 @@
     <string name="notification_title_backup_restoring">"Backup restoring"</string>
     <string name="notification_title_backup_creation_failed">"Backup creation failed"</string>
     <string name="notification_title_backup_restoring_failed">"Backup restoring failed"</string>
+    <string name="notification_title_csv_export_failed">"Scheduled CSV export failed"</string>
     <string name="notification_content_downloading_data">"Downloading updated data…"</string>
     <string name="notification_content_caching_data">"Storing updated data…"</string>
     <string name="notification_content_error_message">"Error: %s"</string>
@@ -541,6 +681,9 @@
     <string name="notification_content_backup_error_backend_recoverable">"There was an error while communicating with the backend service. Check your internet connection and try again."</string>
     <string name="notification_content_backup_error_backend">"There was an error with the backend and the auto backup has been disabled. Check if there is any problem."</string>
     <string name="notification_content_backup_error_internal">"There was an internal error during the operation, which is probably a bug. Please report this message to the developer: %s"</string>
+    <string name="notification_content_backup_error_location">"The backup location is no longer available, so the automatic backup did not run. Open the backup settings and choose the folder again."</string>
+    <string name="notification_content_csv_export_error">"The backup was saved, but the CSV export failed: %s"</string>
+    <string name="notification_content_backup_error_location_unset">"No folder is set for this backup, so the automatic backup did not run. Open the backup settings and choose one."</string>
     <string name="notification_action_retry">"Retry"</string>
     <string name="message_error_network_connection">"network connection"</string>
     <string name="message_error_invalid_response">"invalid response"</string>
@@ -548,7 +691,6 @@
 
     <string name="about_hint_version">"Build version"</string>
     <string name="about_hint_changelog">"Changelog"</string>
-    <string name="about_hint_support">"Support the development"</string>
     <string name="about_hint_rate_app">"Rate this app"</string>
     <string name="about_hint_open_source_libraries">"Open source libraries"</string>
     <string name="about_hint_report_bug">"Report a bug"</string>
@@ -565,20 +707,20 @@
     <string name="about_hint_translators">"Translators"</string>
 
     <string name="activity_launcher_legacy_edition_upgrade_title">"Upgrading…"</string>
-    <string name="activity_launcher_first_start_title">"Welcome to MoneyWallet"</string>
-    <string name="activity_launcher_first_start_content">"Is it the first time you use this application or do you want to restore a previous backup?"</string>
+    <string name="activity_launcher_first_start_title">"Welcome to Tallybook"</string>
+    <string name="activity_launcher_first_start_content">"Is this your first time using Tallybook, or do you want to restore a backup?"</string>
     <string name="activity_launcher_first_start_button_first_time">"First time"</string>
     <string name="activity_launcher_first_start_button_restore_backup">"Restore backup"</string>
 
     <string name="activity_intro_title_slide_1">"No more bad surprises"</string>
     <string name="activity_intro_title_slide_2">"Discover and plan"</string>
     <string name="activity_intro_title_slide_3">"Open source"</string>
-    <string name="activity_intro_title_slide_4">"Cloud backups"</string>
+    <string name="activity_intro_title_slide_4">"Backups"</string>
     <string name="activity_intro_title_slide_5">"Well done"</string>
-    <string name="activity_intro_description_slide_1">"It will help you track all your expenses"</string>
+    <string name="activity_intro_description_slide_1">"Tallybook helps you track your expenses"</string>
     <string name="activity_intro_description_slide_2">"You can analyze where you spend a lot and setup some budget"</string>
-    <string name="activity_intro_description_slide_3">"The project is now open source and everyone can contribute"</string>
-    <string name="activity_intro_description_slide_4">"It support the most used cloud services to help you never lose your data"</string>
+    <string name="activity_intro_description_slide_3">"Tallybook is open source and everyone can contribute"</string>
+    <string name="activity_intro_description_slide_4">"Tallybook helps you create backups so you can restore your data when needed"</string>
     <string name="activity_intro_description_slide_5">"You will now be redirected to create your first wallet"</string>
 
     <string name="help_create_new_pin_code">"Create a new pin code"</string>
@@ -632,6 +774,7 @@
     <string name="keyboard_addition">"+"</string>
     <string name="keyboard_subtraction">"−"</string>
     <string name="keyboard_equal">"="</string>
+    <string name="keyboard_confirm">"✓"</string>
     <string name="keyboard_commit">">"</string>
 
     <string name="recurrence_type_daily">"Daily"</string>
@@ -685,23 +828,102 @@
     <string name="notification_channel_name_reminder">"Reminder"</string>
     <string name="notification_channel_name_exchange_rate">"Exchange rates"</string>
     <string name="notification_channel_name_error">"Error"</string>
+    <string name="notification_channel_name_recurrence">"Recurring transactions"</string>
+    <string name="notification_title_recurrence_added">"Recurring transaction added"</string>
+    <plurals name="notification_title_recurrences_added">
+        <item quantity="one">"%d recurring transaction added"</item>
+        <item quantity="other">"%d recurring transactions added"</item>
+    </plurals>
+    <string name="notification_text_recurrence_transfer">"Transfer: %1$s -> %2$s"</string>
 
-    <string name="activity_donation_first_title">"Thank You!"</string>
-    <string name="activity_donation_first_content">"If you like this application and you find it useful, consider buying me a beer. It will support this project and encourage me to keep it in development."</string>
-    <string name="activity_donation_second_title">"Why should I?"</string>
-    <string name="activity_donation_second_content">"Someone might say, “The best things in life are free” and I agree with it. You can not buy friendship, love or a memory of a beautiful sunrise. That's why I decided to share the source code of this application for free. But unfortunately, life is not free. You have only 24 hours every day of scarce time and you have to make decisions how to spend them to support yourself. If you like this project and you want to see it evolving in future, think about supporting my work to allow me to allocate more time on it. Any contribution makes an immense difference."</string>
-    <string name="activity_donation_third_title">"Can not contribute monetary? No problem, you can still help a lot!"</string>
-    <string name="activity_donation_crypto_address_copied">"Address copied"</string>
-    <string name="activity_donation_action_share_title">"Share"</string>
-    <string name="activity_donation_action_share_content">"Spread the word among your friends"</string>
-    <string name="activity_donation_action_share_message">"Hi, take a look at %s"</string>
-    <string name="activity_donation_action_share_using">"Share using"</string>
-    <string name="activity_donation_action_rate_title">"Rate"</string>
-    <string name="activity_donation_action_rate_content">"Write a 5 star review telling us what you think about it"</string>
-    <string name="activity_donation_action_translate_title">"Translate"</string>
-    <string name="activity_donation_action_translate_content">"Localize the strings in your language"</string>
-    <string name="activity_donation_action_contribute_title">"Contribute"</string>
-    <string name="activity_donation_action_contribute_content">"The source code is public and everyone can collaborate"</string>
-    <string name="activity_donation_final_content">"Every contribution, monetary or non-monetary, is equal and make substantial difference for me. Hope you enjoy it and thanks again for choosing to use this application."</string>
+    <string name="widget_label">"Wallet balance"</string>
+    <string name="widget_description">"The money in one wallet, with a button that adds a transaction to it"</string>
+    <string name="widget_add_transaction">"Add a transaction"</string>
+    <string name="widget_preview_wallet_name">"Wallet"</string>
+    <string name="widget_preview_wallet_balance">"$ 1,240.00"</string>
+    <string name="widget_message_locked">"Tallybook is locked"</string>
+    <string name="widget_message_not_configured">"Set this widget up again to choose a wallet"</string>
+    <string name="widget_message_wallet_missing">"This wallet is gone. Add the widget again to pick another one."</string>
+    <string name="title_activity_widget_configure">"Wallet balance"</string>
+    <string name="hint_widget_show_when_locked">"Show the balance even when the app is locked"</string>
+
+    <string name="search_match_all">"All"</string>
+    <string name="search_match_any">"Any"</string>
+    <string name="search_match_all_description">"Match all criteria, tap for any"</string>
+    <string name="search_match_any_description">"Match any criterion, tap for all"</string>
+    <string name="search_type_text">"Text"</string>
+    <string name="search_value_text">"“%1$s”"</string>
+    <string name="search_close_editor">"Close editor"</string>
+    <string name="search_clear">"Clear"</string>
+    <string name="hint_search_text">"Text to find"</string>
+    <string name="search_text_fields">"Looks in the description, note, event and place"</string>
+    <plurals name="search_result_count">
+        <item quantity="one">"%d result"</item>
+        <item quantity="other">"%d results"</item>
+    </plurals>
+    <string name="search_type_people">"People"</string>
+    <string name="search_type_status">"Status"</string>
+    <string name="search_type_wallet">"Wallet"</string>
+    <string name="search_value_unconfirmed">"Unconfirmed"</string>
+    <string name="search_value_confirmed">"Confirmed"</string>
+    <string name="search_value_transfers">"Transfers"</string>
+    <string name="search_value_wallet_transfers">"%1$s (transfers)"</string>
+    <string name="search_transfers_only">"Transfers only"</string>
+    <plurals name="search_person_description">
+        <item quantity="one">"%1$s, %2$d transaction"</item>
+        <item quantity="other">"%1$s, %2$d transactions"</item>
+    </plurals>
+    <string name="search_type_category">"Category"</string>
+    <plurals name="search_category_description">
+        <item quantity="one">"%1$s, %2$d transaction"</item>
+        <item quantity="other">"%1$s, %2$d transactions"</item>
+    </plurals>
+    <string name="search_partly_checked">"Partly checked"</string>
+    <string name="search_show_subcategories">"Show the subcategories of %1$s"</string>
+    <string name="search_hide_subcategories">"Hide the subcategories of %1$s"</string>
+    <string name="search_type_amount">"Amount"</string>
+    <string name="search_amount_exactly">"Exactly"</string>
+    <string name="search_amount_at_least">"At least"</string>
+    <string name="search_amount_at_most">"At most"</string>
+    <string name="search_amount_between">"Between (inclusive)"</string>
+    <string name="search_amount_between_short">"Between"</string>
+    <string name="search_amount_op_description">"Amount condition, %1$s"</string>
+    <string name="search_amount_either">"Either"</string>
+    <string name="search_amount_out">"Out"</string>
+    <string name="search_amount_in">"In"</string>
+    <string name="search_amount_and">"and"</string>
+    <string name="hint_search_amount">"Amount"</string>
+    <string name="hint_search_amount_to">"Other amount"</string>
+    <string name="search_value_amount_exactly">"= %1$s"</string>
+    <string name="search_value_amount_at_least">"≥ %1$s"</string>
+    <string name="search_value_amount_at_most">"≤ %1$s"</string>
+    <string name="search_value_amount_between">"%1$s to %2$s"</string>
+    <string name="search_value_amount_out">"Out %1$s"</string>
+    <string name="search_value_amount_in">"In %1$s"</string>
+    <string name="search_type_date">"Date"</string>
+    <string name="search_date_on_or_after">"On or after"</string>
+    <string name="search_date_on_or_before">"On or before"</string>
+    <string name="search_date_between">"Between"</string>
+    <string name="search_date_this_month">"This month"</string>
+    <string name="search_date_last_month">"Last month"</string>
+    <string name="search_date_last_30_days">"Last 30 days"</string>
+    <string name="search_date_this_year">"This year"</string>
+    <string name="search_date_from">"From"</string>
+    <string name="search_date_to">"To"</string>
+    <string name="hint_search_date">"Pick a date"</string>
+    <string name="search_date_previous_month">"Previous month"</string>
+    <string name="search_date_next_month">"Next month"</string>
+    <string name="search_date_pick_year">"%1$s, pick a year"</string>
+    <string name="search_done">"Done"</string>
+    <string name="search_value_date_after">"%1$s or later"</string>
+    <string name="search_value_date_before">"%1$s or earlier"</string>
+    <string name="search_value_date_between">"%1$s to %2$s"</string>
+    <string name="search_sort_newest">"Newest"</string>
+    <string name="search_sort_oldest">"Oldest"</string>
+    <string name="search_sort_category">"Category A to Z"</string>
+    <string name="search_sort_largest">"Largest amount"</string>
+    <string name="search_sort_smallest">"Smallest amount"</string>
+    <string name="search_sort_description">"Sort, %1$s"</string>
+    <string name="search_currency_header">"%1$s (%2$s)"</string>
 
 </resources>

@@ -67,7 +67,7 @@ public class DefaultBackupImporter extends AbstractBackupImporter {
                     throw new ImportException("Decryption filed: missing user password");
                 }
             }
-            notifyImportStarted();
+            beginStagedImport();
             ZipInputStream inputStream = zipFile.getInputStream(header);
             importer = new JSONDatabaseImporter(inputStream);
             ContentResolver contentResolver = getContentResolver();
@@ -83,10 +83,13 @@ public class DefaultBackupImporter extends AbstractBackupImporter {
             importer.importDebtPeople(contentResolver);
             importer.importBudgets(contentResolver);
             importer.importBudgetWallets(contentResolver);
+            importer.importBudgetCategories(contentResolver);
+            importer.importCategoryRules(contentResolver);
             importer.importSavings(contentResolver);
             importer.importRecurrentTransactions(contentResolver);
             importer.importRecurrentTransfers(contentResolver);
             importer.importTransactions(contentResolver);
+            importer.importTransactionSplits(contentResolver);
             importer.importTransactionPeople(contentResolver);
             importer.importTransactionModels(contentResolver);
             importer.importTransfers(contentResolver);

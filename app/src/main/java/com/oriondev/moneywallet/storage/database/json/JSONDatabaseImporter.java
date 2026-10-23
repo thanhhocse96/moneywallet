@@ -26,8 +26,10 @@ import com.oriondev.moneywallet.storage.database.ImportException;
 import com.oriondev.moneywallet.storage.database.SQLDatabaseImporter;
 import com.oriondev.moneywallet.storage.database.model.Attachment;
 import com.oriondev.moneywallet.storage.database.model.Budget;
+import com.oriondev.moneywallet.storage.database.model.BudgetCategory;
 import com.oriondev.moneywallet.storage.database.model.BudgetWallet;
 import com.oriondev.moneywallet.storage.database.model.Category;
+import com.oriondev.moneywallet.storage.database.model.CategoryRule;
 import com.oriondev.moneywallet.storage.database.model.Currency;
 import com.oriondev.moneywallet.storage.database.model.Debt;
 import com.oriondev.moneywallet.storage.database.model.DebtPerson;
@@ -42,6 +44,7 @@ import com.oriondev.moneywallet.storage.database.model.Transaction;
 import com.oriondev.moneywallet.storage.database.model.TransactionAttachment;
 import com.oriondev.moneywallet.storage.database.model.TransactionModel;
 import com.oriondev.moneywallet.storage.database.model.TransactionPerson;
+import com.oriondev.moneywallet.storage.database.model.TransactionSplit;
 import com.oriondev.moneywallet.storage.database.model.Transfer;
 import com.oriondev.moneywallet.storage.database.model.TransferAttachment;
 import com.oriondev.moneywallet.storage.database.model.TransferModel;
@@ -285,6 +288,9 @@ public class JSONDatabaseImporter implements DatabaseImporter {
                     Budget budget = mFactory.getBudget(object);
                     long id = SQLDatabaseImporter.insert(contentResolver, budget);
                     mFactory.cacheBudget(budget.mUUID, id);
+                    if (mVersion < 3) {
+                        SQLDatabaseImporter.insertBudgetCategory(contentResolver, id, budget.mCategory);
+                    }
                 }
                 mReader.endArray();
             } else {
@@ -311,6 +317,50 @@ public class JSONDatabaseImporter implements DatabaseImporter {
             }
         } catch (IOException | JSONException e) {
             throw new ImportException(e.getMessage());
+        }
+    }
+
+    @Override
+    public void importBudgetCategories(ContentResolver contentResolver) throws ImportException {
+        // budget categories are stored starting from backup version >= 3
+        if (mVersion >= 3) {
+            try {
+                if (JSONDatabase.BudgetCategory.ARRAY.equals(mReader.readName())) {
+                    mReader.beginArray();
+                    while (mReader.hasArrayAnotherObject()) {
+                        JSONObject object = mReader.readObject();
+                        BudgetCategory budgetCategory = mFactory.getBudgetCategory(object);
+                        SQLDatabaseImporter.insert(contentResolver, budgetCategory);
+                    }
+                    mReader.endArray();
+                } else {
+                    throw new ImportException("Wrong array name (expected = 'budget_categories')");
+                }
+            } catch (IOException | JSONException e) {
+                throw new ImportException(e.getMessage());
+            }
+        }
+    }
+
+    @Override
+    public void importCategoryRules(ContentResolver contentResolver) throws ImportException {
+        // category rules are stored starting from backup version >= 4
+        if (mVersion >= 4) {
+            try {
+                if (JSONDatabase.CategoryRule.ARRAY.equals(mReader.readName())) {
+                    mReader.beginArray();
+                    while (mReader.hasArrayAnotherObject()) {
+                        JSONObject object = mReader.readObject();
+                        CategoryRule categoryRule = mFactory.getCategoryRule(object);
+                        SQLDatabaseImporter.insert(contentResolver, categoryRule);
+                    }
+                    mReader.endArray();
+                } else {
+                    throw new ImportException("Wrong array name (expected = 'category_rules')");
+                }
+            } catch (IOException | JSONException e) {
+                throw new ImportException(e.getMessage());
+            }
         }
     }
 
@@ -391,6 +441,28 @@ public class JSONDatabaseImporter implements DatabaseImporter {
             }
         } catch (IOException | JSONException e) {
             throw new ImportException(e.getMessage());
+        }
+    }
+
+    @Override
+    public void importTransactionSplits(ContentResolver contentResolver) throws ImportException {
+        // transaction splits are stored starting from backup version >= 5
+        if (mVersion >= 5) {
+            try {
+                if (JSONDatabase.TransactionSplit.ARRAY.equals(mReader.readName())) {
+                    mReader.beginArray();
+                    while (mReader.hasArrayAnotherObject()) {
+                        JSONObject object = mReader.readObject();
+                        TransactionSplit transactionSplit = mFactory.getTransactionSplit(object);
+                        SQLDatabaseImporter.insert(contentResolver, transactionSplit);
+                    }
+                    mReader.endArray();
+                } else {
+                    throw new ImportException("Wrong array name (expected = 'transaction_splits')");
+                }
+            } catch (IOException | JSONException e) {
+                throw new ImportException(e.getMessage());
+            }
         }
     }
 

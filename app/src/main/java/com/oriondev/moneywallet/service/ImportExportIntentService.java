@@ -2,14 +2,15 @@ package com.oriondev.moneywallet.service;
 
 import android.app.IntentService;
 import android.content.ContentResolver;
+import android.content.Context;
 import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
+import android.os.Bundle;
 import android.os.Parcelable;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.content.FileProvider;
-import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 import com.oriondev.moneywallet.broadcast.LocalAction;
 import com.oriondev.moneywallet.model.DataFormat;
@@ -20,6 +21,7 @@ import com.oriondev.moneywallet.storage.database.data.AbstractDataExporter;
 import com.oriondev.moneywallet.storage.database.data.AbstractDataImporter;
 import com.oriondev.moneywallet.storage.database.data.csv.CSVDataExporter;
 import com.oriondev.moneywallet.storage.database.data.csv.CSVDataImporter;
+import com.oriondev.moneywallet.storage.database.data.csv.CsvImportMapping;
 import com.oriondev.moneywallet.storage.database.data.pdf.PDFDataExporter;
 import com.oriondev.moneywallet.storage.database.data.xls.XLSDataExporter;
 import com.oriondev.moneywallet.utils.DateUtils;
@@ -44,15 +46,20 @@ public class ImportExportIntentService extends IntentService {
     public static final String FILE = "ImportExportIntentService::Arguments::File";
     public static final String UNIQUE_WALLET = "ImportExportIntentService::Arguments::UniqueWallet";
     public static final String OPTIONAL_COLUMNS = "ImportExportIntentService::Arguments::OptionalColumns";
+    public static final String MAPPING = "ImportExportIntentService::Arguments::Mapping";
+    public static final String TOKEN = "ImportExportIntentService::Arguments::Token";
 
     public static final String RESULT_FILE_URI = "ImportExportIntentService::Results::FileUri";
     public static final String RESULT_FILE_TYPE = "ImportExportIntentService::Results::FileType";
     public static final String EXCEPTION = "ImportExportIntentService::Results::Exception";
+    public static final String ROUNDED_AMOUNTS = "ImportExportIntentService::Results::RoundedAmounts";
+    public static final String ALREADY_SAVED_ROWS = "ImportExportIntentService::Results::AlreadySavedRows";
 
     public static final int MODE_EXPORT = 0;
     public static final int MODE_IMPORT = 1;
 
-    private LocalBroadcastManager mBroadcastManager;
+    private TaskReporter mReporter;
+    private String mToken;
 
     public ImportExportIntentService() {
         super("ImportExportIntentService");
@@ -61,7 +68,8 @@ public class ImportExportIntentService extends IntentService {
     @Override
     protected void onHandleIntent(@Nullable Intent intent) {
         if (intent != null) {
-            mBroadcastManager = LocalBroadcastManager.getInstance(this);
+            mReporter = new TaskReporter(this);
+            mToken = intent.getStringExtra(TOKEN);
             int mode = intent.getIntExtra(MODE, MODE_EXPORT);
             switch (mode) {
                 case MODE_EXPORT:
@@ -80,6 +88,7 @@ public class ImportExportIntentService extends IntentService {
             // extract parameters from the intent
             DataFormat dataFormat = (DataFormat) intent.getSerializableExtra(FORMAT);
             File file = (File) intent.getSerializableExtra(FILE);
+            CsvImportMapping mapping = (CsvImportMapping) intent.getSerializableExtra(MAPPING);
             if (dataFormat == null) {
                 throw new IllegalArgumentException("parameter is null [FORMAT]");
             }
@@ -87,13 +96,17 @@ public class ImportExportIntentService extends IntentService {
                 throw new IllegalArgumentException("parameter is null or not a file [FILE]");
             }
             // initialize the correct data importer
-            AbstractDataImporter dataImporter = getDataImporter(dataFormat, file);
+            AbstractDataImporter dataImporter = getDataImporter(dataFormat, file, mapping);
+            int roundedAmounts;
+            int alreadySavedRows;
             try {
                 dataImporter.importData();
+                roundedAmounts = dataImporter.getRoundedAmounts();
+                alreadySavedRows = dataImporter.getAlreadySavedRows();
             } finally {
                 dataImporter.close();
             }
-            notifyTaskFinished(LocalAction.ACTION_IMPORT_SERVICE_FINISHED);
+            notifyTaskFinished(LocalAction.ACTION_IMPORT_SERVICE_FINISHED, roundedAmounts, alreadySavedRows);
         } catch (Exception e) {
             notifyTaskFailed(LocalAction.ACTION_IMPORT_SERVICE_FAILED, e);
         }
@@ -120,68 +133,7 @@ public class ImportExportIntentService extends IntentService {
             if (folder == null || !folder.isDirectory()) {
                 throw new IllegalArgumentException("parameter is null or not a directory [FOLDER]");
             }
-            // initialize the correct data exporter
-            AbstractDataExporter dataExporter = getDataExporter(dataFormat, folder);
-            ContentResolver contentResolver = getContentResolver();
-            Uri uri = DataContentProvider.CONTENT_TRANSACTIONS;
-            // initialize the selection builder with common variables
-            StringBuilder selectionBuilder = new StringBuilder();
-            List<String> selectionArguments = new ArrayList<>();
-            // append rule to limit to the end date or to the current date
-            selectionBuilder.append("DATE (" + Contract.Transaction.DATE + ") <= DATE(?)");
-            selectionArguments.add(DateUtils.getSQLDateString(getFixedEndDate(endDate)));
-            // if provided, apply a rule to the start date
-            if (startDate != null) {
-                selectionBuilder.append(" AND DATE (" + Contract.Transaction.DATE + ") >= DATE(?)");
-                selectionArguments.add(DateUtils.getSQLDateString(startDate));
-            }
-            String sortOrder = Contract.Transaction.DATE + " DESC";
-            // check if we should create a unique wallet or if we can export each wallet
-            // in a separate way
-            boolean multiWallet = wallets.length > 1 && dataExporter.isMultiWalletSupported() && !uniqueWallet;
-            String[] columns = dataExporter.getColumns(!multiWallet, optionalColumns);
-            // before starting with the export logic, check if the exporter should
-            // store the people names into his internal cache to speedup the procedure
-            if (dataExporter.shouldLoadPeople()) {
-                Cursor cursor = contentResolver.query(DataContentProvider.CONTENT_PEOPLE, null, null, null, null);
-                if (cursor != null) {
-                    dataExporter.cachePeople(cursor);
-                    cursor.close();
-                }
-            }
-            // handle the export logic differently
-            if (multiWallet) {
-                // execute a query for each wallet: we should clone the original builder
-                // to avoid mistakes during each successive query
-                for (Wallet wallet : wallets) {
-                    String selection = selectionBuilder + " AND " + Contract.Transaction.WALLET_ID + " = ?";
-                    String[] arguments = selectionArguments.toArray(new String[selectionArguments.size() + 1]);
-                    arguments[arguments.length - 1] = String.valueOf(wallet.getId());
-                    Cursor cursor = contentResolver.query(uri, null, selection, arguments, sortOrder);
-                    if (cursor != null) {
-                        dataExporter.exportData(cursor, columns, wallet);
-                        cursor.close();
-                    }
-                }
-            } else {
-                // execute only a large query: we can modify the original builder here
-                selectionBuilder.append(" AND (");
-                for (int i = 0; i < wallets.length; i++) {
-                    if (i != 0) {
-                        selectionBuilder.append(" OR ");
-                    }
-                    selectionBuilder.append(Contract.Transaction.WALLET_ID + " = ?");
-                    selectionArguments.add(String.valueOf(wallets[i].getId()));
-                }
-                selectionBuilder.append(")");
-                Cursor cursor = contentResolver.query(uri, null, selectionBuilder.toString(), selectionArguments.toArray(new String[selectionArguments.size()]), sortOrder);
-                if (cursor != null) {
-                    dataExporter.exportData(cursor, columns, wallets);
-                    cursor.close();
-                }
-            }
-            // close the exporter to flush and close all the open streams
-            dataExporter.close();
+            AbstractDataExporter dataExporter = exportTransactions(this, dataFormat, folder, startDate, endDate, wallets, uniqueWallet, optionalColumns);
             // if no exception has been thrown so far, we can ask the exporter
             // for the output file: we can pass the uri of this file inside the intent
             // Uri resultUri = Uri.fromFile(dataExporter.getOutputFile());
@@ -192,9 +144,89 @@ public class ImportExportIntentService extends IntentService {
             // send a successful intent to inform the receivers that the operation succeed
             notifyTaskFinished(LocalAction.ACTION_EXPORT_SERVICE_FINISHED, resultUri, resultType);
         } catch (Exception e) {
-            e.printStackTrace();
             notifyTaskFailed(LocalAction.ACTION_EXPORT_SERVICE_FAILED, e);
         }
+    }
+
+    /**
+     * Export the transactions into a new file inside the folder and return the closed exporter,
+     * which holds the output file and its type. A null wallet array exports every wallet.
+     * Runs on the calling thread.
+     */
+    static AbstractDataExporter exportTransactions(@NonNull Context context, @NonNull DataFormat dataFormat,
+                                                   @NonNull File folder, @Nullable Date startDate,
+                                                   @Nullable Date endDate, @Nullable Wallet[] wallets,
+                                                   boolean uniqueWallet, @Nullable String[] optionalColumns)
+            throws IOException {
+        // initialize the correct data exporter
+        AbstractDataExporter dataExporter = getDataExporter(context, dataFormat, folder);
+        ContentResolver contentResolver = context.getContentResolver();
+        Uri uri = DataContentProvider.CONTENT_CATEGORY_LINES;
+        // initialize the selection builder with common variables
+        StringBuilder selectionBuilder = new StringBuilder();
+        List<String> selectionArguments = new ArrayList<>();
+        // append rule to limit to the end date or to the current date
+        selectionBuilder.append("DATE (" + Contract.Transaction.DATE + ") <= DATE(?)");
+        selectionArguments.add(DateUtils.getSQLDateString(getFixedEndDate(endDate)));
+        // if provided, apply a rule to the start date
+        if (startDate != null) {
+            selectionBuilder.append(" AND DATE (" + Contract.Transaction.DATE + ") >= DATE(?)");
+            selectionArguments.add(DateUtils.getSQLDateString(startDate));
+        }
+        if (dataFormat == DataFormat.CSV) {
+            selectionBuilder.append(" AND " + CSVDataExporter.ROWS_SELECTION);
+            selectionArguments.addAll(CSVDataExporter.ROWS_SELECTION_ARGS);
+        }
+        String sortOrder = Contract.Transaction.DATE + " DESC";
+        // check if we should create a unique wallet or if we can export each wallet
+        // in a separate way
+        boolean multiWallet = wallets != null && wallets.length > 1 && dataExporter.isMultiWalletSupported() && !uniqueWallet;
+        String[] columns = dataExporter.getColumns(!multiWallet, optionalColumns);
+        // before starting with the export logic, check if the exporter should
+        // store the people names into his internal cache to speedup the procedure
+        if (dataExporter.shouldLoadPeople()) {
+            Cursor cursor = contentResolver.query(DataContentProvider.CONTENT_PEOPLE, null, null, null, null);
+            if (cursor != null) {
+                dataExporter.cachePeople(cursor);
+                cursor.close();
+            }
+        }
+        // handle the export logic differently
+        if (multiWallet) {
+            // execute a query for each wallet: we should clone the original builder
+            // to avoid mistakes during each successive query
+            for (Wallet wallet : wallets) {
+                String selection = selectionBuilder + " AND " + Contract.Transaction.WALLET_ID + " = ?";
+                String[] arguments = selectionArguments.toArray(new String[selectionArguments.size() + 1]);
+                arguments[arguments.length - 1] = String.valueOf(wallet.getId());
+                Cursor cursor = contentResolver.query(uri, null, selection, arguments, sortOrder);
+                if (cursor != null) {
+                    dataExporter.exportData(cursor, columns, wallet);
+                    cursor.close();
+                }
+            }
+        } else {
+            // execute only a large query: we can modify the original builder here
+            if (wallets != null) {
+                selectionBuilder.append(" AND (");
+                for (int i = 0; i < wallets.length; i++) {
+                    if (i != 0) {
+                        selectionBuilder.append(" OR ");
+                    }
+                    selectionBuilder.append(Contract.Transaction.WALLET_ID + " = ?");
+                    selectionArguments.add(String.valueOf(wallets[i].getId()));
+                }
+                selectionBuilder.append(")");
+            }
+            Cursor cursor = contentResolver.query(uri, null, selectionBuilder.toString(), selectionArguments.toArray(new String[selectionArguments.size()]), sortOrder);
+            if (cursor != null) {
+                dataExporter.exportData(cursor, columns, wallets);
+                cursor.close();
+            }
+        }
+        // close the exporter to flush and close all the open streams
+        dataExporter.close();
+        return dataExporter;
     }
 
     private Wallet[] getWalletList(Intent intent, String key) {
@@ -207,51 +239,57 @@ public class ImportExportIntentService extends IntentService {
     }
 
     private void notifyTaskStarted(String action) {
-        Intent intent = new Intent(action);
-        mBroadcastManager.sendBroadcast(intent);
+        Bundle extras = new Bundle();
+        extras.putString(TOKEN, mToken);
+        mReporter.broadcast(action, extras);
     }
 
-    private void notifyTaskFinished(String action) {
-        Intent intent = new Intent(action);
-        mBroadcastManager.sendBroadcast(intent);
+    private void notifyTaskFinished(String action, int roundedAmounts, int alreadySavedRows) {
+        Bundle extras = new Bundle();
+        extras.putInt(ROUNDED_AMOUNTS, roundedAmounts);
+        extras.putInt(ALREADY_SAVED_ROWS, alreadySavedRows);
+        extras.putString(TOKEN, mToken);
+        mReporter.broadcast(action, extras);
     }
 
     private void notifyTaskFinished(String action, Uri resultUri, String resultType) {
-        Intent intent = new Intent(action);
-        intent.putExtra(RESULT_FILE_URI, resultUri);
-        intent.putExtra(RESULT_FILE_TYPE, resultType);
-        mBroadcastManager.sendBroadcast(intent);
+        Bundle extras = new Bundle();
+        extras.putParcelable(RESULT_FILE_URI, resultUri);
+        extras.putString(RESULT_FILE_TYPE, resultType);
+        extras.putString(TOKEN, mToken);
+        mReporter.broadcast(action, extras);
     }
 
     private void notifyTaskFailed(String action, Exception exception) {
-        Intent intent = new Intent(action);
-        intent.putExtra(EXCEPTION, exception);
-        mBroadcastManager.sendBroadcast(intent);
+        Bundle extras = new Bundle();
+        extras.putSerializable(EXCEPTION, exception);
+        extras.putString(TOKEN, mToken);
+        mReporter.broadcast(action, extras);
     }
 
-    private AbstractDataImporter getDataImporter(DataFormat dataFormat, File file) throws IOException {
+    private AbstractDataImporter getDataImporter(DataFormat dataFormat, File file, @Nullable CsvImportMapping mapping) throws IOException {
         switch (dataFormat) {
             case CSV:
-                return new CSVDataImporter(this, file);
+                return new CSVDataImporter(this, file, mapping);
             default:
                 throw new RuntimeException("DataFormat not supported");
         }
     }
 
-    private AbstractDataExporter getDataExporter(DataFormat dataFormat, File folder) throws IOException {
+    private static AbstractDataExporter getDataExporter(Context context, DataFormat dataFormat, File folder) throws IOException {
         switch (dataFormat) {
             case CSV:
-                return new CSVDataExporter(this, folder);
+                return new CSVDataExporter(context, folder);
             case XLS:
-                return new XLSDataExporter(this, folder);
+                return new XLSDataExporter(context, folder);
             case PDF:
-                return new PDFDataExporter(this, folder);
+                return new PDFDataExporter(context, folder);
             default:
                 throw new RuntimeException("DataFormat not supported");
         }
     }
 
-    private Date getFixedEndDate(Date endDate) {
+    private static Date getFixedEndDate(Date endDate) {
         Date now = new Date();
         if (endDate != null) {
             long minMillis = Math.min(now.getTime(), endDate.getTime());

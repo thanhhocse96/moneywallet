@@ -22,6 +22,7 @@ package com.oriondev.moneywallet.ui.view.theme;
 import android.graphics.Color;
 import androidx.annotation.ColorInt;
 import androidx.annotation.FloatRange;
+import androidx.core.graphics.ColorUtils;
 
 /**
  * Created by andrea on 10/04/18.
@@ -67,11 +68,34 @@ import androidx.annotation.FloatRange;
         return isColorLight(color);
     }
 
-    /*package-local*/ static boolean isColorVisible(@ColorInt int color, @ColorInt int bgColor) {
-        int redOffset = Math.abs(Color.red(color) - Color.red(bgColor));
-        int greenOffset = Math.abs(Color.green(color) - Color.green(bgColor));
-        int blueOffset = Math.abs(Color.blue(color) - Color.blue(bgColor));
-        return redOffset + greenOffset + blueOffset > 50;
+    // A floor for seeing anything at all, under both numbers the accessibility guidelines give,
+    // 3:1 for a control and 4.5:1 for text. It has to be: several pairs the default theme itself
+    // draws sit between 2 and 3, so a higher floor would repaint the stock app.
+    private static final double MIN_CONTRAST = 2d;
+
+    private static boolean isColorVisible(@ColorInt int color, @ColorInt int bgColor) {
+        return ColorUtils.calculateContrast(color, bgColor) >= MIN_CONTRAST;
+    }
+
+    /*package-local*/ static int visibleOr(@ColorInt int color, @ColorInt int background, @ColorInt int fallback) {
+        return isColorVisible(color, background) ? color : fallback;
+    }
+
+    /*package-local*/ static int accentAsIcon(ITheme theme) {
+        return holdsUpAnywhere(theme, theme.getColorAccent()) ? theme.getColorAccent()
+                : theme.getBestColor(theme.getColorWindowForeground());
+    }
+
+    /*package-local*/ static int accentAsText(ITheme theme) {
+        return holdsUpAnywhere(theme, theme.getColorAccent()) ? theme.getColorAccent()
+                : theme.getBestTextColor(theme.getColorWindowForeground());
+    }
+
+    // The surfaces a chosen color has to survive when nothing says which one it lands on. A
+    // dialog is a card, so this covers a tinted control in a dialog as well as an amount on a row.
+    /*package-local*/ static boolean holdsUpAnywhere(ITheme theme, @ColorInt int color) {
+        return isColorVisible(color, theme.getColorWindowForeground())
+                && isColorVisible(color, theme.getColorCardBackground());
     }
 
     /*package-local*/ static int stripAlpha(@ColorInt int color) {

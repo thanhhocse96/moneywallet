@@ -86,7 +86,7 @@ public class WalletMultiPanelFragment extends MultiPanelAppBarItemFragment imple
         mAdvancedRecyclerView.setEmptyText(R.string.message_no_wallet_found);
         mAdvancedRecyclerView.setOnRefreshListener(this);
         // attach a background loader to retrieve data from the content provider
-        getLoaderManager().initLoader(LOADER_ID, null, this);
+        LoaderManager.getInstance(this).initLoader(LOADER_ID, null, this);
         mAdvancedRecyclerView.setState(AdvancedRecyclerView.State.LOADING);
     }
 
@@ -114,11 +114,10 @@ public class WalletMultiPanelFragment extends MultiPanelAppBarItemFragment imple
 
     @Override
     public boolean onMenuItemClick(MenuItem item) {
-        switch (item.getItemId()) {
-            case R.id.action_sort_items:
-                Intent intent = new Intent(getActivity(), WalletSortActivity.class);
-                startActivity(intent);
-                break;
+        int itemId = item.getItemId();
+        if (itemId == R.id.action_sort_items) {
+            Intent intent = new Intent(getActivity(), WalletSortActivity.class);
+            startActivity(intent);
         }
         return false;
     }
@@ -184,7 +183,7 @@ public class WalletMultiPanelFragment extends MultiPanelAppBarItemFragment imple
 
     @Override
     public void onRefresh() {
-        getLoaderManager().restartLoader(LOADER_ID, null, this);
+        LoaderManager.getInstance(this).restartLoader(LOADER_ID, null, this);
         mAdvancedRecyclerView.setState(AdvancedRecyclerView.State.REFRESHING);
     }
 

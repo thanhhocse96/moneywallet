@@ -21,6 +21,8 @@ package com.oriondev.moneywallet.ui.adapter.recycler;
 
 import android.database.Cursor;
 import androidx.annotation.NonNull;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.accessibility.AccessibilityNodeInfoCompat;
 import androidx.recyclerview.widget.RecyclerView;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -70,7 +72,7 @@ public class PersonCursorAdapter extends AbstractCursorAdapter<PersonCursorAdapt
         return new ViewHolder(itemView);
     }
 
-    /*package-local*/ class ViewHolder extends RecyclerView.ViewHolder implements View.OnClickListener {
+    /*package-local*/ class ViewHolder extends RecyclerView.ViewHolder implements View.OnClickListener, View.OnLongClickListener {
 
         private ImageView mAvatarImageView;
         private TextView mNameTextView;
@@ -80,6 +82,10 @@ public class PersonCursorAdapter extends AbstractCursorAdapter<PersonCursorAdapt
             mAvatarImageView = itemView.findViewById(R.id.avatar_image_view);
             mNameTextView = itemView.findViewById(R.id.primary_text_view);
             itemView.setOnClickListener(this);
+            itemView.setOnLongClickListener(this);
+            ViewCompat.replaceAccessibilityAction(itemView,
+                    AccessibilityNodeInfoCompat.AccessibilityActionCompat.ACTION_LONG_CLICK,
+                    itemView.getContext().getString(R.string.action_open_person_details), null);
         }
 
         @Override
@@ -91,10 +97,27 @@ public class PersonCursorAdapter extends AbstractCursorAdapter<PersonCursorAdapt
                 }
             }
         }
+
+        @Override
+        public boolean onLongClick(View v) {
+            if (mActionListener == null) {
+                return false;
+            }
+            Cursor cursor = getSafeCursor(getAdapterPosition());
+            if (cursor != null) {
+                mActionListener.onPersonLongClick(cursor.getLong(mIndexId));
+            }
+            // Consumed whenever there is a listener to consume it. Declining it would let the
+            // release that follows run performClick instead, so a long press that lost its row
+            // would open the transaction list rather than the panel the user was reaching for.
+            return true;
+        }
     }
 
     public interface ActionListener {
 
         void onPersonClick(long id);
+
+        void onPersonLongClick(long id);
     }
 }

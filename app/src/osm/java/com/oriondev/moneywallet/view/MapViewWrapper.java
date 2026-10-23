@@ -23,16 +23,26 @@ import android.content.Context;
 import android.graphics.Color;
 import android.graphics.drawable.Drawable;
 import android.os.Bundle;
+import android.text.TextUtils;
 import android.view.MotionEvent;
 import android.view.View;
+
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 
 import com.oriondev.moneywallet.R;
 import com.oriondev.moneywallet.model.Coordinates;
 import com.oriondev.moneywallet.model.Place;
+import com.oriondev.moneywallet.storage.preference.PreferenceManager;
+import com.oriondev.moneywallet.utils.Urls;
 
 import org.osmdroid.api.IGeoPoint;
 import org.osmdroid.config.Configuration;
 import org.osmdroid.config.IConfigurationProvider;
+import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase;
+import org.osmdroid.tileprovider.tilesource.TileSourcePolicy;
+import org.osmdroid.util.MapTileIndex;
 import org.osmdroid.util.GeoPoint;
 import org.osmdroid.views.MapView;
 import org.osmdroid.views.overlay.CopyrightOverlay;
@@ -52,6 +62,31 @@ import java.util.List;
 public class MapViewWrapper {
 
     private static final String TILE_CACHE_FOLDER = "osm_tiles";
+
+    private static final String OSM_COPYRIGHT = "© OpenStreetMap contributors";
+
+    /**
+     * Bit identical to the policy the library's own default carries. Two of these limit us: at
+     * most two requests in flight, and no speculative fetching of surrounding tiles. The no
+     * argument policy has neither, so leaving it would make this app ask more of somebody's self
+     * hosted server, and ask it more concurrently, than it asks of OpenStreetMap's.
+     *
+     * FLAG_NO_BULK is neither: it gates CacheManager, which this app never constructs, so it is
+     * inert here and present only to stay identical to the default.
+     *
+     * MEANINGFUL is neither a limit nor inert, it is a gate: with it set the downloader refuses to
+     * fetch anything at all unless a real user agent was configured, which setupConfiguration does
+     * below. Removing the configured agent would silently stop every tile. NORMALIZED only makes
+     * the downloader prefer a normalized agent where one exists, and refuses nothing.
+     */
+    private static final TileSourcePolicy TILE_POLICY = new TileSourcePolicy(2,
+            TileSourcePolicy.FLAG_NO_BULK
+                    | TileSourcePolicy.FLAG_NO_PREVENTIVE
+                    | TileSourcePolicy.FLAG_USER_AGENT_MEANINGFUL
+                    | TileSourcePolicy.FLAG_USER_AGENT_NORMALIZED);
+
+    private static final int TILE_SIZE_PIXELS = 256;
+    private static final int TILE_MAX_ZOOM = 19;
 
     private static final double DEFAULT_MIN_ZOOM_LEVEL = 4d;
     private static final double DEFAULT_ZOOM_LEVEL = 14d;
@@ -85,11 +120,116 @@ public class MapViewWrapper {
                 configuration.setOsmdroidTileCache(tileCache);
             }
         }
+        setupTileSource();
+    }
+
+    /**
+     * Point the map at whatever server the user chose, so that replacing the default one does not
+     * need a change to this app. Doing nothing leaves the library's own default in place.
+     *
+     * The address is re checked here rather than trusted from storage. A rejected one leaves the
+     * library's default in place, which shows a working map rather than an empty one, at the cost
+     * of saying nothing about why the chosen server was not used.
+     *
+     * The source is named after the address, because osmdroid keys its tile cache on that name and
+     * a fixed one would serve the previous server's tiles after a change. Note the name also
+     * reaches BitmapTileSourceBase.pathBase, which the assets and zip archive providers use as a
+     * path; both simply miss and fall through, so a url is tolerated there rather than intended.
+     *
+     * The attribution is the OpenStreetMap one because that is what this setting is documented for
+     * and that data carries a licence requiring the notice. Passing nothing makes CopyrightOverlay
+     * draw none at all, which is the worse failure for the case this exists to serve. Pointed at a
+     * server carrying something other than OpenStreetMap data the notice is wrong, and there is no
+     * way to change it.
+     */
+    private void setupTileSource() {
+        String url = PreferenceManager.getMapTileServer();
+        if (TextUtils.isEmpty(url) || !Urls.isUsableTileAddress(url)) {
+            return;
+        }
+        mMapView.setTileSource(new TemplateTileSource(Urls.asTileTemplate(url)));
+    }
+
+    /**
+     * osmdroid's own XYTileSource builds the address by concatenation, which fixes the path shape
+     * and the image extension. Overriding the one method that produces the address is what lets a
+     * user paste the {z}/{x}/{y} form that nearly every tile provider documents.
+     */
+    private static class TemplateTileSource extends OnlineTileSourceBase {
+
+        private final String mTemplate;
+
+        private TemplateTileSource(String template) {
+            super(template, 0, TILE_MAX_ZOOM, TILE_SIZE_PIXELS, "", new String[] {template},
+                    OSM_COPYRIGHT, TILE_POLICY);
+            mTemplate = template;
+        }
+
+        @Override
+        public String getTileURLString(long pMapTileIndex) {
+            return Urls.tileUrl(mTemplate,
+                    MapTileIndex.getZoom(pMapTileIndex),
+                    MapTileIndex.getX(pMapTileIndex),
+                    MapTileIndex.getY(pMapTileIndex));
+        }
+    }
+
+    /**
+     * @return whether this map implementation can be pointed at a different tile server.
+     */
+    public static boolean supportsCustomTileServer() {
+        return true;
+    }
+
+    /**
+     * What CopyrightOverlay's own constructor sets both offsets to in osmdroid 6.1.1, in pixels and
+     * not scaled. Repeated here because the fields are package private, so setting an offset at all
+     * means replacing that default instead of adding to it.
+     */
+    private static final int COPYRIGHT_EDGE_MARGIN = 10;
+
+    private CopyrightOverlay mCopyrightOverlay;
+
+    private boolean mOffsetCopyrightForSystemBars;
+
+    /**
+     * Only the maps that fill a window ask for this. Two of the four do; the other two are short
+     * maps inside a card on the place screens, where offsetting the notice by a navigation bar they
+     * never touch would park it in the middle of the card.
+     */
+    public void keepCopyrightClearOfSystemBars() {
+        mOffsetCopyrightForSystemBars = true;
+        if (mCopyrightOverlay != null) {
+            applyCopyrightOffset();
+        }
     }
 
     private void setupCopyrightOverlay() {
         // OpenStreetMap requires that you add “© OpenStreetMap contributors” to the map
-        mMapView.getOverlayManager().add(0, new CopyrightOverlay(mMapView.getContext()));
+        mCopyrightOverlay = new CopyrightOverlay(mMapView.getContext());
+        mMapView.getOverlayManager().add(0, mCopyrightOverlay);
+        applyCopyrightOffset();
+    }
+
+    /**
+     * A map that fills a window is not padded, because it is meant to run under the navigation bar.
+     * The notice still has to stay readable, and it is drawn on the canvas instead of laid out, so
+     * it moves by its own offset. A larger offset draws it higher, since it is aligned to the
+     * bottom of the canvas.
+     */
+    private void applyCopyrightOffset() {
+        if (!mOffsetCopyrightForSystemBars) {
+            return;
+        }
+        final CopyrightOverlay overlay = mCopyrightOverlay;
+        ViewCompat.setOnApplyWindowInsetsListener(mMapView, (view, insets) -> {
+            Insets bars = insets.getInsets(WindowInsetsCompat.Type.systemBars()
+                    | WindowInsetsCompat.Type.displayCutout());
+            overlay.setOffset(bars.left + COPYRIGHT_EDGE_MARGIN, bars.bottom + COPYRIGHT_EDGE_MARGIN);
+            view.invalidate();
+            return insets;
+        });
+        mMapView.requestApplyInsets();
     }
 
     public void onCreate(Bundle savedInstanceState) {

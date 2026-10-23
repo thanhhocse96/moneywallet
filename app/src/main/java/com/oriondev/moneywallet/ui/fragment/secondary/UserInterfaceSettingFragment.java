@@ -19,32 +19,50 @@
 
 package com.oriondev.moneywallet.ui.fragment.secondary;
 
+import android.app.Activity;
+import android.content.ActivityNotFoundException;
+import android.content.DialogInterface;
+import android.content.Intent;
+import android.database.Cursor;
 import android.os.Bundle;
+import android.provider.Settings;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.FragmentManager;
 import androidx.preference.Preference;
 import androidx.preference.PreferenceFragmentCompat;
+import androidx.preference.SwitchPreferenceCompat;
 import androidx.recyclerview.widget.RecyclerView;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 
+import com.google.android.material.color.DynamicColors;
 import com.oriondev.moneywallet.R;
 import com.oriondev.moneywallet.model.Group;
 import com.oriondev.moneywallet.picker.ColorPicker;
+import com.oriondev.moneywallet.storage.database.Contract;
+import com.oriondev.moneywallet.storage.database.DataContentProvider;
 import com.oriondev.moneywallet.storage.preference.PreferenceManager;
+import com.oriondev.moneywallet.ui.activity.MainActivity;
+import com.oriondev.moneywallet.utils.SystemBars;
 import com.oriondev.moneywallet.ui.fragment.dialog.CustomDigitSetupDialog;
 import com.oriondev.moneywallet.ui.preference.ColorPreference;
 import com.oriondev.moneywallet.ui.preference.ThemedListPreference;
 import com.oriondev.moneywallet.ui.view.theme.ITheme;
 import com.oriondev.moneywallet.ui.view.theme.ThemeEngine;
+import com.oriondev.moneywallet.ui.view.theme.ThemedDialog;
 import com.oriondev.moneywallet.utils.DateFormatter;
 
 import java.text.DateFormatSymbols;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Date;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
 /**
  * Created by andrea on 07/03/18.
@@ -65,9 +83,15 @@ public class UserInterfaceSettingFragment extends PreferenceFragmentCompat imple
     private ColorPreference mColorExpensePreference;
     private Preference mCustomDigitsSetupPreference;
     private ThemedListPreference mDateFormatPreference;
+    private Preference mTimeFormatPreference;
     private ThemedListPreference mFirstDayWeekPreference;
     private ThemedListPreference mFirstDayMonthPreference;
     private ThemedListPreference mGroupTypePreference;
+    private Preference mDrawerEntriesPreference;
+    private Preference mDefaultWalletPreference;
+    private SwitchPreferenceCompat mAutoOpenCalculatorPreference;
+    private SwitchPreferenceCompat mDotMatrixIconsPreference;
+    private SwitchPreferenceCompat mSystemColorsPreference;
     private ColorPreference mColorPrimaryPreference;
     private ColorPreference mColorAccentPreference;
     private ThemedListPreference mThemeTypePreference;
@@ -86,9 +110,15 @@ public class UserInterfaceSettingFragment extends PreferenceFragmentCompat imple
         mColorExpensePreference = (ColorPreference) findPreference("expense_color");
         mCustomDigitsSetupPreference = findPreference("custom_digits");
         mDateFormatPreference = (ThemedListPreference) findPreference("date_format");
+        mTimeFormatPreference = findPreference("time_format");
         mFirstDayWeekPreference = (ThemedListPreference) findPreference("first_day_week");
         mFirstDayMonthPreference = (ThemedListPreference) findPreference("first_day_month");
         mGroupTypePreference = (ThemedListPreference) findPreference("group_type");
+        mDrawerEntriesPreference = findPreference("drawer_entries");
+        mDefaultWalletPreference = findPreference("default_wallet");
+        mAutoOpenCalculatorPreference = (SwitchPreferenceCompat) findPreference("auto_open_calculator");
+        mDotMatrixIconsPreference = (SwitchPreferenceCompat) findPreference("dot_matrix_icons");
+        mSystemColorsPreference = (SwitchPreferenceCompat) findPreference("system_colors");
         mColorPrimaryPreference = (ColorPreference) findPreference("theme_color_primary");
         mColorAccentPreference = (ColorPreference) findPreference("theme_color_accent");
         mThemeTypePreference = (ThemedListPreference) findPreference("theme_type");
@@ -120,18 +150,7 @@ public class UserInterfaceSettingFragment extends PreferenceFragmentCompat imple
         // setup date format preference: we use a dynamic version that render the current
         // datetime of the device using all the available datetime patterns to help the
         // user to decide which is better for him
-        Date now = Calendar.getInstance().getTime();
-        mDateFormatPreference.setEntries(new String[] {
-                DateFormatter.getFormattedDateTime(now, PreferenceManager.DATE_FORMAT_TYPE_0),
-                DateFormatter.getFormattedDateTime(now, PreferenceManager.DATE_FORMAT_TYPE_1),
-                DateFormatter.getFormattedDateTime(now, PreferenceManager.DATE_FORMAT_TYPE_2),
-                DateFormatter.getFormattedDateTime(now, PreferenceManager.DATE_FORMAT_TYPE_3),
-                DateFormatter.getFormattedDateTime(now, PreferenceManager.DATE_FORMAT_TYPE_4),
-                DateFormatter.getFormattedDateTime(now, PreferenceManager.DATE_FORMAT_TYPE_5),
-                DateFormatter.getFormattedDateTime(now, PreferenceManager.DATE_FORMAT_TYPE_6),
-                DateFormatter.getFormattedDateTime(now, PreferenceManager.DATE_FORMAT_TYPE_7),
-                DateFormatter.getFormattedDateTime(now, PreferenceManager.DATE_FORMAT_TYPE_8)
-        });
+        setupDateFormatEntries();
         mDateFormatPreference.setEntryValues(new String[] {
                 String.valueOf(PreferenceManager.DATE_FORMAT_TYPE_0),
                 String.valueOf(PreferenceManager.DATE_FORMAT_TYPE_1),
@@ -156,11 +175,14 @@ public class UserInterfaceSettingFragment extends PreferenceFragmentCompat imple
                 String.valueOf(Calendar.SATURDAY)
         });
         // setup the first day of month preference: we set as upper bound the 28 day
+        // the entries are what the user reads, the values are parsed back with Integer.parseInt
+        String[] dayLabels = new String[28];
         String[] daysInMonth = new String[28];
         for (int i = 0; i < daysInMonth.length; i++) {
+            dayLabels[i] = String.format(Locale.getDefault(), "%d", i + 1);
             daysInMonth[i] = String.valueOf(i + 1);
         }
-        mFirstDayMonthPreference.setEntries(daysInMonth);
+        mFirstDayMonthPreference.setEntries(dayLabels);
         mFirstDayMonthPreference.setEntryValues(daysInMonth);
         // setup the group type preference
         mGroupTypePreference.setEntries(R.array.group_types);
@@ -193,10 +215,16 @@ public class UserInterfaceSettingFragment extends PreferenceFragmentCompat imple
         mThemeTypePreference.setEntryValues(new String[] {THEME_TYPE_LIGHT, THEME_TYPE_DARK, THEME_TYPE_DEEP_DARK});
         // setup current values
         setupCurrentDateFormat();
+        setupCurrentTimeFormat();
         setupCurrentFirstDayOfWeek();
         setupCurrentFirstDayOfMonth();
         setupCurrentGroupType();
         setupCurrentThemeType();
+        mAutoOpenCalculatorPreference.setChecked(PreferenceManager.isAutoOpenCalculatorEnabled());
+        mDotMatrixIconsPreference.setChecked(PreferenceManager.isDotMatrixIconsEnabled());
+        mSystemColorsPreference.setVisible(DynamicColors.isDynamicColorAvailable());
+        mSystemColorsPreference.setChecked(ThemeEngine.isSystemColorsEnabled());
+        setupThemeColorsVisible();
         // attach listeners to each preference to get notified when a value changes
         mCustomDigitsSetupPreference.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
 
@@ -214,6 +242,26 @@ public class UserInterfaceSettingFragment extends PreferenceFragmentCompat imple
                 int index = Integer.parseInt((String) newValue);
                 PreferenceManager.setCurrentDateFormatIndex(index);
                 setupCurrentDateFormat();
+                return false;
+            }
+
+        });
+        mTimeFormatPreference.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
+
+            @Override
+            public boolean onPreferenceClick(Preference preference) {
+                try {
+                    startActivity(new Intent(Settings.ACTION_DATE_SETTINGS));
+                } catch (ActivityNotFoundException e) {
+                    Activity activity = getActivity();
+                    if (activity != null) {
+                        ThemedDialog.buildMaterialDialog(activity)
+                                .setTitle(R.string.title_error)
+                                .setMessage(R.string.message_error_activity_not_found)
+                                .setPositiveButton(android.R.string.ok, null)
+                                .show();
+                    }
+                }
                 return false;
             }
 
@@ -251,6 +299,57 @@ public class UserInterfaceSettingFragment extends PreferenceFragmentCompat imple
             }
 
         });
+        mDrawerEntriesPreference.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
+
+            @Override
+            public boolean onPreferenceClick(Preference preference) {
+                showDrawerEntriesDialog();
+                return false;
+            }
+
+        });
+        setupCurrentDefaultWallet();
+        mDefaultWalletPreference.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
+
+            @Override
+            public boolean onPreferenceClick(Preference preference) {
+                showDefaultWalletDialog();
+                return false;
+            }
+
+        });
+        mAutoOpenCalculatorPreference.setOnPreferenceChangeListener(new Preference.OnPreferenceChangeListener() {
+
+            @Override
+            public boolean onPreferenceChange(Preference preference, Object newValue) {
+                PreferenceManager.setAutoOpenCalculatorEnabled((Boolean) newValue);
+                return true;
+            }
+
+        });
+        mDotMatrixIconsPreference.setOnPreferenceChangeListener(new Preference.OnPreferenceChangeListener() {
+
+            @Override
+            public boolean onPreferenceChange(Preference preference, Object newValue) {
+                PreferenceManager.setDotMatrixIconsEnabled((Boolean) newValue);
+                // Every list builds its icons again when its section is opened, but the drawer
+                // around this screen keeps the wallet icons it already has. Recreating the
+                // activity rebuilds it the way a rotation does and comes back to this screen.
+                requireActivity().recreate();
+                return true;
+            }
+
+        });
+        mSystemColorsPreference.setOnPreferenceChangeListener(new Preference.OnPreferenceChangeListener() {
+
+            @Override
+            public boolean onPreferenceChange(Preference preference, Object newValue) {
+                ThemeEngine.setUseSystemColors((Boolean) newValue);
+                setupThemeColorsVisible();
+                return true;
+            }
+
+        });
         mThemeTypePreference.setOnPreferenceChangeListener(new Preference.OnPreferenceChangeListener() {
 
             @Override
@@ -278,7 +377,156 @@ public class UserInterfaceSettingFragment extends PreferenceFragmentCompat imple
     public RecyclerView onCreateRecyclerView(LayoutInflater inflater, ViewGroup parent, Bundle savedInstanceState) {
         RecyclerView recyclerView = super.onCreateRecyclerView(inflater, parent, savedInstanceState);
         recyclerView.setPadding(0, 0, 0, 0);
+        // After the reset above, not before it, or the navigation bar clearance is the
+        // padding that gets zeroed.
+        SystemBars.pad(recyclerView,
+                false, getResources().getBoolean(R.bool.secondary_panel_fills_window), true);
         return recyclerView;
+    }
+
+    /**
+     * A checked entry is one the drawer shows. The drawer is only built when the activity is
+     * created, so a change recreates it the way the dot matrix setting does.
+     */
+    private void showDrawerEntriesDialog() {
+        final Set<String> hidden = PreferenceManager.getHiddenDrawerEntries();
+        final int[] ids = MainActivity.HIDEABLE_ENTRY_IDS;
+        String[] items = new String[ids.length];
+        final boolean[] shown = new boolean[ids.length];
+        for (int i = 0; i < ids.length; i++) {
+            items[i] = getString(MainActivity.HIDEABLE_ENTRY_NAMES[i]);
+            shown[i] = !hidden.contains(String.valueOf(ids[i]));
+        }
+        ThemedDialog.buildMaterialDialog(requireActivity())
+                .setTitle(R.string.setting_title_ui_drawer_entries)
+                .setMultiChoiceItems(items, shown, new DialogInterface.OnMultiChoiceClickListener() {
+
+                    @Override
+                    public void onClick(DialogInterface dialog, int which, boolean isChecked) {
+                        shown[which] = isChecked;
+                    }
+
+                })
+                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        Set<String> nextHidden = new HashSet<>();
+                        for (int i = 0; i < ids.length; i++) {
+                            if (!shown[i]) {
+                                nextHidden.add(String.valueOf(ids[i]));
+                            }
+                        }
+                        if (!nextHidden.equals(hidden)) {
+                            PreferenceManager.setHiddenDrawerEntries(nextHidden);
+                            requireActivity().recreate();
+                        }
+                    }
+
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    /**
+     * Lists "Current wallet" and every non archived wallet by sort index. The first entry stores
+     * NO_DEFAULT_WALLET so a new item follows whatever wallet is being viewed; each other entry
+     * stores its wallet id.
+     */
+    private void showDefaultWalletDialog() {
+        final List<String> names = new ArrayList<>();
+        final List<Long> ids = new ArrayList<>();
+        names.add(getString(R.string.setting_default_wallet_current));
+        ids.add(PreferenceManager.NO_DEFAULT_WALLET);
+        Cursor cursor = requireActivity().getContentResolver().query(
+                DataContentProvider.CONTENT_WALLETS,
+                new String[]{Contract.Wallet.ID, Contract.Wallet.NAME},
+                Contract.Wallet.ARCHIVED + " = 0", null,
+                Contract.Wallet.INDEX + " ASC, " + Contract.Wallet.NAME + " ASC");
+        if (cursor != null) {
+            try {
+                while (cursor.moveToNext()) {
+                    ids.add(cursor.getLong(cursor.getColumnIndexOrThrow(Contract.Wallet.ID)));
+                    names.add(cursor.getString(cursor.getColumnIndexOrThrow(Contract.Wallet.NAME)));
+                }
+            } finally {
+                cursor.close();
+            }
+        }
+        long stored = PreferenceManager.getDefaultWallet();
+        int checked = ids.indexOf(stored);
+        if (checked < 0) {
+            String label = getWalletLabel(stored);
+            if (label != null) {
+                ids.add(stored);
+                names.add(label);
+                checked = ids.size() - 1;
+            } else {
+                checked = 0;
+            }
+        }
+        final int[] selected = {checked};
+        ThemedDialog.buildMaterialDialog(requireActivity())
+                .setTitle(R.string.setting_title_ui_default_wallet)
+                .setSingleChoiceItems(names.toArray(new String[0]), checked, new DialogInterface.OnClickListener() {
+
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        selected[0] = which;
+                    }
+
+                })
+                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        PreferenceManager.setDefaultWallet(ids.get(selected[0]));
+                        setupCurrentDefaultWallet();
+                    }
+
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private void setupCurrentDefaultWallet() {
+        long stored = PreferenceManager.getDefaultWallet();
+        String summary = null;
+        if (stored != PreferenceManager.NO_DEFAULT_WALLET) {
+            summary = getWalletLabel(stored);
+        }
+        if (summary == null) {
+            summary = getString(R.string.setting_default_wallet_current);
+        }
+        mDefaultWalletPreference.setSummary(summary);
+    }
+
+    /**
+     * The wallet's name, marked when it is archived, or null when the id names no wallet or a
+     * deleted one.
+     */
+    @Nullable
+    private String getWalletLabel(long walletId) {
+        String label = null;
+        Cursor cursor = requireActivity().getContentResolver().query(
+                DataContentProvider.CONTENT_WALLETS,
+                new String[]{Contract.Wallet.NAME, Contract.Wallet.ARCHIVED},
+                Contract.Wallet.ID + " = ?",
+                new String[]{String.valueOf(walletId)}, null);
+        if (cursor != null) {
+            try {
+                if (cursor.moveToFirst()) {
+                    label = cursor.getString(cursor.getColumnIndexOrThrow(Contract.Wallet.NAME));
+                    int archived = cursor.getColumnIndexOrThrow(Contract.Wallet.ARCHIVED);
+                    if (cursor.getInt(archived) != 0) {
+                        label = getString(R.string.setting_default_wallet_archived, label);
+                    }
+                }
+            } finally {
+                cursor.close();
+            }
+        }
+        return label;
     }
 
     private void setupCurrentDateFormat() {
@@ -286,6 +534,37 @@ public class UserInterfaceSettingFragment extends PreferenceFragmentCompat imple
         String summary = DateFormatter.getFormattedDateTime(Calendar.getInstance().getTime(), index);
         mDateFormatPreference.setValue(String.valueOf(index));
         mDateFormatPreference.setSummary(summary);
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        // the 12 or 24 hour choice lives in the system settings, which the Time format row links
+        // to, so everything that renders a time can be stale on the way back: the two summaries
+        // and the nine dated examples inside the date format dialog
+        setupCurrentTimeFormat();
+        setupCurrentDateFormat();
+        setupDateFormatEntries();
+    }
+
+    private void setupDateFormatEntries() {
+        Date now = Calendar.getInstance().getTime();
+        mDateFormatPreference.setEntries(new String[] {
+                DateFormatter.getFormattedDateTime(now, PreferenceManager.DATE_FORMAT_TYPE_0),
+                DateFormatter.getFormattedDateTime(now, PreferenceManager.DATE_FORMAT_TYPE_1),
+                DateFormatter.getFormattedDateTime(now, PreferenceManager.DATE_FORMAT_TYPE_2),
+                DateFormatter.getFormattedDateTime(now, PreferenceManager.DATE_FORMAT_TYPE_3),
+                DateFormatter.getFormattedDateTime(now, PreferenceManager.DATE_FORMAT_TYPE_4),
+                DateFormatter.getFormattedDateTime(now, PreferenceManager.DATE_FORMAT_TYPE_5),
+                DateFormatter.getFormattedDateTime(now, PreferenceManager.DATE_FORMAT_TYPE_6),
+                DateFormatter.getFormattedDateTime(now, PreferenceManager.DATE_FORMAT_TYPE_7),
+                DateFormatter.getFormattedDateTime(now, PreferenceManager.DATE_FORMAT_TYPE_8)
+        });
+    }
+
+    private void setupCurrentTimeFormat() {
+        String example = DateFormatter.getFormattedTime(Calendar.getInstance().getTime());
+        mTimeFormatPreference.setSummary(getString(R.string.setting_summary_ui_time_format, example));
     }
 
     private void setupCurrentFirstDayOfWeek() {
@@ -297,9 +576,8 @@ public class UserInterfaceSettingFragment extends PreferenceFragmentCompat imple
 
     private void setupCurrentFirstDayOfMonth() {
         int index = PreferenceManager.getFirstDayOfMonth();
-        String value = String.valueOf(index);
-        mFirstDayMonthPreference.setValue(value);
-        mFirstDayMonthPreference.setSummary(value);
+        mFirstDayMonthPreference.setValue(String.valueOf(index));
+        mFirstDayMonthPreference.setSummary(String.format(Locale.getDefault(), "%d", index));
     }
 
     private void setupCurrentGroupType() {
@@ -339,12 +617,22 @@ public class UserInterfaceSettingFragment extends PreferenceFragmentCompat imple
         }
     }
 
+    private void setupThemeColorsVisible() {
+        boolean visible = !DynamicColors.isDynamicColorAvailable() || !ThemeEngine.isSystemColorsEnabled();
+        mColorPrimaryPreference.setVisible(visible);
+        mColorAccentPreference.setVisible(visible);
+    }
+
+    /**
+     * The two theme pickers start from the saved colors, never from the theme. While the system
+     * colors are in use the theme answers with the wallpaper colors, and a picker keeps its color
+     * across a recreate, so it would still show and offer them once the switch is turned off.
+     */
     private void onCreateFragments(FragmentManager fragmentManager) {
-        ITheme theme = ThemeEngine.getTheme();
         mColorIncomePicker = ColorPicker.createPicker(fragmentManager, TAG_COLOR_INCOME, PreferenceManager.getCurrentIncomeColor(), false, this);
         mColorExpensePicker = ColorPicker.createPicker(fragmentManager, TAG_COLOR_EXPENSE, PreferenceManager.getCurrentExpenseColor(), false, this);
-        mColorPrimaryPicker = ColorPicker.createPicker(fragmentManager, TAG_COLOR_PRIMARY, theme.getColorPrimary(), false, this);
-        mColorAccentPicker = ColorPicker.createPicker(fragmentManager, TAG_COLOR_ACCENT, theme.getColorAccent(), true, this);
+        mColorPrimaryPicker = ColorPicker.createPicker(fragmentManager, TAG_COLOR_PRIMARY, ThemeEngine.getSavedColorPrimary(), false, this);
+        mColorAccentPicker = ColorPicker.createPicker(fragmentManager, TAG_COLOR_ACCENT, ThemeEngine.getSavedColorAccent(), true, this);
         mCustomDigitSetupDialog = (CustomDigitSetupDialog) fragmentManager.findFragmentByTag(TAG_CUSTOM_DIGIT);
         if (mCustomDigitSetupDialog == null) {
             mCustomDigitSetupDialog = CustomDigitSetupDialog.newInstance();
@@ -379,5 +667,22 @@ public class UserInterfaceSettingFragment extends PreferenceFragmentCompat imple
                 }
                 break;
         }
+    }
+
+    @Override
+    public boolean onColorPreview(String tag, int color) {
+        switch (tag) {
+            case TAG_COLOR_PRIMARY:
+                return ThemeEngine.previewColorPrimary(color);
+            case TAG_COLOR_ACCENT:
+                return ThemeEngine.previewColorAccent(color);
+            default:
+                return false;
+        }
+    }
+
+    @Override
+    public void onColorPreviewEnded() {
+        ThemeEngine.clearPreview();
     }
 }

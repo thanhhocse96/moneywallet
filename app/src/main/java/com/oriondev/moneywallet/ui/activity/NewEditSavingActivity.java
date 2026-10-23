@@ -44,13 +44,16 @@ import com.oriondev.moneywallet.picker.MoneyPicker;
 import com.oriondev.moneywallet.picker.WalletPicker;
 import com.oriondev.moneywallet.storage.database.Contract;
 import com.oriondev.moneywallet.storage.database.DataContentProvider;
+import com.oriondev.moneywallet.storage.database.SQLiteDataException;
 import com.oriondev.moneywallet.storage.preference.PreferenceManager;
 import com.oriondev.moneywallet.ui.view.text.MaterialEditText;
 import com.oriondev.moneywallet.ui.view.text.NonEmptyTextValidator;
 import com.oriondev.moneywallet.ui.view.text.Validator;
+import com.oriondev.moneywallet.ui.view.theme.ThemedDialog;
 import com.oriondev.moneywallet.utils.CurrencyManager;
 import com.oriondev.moneywallet.utils.DateFormatter;
 import com.oriondev.moneywallet.utils.DateUtils;
+import com.oriondev.moneywallet.utils.DefaultWallet;
 import com.oriondev.moneywallet.utils.IconLoader;
 import com.oriondev.moneywallet.utils.MoneyFormatter;
 
@@ -235,11 +238,13 @@ public class NewEditSavingActivity extends NewEditItemActivity implements IconPi
                         Contract.Wallet.START_MONEY,
                         Contract.Wallet.TOTAL_MONEY
                 };
-                long currentWallet = PreferenceManager.getCurrentWallet();
+                long currentWallet = DefaultWallet.resolveNewItemWallet(contentResolver);
                 Cursor cursor;
                 if (currentWallet == PreferenceManager.TOTAL_WALLET_ID) {
                     Uri uri = DataContentProvider.CONTENT_WALLETS;
-                    cursor = contentResolver.query(uri, projection, null, null, null);
+                    cursor = contentResolver.query(uri, projection,
+                            Contract.Wallet.ARCHIVED + " = 0", null,
+                            Contract.Wallet.INDEX + " ASC, " + Contract.Wallet.NAME + " ASC");
                 } else {
                     Uri uri = ContentUris.withAppendedId(DataContentProvider.CONTENT_WALLETS, currentWallet);
                     cursor = contentResolver.query(uri, projection, null, null, null);
@@ -297,17 +302,29 @@ public class NewEditSavingActivity extends NewEditItemActivity implements IconPi
             contentValues.put(Contract.Saving.END_MONEY, mMoneyPicker.getCurrentMoney());
             contentValues.put(Contract.Saving.WALLET_ID, mWalletPicker.getCurrentWallet().getId());
             contentValues.put(Contract.Saving.END_DATE, mExpDatePicker.isSelected() ? DateUtils.getSQLDateString(mExpDatePicker.getCurrentDateTime()) : null);
-            contentValues.put(Contract.Saving.COMPLETE, false);
             contentValues.put(Contract.Saving.NOTE, mNoteEditText.getTextAsString());
             ContentResolver contentResolver = getContentResolver();
-            switch (mode) {
-                case NEW_ITEM:
-                    contentResolver.insert(DataContentProvider.CONTENT_SAVINGS, contentValues);
-                    break;
-                case EDIT_ITEM:
-                    Uri uri = ContentUris.withAppendedId(DataContentProvider.CONTENT_SAVINGS, getItemId());
-                    contentResolver.update(uri, contentValues, null, null);
-                    break;
+            try {
+                switch (mode) {
+                    case NEW_ITEM:
+                        contentValues.put(Contract.Saving.COMPLETE, false);
+                        contentResolver.insert(DataContentProvider.CONTENT_SAVINGS, contentValues);
+                        break;
+                    case EDIT_ITEM:
+                        Uri uri = ContentUris.withAppendedId(DataContentProvider.CONTENT_SAVINGS, getItemId());
+                        contentResolver.update(uri, contentValues, null, null);
+                        break;
+                }
+            } catch (SQLiteDataException e) {
+                if (e.getErrorCode() != Contract.ErrorCode.WALLETS_NOT_CONSISTENT) {
+                    throw e;
+                }
+                ThemedDialog.buildMaterialDialog(this)
+                        .setTitle(R.string.title_error)
+                        .setMessage(R.string.error_wallet_currency_not_consistent)
+                        .setPositiveButton(android.R.string.ok, null)
+                        .show();
+                return;
             }
             setResult(Activity.RESULT_OK);
             finish();

@@ -21,8 +21,10 @@ package com.oriondev.moneywallet.storage.database.json;
 
 import com.oriondev.moneywallet.storage.database.model.Attachment;
 import com.oriondev.moneywallet.storage.database.model.Budget;
+import com.oriondev.moneywallet.storage.database.model.BudgetCategory;
 import com.oriondev.moneywallet.storage.database.model.BudgetWallet;
 import com.oriondev.moneywallet.storage.database.model.Category;
+import com.oriondev.moneywallet.storage.database.model.CategoryRule;
 import com.oriondev.moneywallet.storage.database.model.Currency;
 import com.oriondev.moneywallet.storage.database.model.Debt;
 import com.oriondev.moneywallet.storage.database.model.DebtPerson;
@@ -37,6 +39,7 @@ import com.oriondev.moneywallet.storage.database.model.Transaction;
 import com.oriondev.moneywallet.storage.database.model.TransactionAttachment;
 import com.oriondev.moneywallet.storage.database.model.TransactionModel;
 import com.oriondev.moneywallet.storage.database.model.TransactionPerson;
+import com.oriondev.moneywallet.storage.database.model.TransactionSplit;
 import com.oriondev.moneywallet.storage.database.model.Transfer;
 import com.oriondev.moneywallet.storage.database.model.TransferAttachment;
 import com.oriondev.moneywallet.storage.database.model.TransferModel;
@@ -89,6 +92,7 @@ import java.util.HashMap;
         object.put(JSONDatabase.Wallet.ARCHIVED, wallet.mArchived);
         object.put(JSONDatabase.Wallet.NOTE, wallet.mNote);
         object.put(JSONDatabase.Wallet.TAG, wallet.mTag);
+        object.put(JSONDatabase.Wallet.GROUP, wallet.mGroup);
         object.put(JSONDatabase.Wallet.ID, wallet.mUUID);
         object.put(JSONDatabase.Wallet.INDEX, wallet.mIndex);
         object.put(JSONDatabase.Wallet.LAST_EDIT, wallet.mLastEdit);
@@ -125,6 +129,17 @@ import java.util.HashMap;
         object.put(JSONDatabase.Event.LAST_EDIT, event.mLastEdit);
         object.put(JSONDatabase.Event.DELETED, event.mDeleted);
         mCacheEvents.put(event.mId, event.mUUID);
+        return object;
+    }
+
+    /*package-local*/ JSONObject getObject(CategoryRule categoryRule) throws JSONException {
+        JSONObject object = new JSONObject();
+        object.put(JSONDatabase.CategoryRule.PATTERN, categoryRule.mPattern);
+        object.put(JSONDatabase.CategoryRule.CATEGORY, mCacheCategories.get(categoryRule.mCategory));
+        object.put(JSONDatabase.CategoryRule.INDEX, categoryRule.mIndex);
+        object.put(JSONDatabase.CategoryRule.ID, categoryRule.mUUID);
+        object.put(JSONDatabase.CategoryRule.LAST_EDIT, categoryRule.mLastEdit);
+        object.put(JSONDatabase.CategoryRule.DELETED, categoryRule.mDeleted);
         return object;
     }
 
@@ -204,11 +219,23 @@ import java.util.HashMap;
         object.put(JSONDatabase.Budget.END_DATE, budget.mEndDate);
         object.put(JSONDatabase.Budget.MONEY, budget.mMoney);
         object.put(JSONDatabase.Budget.CURRENCY, budget.mCurrency);
+        object.put(JSONDatabase.Budget.RULE, budget.mRule);
+        object.put(JSONDatabase.Budget.RULE_START, budget.mRuleStart);
         object.put(JSONDatabase.Budget.TAG, budget.mTag);
         object.put(JSONDatabase.Budget.ID, budget.mUUID);
         object.put(JSONDatabase.Budget.LAST_EDIT, budget.mLastEdit);
         object.put(JSONDatabase.Budget.DELETED, budget.mDeleted);
         mCacheBudgets.put(budget.mId, budget.mUUID);
+        return object;
+    }
+
+    /*package-local*/ JSONObject getObject(BudgetCategory budgetCategory) throws JSONException {
+        JSONObject object = new JSONObject();
+        object.put(JSONDatabase.BudgetCategory.BUDGET, mCacheBudgets.get(budgetCategory.mBudget));
+        object.put(JSONDatabase.BudgetCategory.CATEGORY, mCacheCategories.get(budgetCategory.mCategory));
+        object.put(JSONDatabase.BudgetCategory.ID, budgetCategory.mUUID);
+        object.put(JSONDatabase.BudgetCategory.LAST_EDIT, budgetCategory.mLastEdit);
+        object.put(JSONDatabase.BudgetCategory.DELETED, budgetCategory.mDeleted);
         return object;
     }
 
@@ -311,6 +338,18 @@ import java.util.HashMap;
         object.put(JSONDatabase.Transaction.LAST_EDIT, transaction.mLastEdit);
         object.put(JSONDatabase.Transaction.DELETED, transaction.mDeleted);
         mCacheTransactions.put(transaction.mId, transaction.mUUID);
+        return object;
+    }
+
+    /*package-local*/ JSONObject getObject(TransactionSplit transactionSplit) throws JSONException {
+        JSONObject object = new JSONObject();
+        object.put(JSONDatabase.TransactionSplit.TRANSACTION, mCacheTransactions.get(transactionSplit.mTransaction));
+        object.put(JSONDatabase.TransactionSplit.CATEGORY, mCacheCategories.get(transactionSplit.mCategory));
+        object.put(JSONDatabase.TransactionSplit.MONEY, transactionSplit.mMoney);
+        object.put(JSONDatabase.TransactionSplit.NOTE, transactionSplit.mNote);
+        object.put(JSONDatabase.TransactionSplit.ID, transactionSplit.mUUID);
+        object.put(JSONDatabase.TransactionSplit.LAST_EDIT, transactionSplit.mLastEdit);
+        object.put(JSONDatabase.TransactionSplit.DELETED, transactionSplit.mDeleted);
         return object;
     }
 

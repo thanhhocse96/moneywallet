@@ -22,12 +22,15 @@ package com.oriondev.moneywallet.ui.fragment.secondary;
 import android.app.Activity;
 import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.os.Bundle;
+import android.widget.EditText;
 import androidx.annotation.MenuRes;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.appcompat.app.AlertDialog;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import androidx.fragment.app.Fragment;
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
@@ -44,8 +47,6 @@ import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.TextView;
 
-import com.afollestad.materialdialogs.DialogAction;
-import com.afollestad.materialdialogs.MaterialDialog;
 import com.oriondev.moneywallet.R;
 import com.oriondev.moneywallet.api.BackendException;
 import com.oriondev.moneywallet.api.AbstractBackendServiceDelegate;
@@ -114,7 +115,11 @@ public class BackupHandlerFragment extends Fragment implements BackupFileAdapter
             mAllowRestore = arguments.getBoolean(ARG_ALLOW_RESTORE, true);
             String backendId = arguments.getString(ARG_BACKEND_ID, null);
             mBackendService = BackendServiceFactory.getServiceById(backendId, this);
+            if (mBackendService != null) {
+                mBackendService.registerLaunchers(this);
+            }
             mFileStack = new ArrayList<>();
+            openOnDefaultFolder();
         } else {
             throw new IllegalStateException("Arguments bundle is null, please instantiate the fragment using the newInstance() method instead.");
         }
@@ -164,6 +169,7 @@ public class BackupHandlerFragment extends Fragment implements BackupFileAdapter
         Fragment parent = getParentFragment();
         if (parent instanceof MultiPanelFragment && !((MultiPanelFragment) parent).isExtendedLayout()) {
             mToolbar.setNavigationIcon(R.drawable.ic_arrow_back_black_24dp);
+            mToolbar.setNavigationContentDescription(R.string.hint_navigate_up);
             mToolbar.setNavigationOnClickListener(new View.OnClickListener() {
 
                 @Override
@@ -179,6 +185,7 @@ public class BackupHandlerFragment extends Fragment implements BackupFileAdapter
             mToolbar.setOnMenuItemClickListener(this);
             if (mCoverToolbar != null) {
                 mCoverToolbar.setNavigationIcon(R.drawable.ic_arrow_back_black_24dp);
+                mCoverToolbar.setNavigationContentDescription(R.string.hint_navigate_up);
                 mCoverToolbar.setNavigationOnClickListener(new View.OnClickListener() {
 
                     @Override
@@ -204,17 +211,21 @@ public class BackupHandlerFragment extends Fragment implements BackupFileAdapter
 
                 @Override
                 public void onClick(View v) {
-                    ThemedDialog.buildMaterialDialog(v.getContext())
-                            .title(R.string.title_backup_create)
-                            .content(R.string.message_backup_create)
-                            .negativeText(android.R.string.cancel)
-                            .inputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD)
-                            .input(R.string.hint_password, 0, new MaterialDialog.InputCallback() {
+                    View inputView = LayoutInflater.from(v.getContext()).inflate(R.layout.dialog_input, null);
+                    final EditText inputEditText = inputView.findViewById(R.id.dialog_input_edit_text);
+                    inputEditText.setHint(R.string.hint_password);
+                    inputEditText.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+                    AlertDialog dialog = ThemedDialog.buildMaterialDialog(v.getContext())
+                            .setTitle(R.string.title_backup_create)
+                            .setMessage(R.string.message_backup_create)
+                            .setView(inputView)
+                            .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
 
                                 @Override
-                                public void onInput(@NonNull MaterialDialog dialog, CharSequence input) {
+                                public void onClick(DialogInterface dialog, int which) {
                                     Activity activity = getActivity();
                                     if (activity != null) {
+                                        CharSequence input = inputEditText.getText();
                                         IFile folder = mFileStack.isEmpty() ? ROOT_FOLDER : mFileStack.get(mFileStack.size() - 1);
                                         Intent intent = new Intent(activity, BackupHandlerIntentService.class);
                                         intent.putExtra(BackupHandlerIntentService.BACKEND_ID, mBackendService.getId());
@@ -229,7 +240,10 @@ public class BackupHandlerFragment extends Fragment implements BackupFileAdapter
                                 }
 
                             })
-                            .show();
+                            .setNegativeButton(android.R.string.cancel, null)
+                            .create();
+                    // the three argument input() allowed an empty value, so an empty password is valid here
+                    ThemedDialog.showWithInput(dialog, inputEditText, true);
                 }
 
             });
@@ -267,11 +281,26 @@ public class BackupHandlerFragment extends Fragment implements BackupFileAdapter
     protected void hideCoverView() {
         if (mCoverLayout != null) {
             // setup menu item visibility
-            setMenuItemVisibility(R.id.action_disconnect, !BackendServiceFactory.SERVICE_ID_EXTERNAL_MEMORY.equals(mBackendService.getId()));
+            setMenuItemVisibility(R.id.action_disconnect, mBackendService.isDisconnectable());
+            setMenuItemVisibility(R.id.action_change_folder, mBackendService.isFolderChangeable());
             // setup layout visibility
             mCoverLayout.setVisibility(View.GONE);
             mPrimaryLayout.setVisibility(View.VISIBLE);
+            showLocation();
         }
+    }
+
+    private void showLocation() {
+        // a WebDAV check can finish after this fragment is detached
+        if (getContext() == null) {
+            return;
+        }
+        final Context context = getContext().getApplicationContext();
+        final AbstractBackendServiceDelegate backendService = mBackendService;
+        new Thread(() -> {
+            final String location = backendService.describeLocation(context);
+            mToolbar.post(() -> mToolbar.setSubtitle(location));
+        }, "backup-location").start();
     }
 
     protected int getTitle() {
@@ -295,18 +324,24 @@ public class BackupHandlerFragment extends Fragment implements BackupFileAdapter
 
     @Override
     public boolean onMenuItemClick(MenuItem item) {
-        switch (item.getItemId()) {
-            case R.id.action_disconnect:
-                try {
-                    mBackendService.teardown(getActivity());
-                } catch (BackendException e) {
-                    e.printStackTrace();
-                }
-                break;
-            case R.id.action_auto_backup:
-                String tag = getTag() + "::AutoBackupSettingDialog";
-                mAutoBackupSettingDialog.show(getChildFragmentManager(), tag, mBackendService.getId());
-                break;
+        int itemId = item.getItemId();
+        if (itemId == R.id.action_disconnect) {
+            try {
+                mBackendService.teardown(getActivity());
+            } catch (BackendException e) {
+                e.printStackTrace();
+            }
+        } else if (itemId == R.id.action_change_folder) {
+            // the folders on the stack belong to the folder being replaced
+            mFileStack.clear();
+            try {
+                mBackendService.setup(getActivity());
+            } catch (BackendException e) {
+                e.printStackTrace();
+            }
+        } else if (itemId == R.id.action_auto_backup) {
+            String tag = getTag() + "::AutoBackupSettingDialog";
+            mAutoBackupSettingDialog.show(getChildFragmentManager(), tag, mBackendService.getId());
         }
         return false;
     }
@@ -352,14 +387,12 @@ public class BackupHandlerFragment extends Fragment implements BackupFileAdapter
             if (mAllowRestore && activity != null) {
                 if (file.getName().endsWith(BackupManager.BACKUP_EXTENSION_STANDARD)) {
                     ThemedDialog.buildMaterialDialog(activity)
-                            .title(R.string.title_backup_restore)
-                            .content(R.string.message_backup_restore_standard)
-                            .positiveText(android.R.string.ok)
-                            .negativeText(android.R.string.cancel)
-                            .onPositive(new MaterialDialog.SingleButtonCallback() {
+                            .setTitle(R.string.title_backup_restore)
+                            .setMessage(R.string.message_backup_restore_standard)
+                            .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
 
                                 @Override
-                                public void onClick(@NonNull MaterialDialog dialog, @NonNull DialogAction which) {
+                                public void onClick(DialogInterface dialog, int which) {
                                     Intent intent = new Intent(getActivity(), BackupHandlerIntentService.class);
                                     intent.putExtra(BackupHandlerIntentService.BACKEND_ID, mBackendService.getId());
                                     intent.putExtra(BackupHandlerIntentService.ACTION, BackupHandlerIntentService.ACTION_RESTORE);
@@ -369,38 +402,41 @@ public class BackupHandlerFragment extends Fragment implements BackupFileAdapter
                                 }
 
                             })
+                            .setNegativeButton(android.R.string.cancel, null)
                             .show();
                 } else if (file.getName().endsWith(BackupManager.BACKUP_EXTENSION_PROTECTED)) {
-                    ThemedDialog.buildMaterialDialog(activity)
-                            .title(R.string.title_backup_restore)
-                            .content(R.string.message_backup_restore_protected)
-                            .positiveText(android.R.string.ok)
-                            .inputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD)
-                            .input(R.string.hint_password, 0, false, new MaterialDialog.InputCallback() {
+                    View inputView = LayoutInflater.from(activity).inflate(R.layout.dialog_input, null);
+                    final EditText inputEditText = inputView.findViewById(R.id.dialog_input_edit_text);
+                    inputEditText.setHint(R.string.hint_password);
+                    inputEditText.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+                    AlertDialog dialog = ThemedDialog.buildMaterialDialog(activity)
+                            .setTitle(R.string.title_backup_restore)
+                            .setMessage(R.string.message_backup_restore_protected)
+                            .setView(inputView)
+                            .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
 
                                 @Override
-                                public void onInput(@NonNull MaterialDialog dialog, CharSequence input) {
+                                public void onClick(DialogInterface dialog, int which) {
                                     Intent intent = new Intent(getActivity(), BackupHandlerIntentService.class);
                                     intent.putExtra(BackupHandlerIntentService.BACKEND_ID, mBackendService.getId());
                                     intent.putExtra(BackupHandlerIntentService.ACTION, BackupHandlerIntentService.ACTION_RESTORE);
                                     intent.putExtra(BackupHandlerIntentService.BACKUP_FILE, file);
-                                    intent.putExtra(BackupHandlerIntentService.PASSWORD, input.toString());
+                                    intent.putExtra(BackupHandlerIntentService.PASSWORD, inputEditText.getText().toString());
                                     intent.putExtra(BackupHandlerIntentService.CALLER_ID, BACKUP_SERVICE_CALLER_ID);
                                     getActivity().startService(intent);
                                 }
 
                             })
-                            .show();
+                            .create();
+                    ThemedDialog.showWithInput(dialog, inputEditText, false);
                 } else if (file.getName().endsWith(BackupManager.BACKUP_EXTENSION_LEGACY)) {
                     ThemedDialog.buildMaterialDialog(activity)
-                            .title(R.string.title_backup_restore)
-                            .content(R.string.message_backup_restore_legacy)
-                            .positiveText(android.R.string.ok)
-                            .negativeText(android.R.string.cancel)
-                            .onPositive(new MaterialDialog.SingleButtonCallback() {
+                            .setTitle(R.string.title_backup_restore)
+                            .setMessage(R.string.message_backup_restore_legacy)
+                            .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
 
                                 @Override
-                                public void onClick(@NonNull MaterialDialog dialog, @NonNull DialogAction which) {
+                                public void onClick(DialogInterface dialog, int which) {
                                     Intent intent = new Intent(getActivity(), BackupHandlerIntentService.class);
                                     intent.putExtra(BackupHandlerIntentService.BACKEND_ID, mBackendService.getId());
                                     intent.putExtra(BackupHandlerIntentService.ACTION, BackupHandlerIntentService.ACTION_RESTORE);
@@ -410,6 +446,7 @@ public class BackupHandlerFragment extends Fragment implements BackupFileAdapter
                                 }
 
                             })
+                            .setNegativeButton(android.R.string.cancel, null)
                             .show();
                 }
             }
@@ -426,10 +463,23 @@ public class BackupHandlerFragment extends Fragment implements BackupFileAdapter
         if (enabled) {
             hideCoverView();
             if (isStackEmpty()) {
+                // asked again here: at onCreate the backend may not have been usable yet,
+                // and a default resolved then can have come back empty handed
+                openOnDefaultFolder();
                 loadCurrentFolder();
             }
         } else {
             showCoverView();
+        }
+    }
+
+    private void openOnDefaultFolder() {
+        if (!mFileStack.isEmpty() || mBackendService == null) {
+            return;
+        }
+        IFile defaultFolder = BackendServiceFactory.getFile(mBackendService.getId(), null);
+        if (defaultFolder != null) {
+            mFileStack.add(defaultFolder);
         }
     }
 
@@ -478,6 +528,11 @@ public class BackupHandlerFragment extends Fragment implements BackupFileAdapter
                 } else if (operation == BackupHandlerIntentService.ACTION_BACKUP) {
                     IFile backup = intent.getParcelableExtra(BackupHandlerIntentService.BACKUP_FILE);
                     mBackupAdapter.addFileToList(backup);
+                    // reveal the list in case the folder was empty before this backup,
+                    // otherwise the empty state keeps hiding the newly created file
+                    if (mBackupAdapter.getItemCount() > 0) {
+                        mAdvancedRecyclerView.setState(AdvancedRecyclerView.State.READY);
+                    }
                 }
             } else if (TextUtils.equals(action, LocalAction.ACTION_BACKUP_SERVICE_FAILED)) {
                 int operation = intent.getIntExtra(BackupHandlerIntentService.ACTION, 0);

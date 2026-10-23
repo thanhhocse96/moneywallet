@@ -25,9 +25,19 @@ package com.oriondev.moneywallet.storage.database.json;
 /*package-local*/ class JSONDatabase {
 
     /*package-local*/ static final int MIN_SUPPORTED_VERSION = 1;
-    /*package-local*/ static final int MAX_SUPPORTED_VERSION = 2;
+    /*package-local*/ static final int MAX_SUPPORTED_VERSION = 5;
 
-    /*package-local*/ static final int VERSION = 2;
+    // version 3 adds the budget_categories array, so that a budget covering more than one
+    // category keeps every one of them through a backup. A release that predates it refuses a
+    // version 3 file by its header instead of failing part way through the arrays, which is what
+    // it would do with an array it does not expect in the middle of the stream.
+    // version 4 adds the category_rules array, so that the rules naming a category from a
+    // description survive a restore and a move to another device. A release that predates it
+    // refuses a version 4 file by its header instead of failing part way through the arrays.
+    // version 5 adds the transaction_splits array, so that the parts a transaction is split into
+    // survive a restore. A release that predates it refuses a version 5 file by its header
+    // instead of failing part way through the arrays.
+    /*package-local*/ static final int VERSION = 5;
 
     /*package-local*/ static class Header {
         /*package-local*/ static final String OBJECT = "header";
@@ -57,6 +67,7 @@ package com.oriondev.moneywallet.storage.database.json;
         /*package-local*/ static final String NOTE = "note";
         /*package-local*/ static final String INDEX = "index";
         /*package-local*/ static final String TAG = "tag";
+        /*package-local*/ static final String GROUP = "group";
         /*package-local*/ static final String LAST_EDIT = "last_edit";
         /*package-local*/ static final String DELETED = "deleted";
     }
@@ -84,6 +95,16 @@ package com.oriondev.moneywallet.storage.database.json;
         /*package-local*/ static final String START_DATE = "start_date";
         /*package-local*/ static final String END_DATE = "end_date";
         /*package-local*/ static final String TAG = "tag";
+        /*package-local*/ static final String LAST_EDIT = "last_edit";
+        /*package-local*/ static final String DELETED = "deleted";
+    }
+
+    /*package-local*/ static final class CategoryRule {
+        /*package-local*/ static final String ARRAY = "category_rules";
+        /*package-local*/ static final String ID = "id";
+        /*package-local*/ static final String PATTERN = "pattern";
+        /*package-local*/ static final String CATEGORY = "category";
+        /*package-local*/ static final String INDEX = "index";
         /*package-local*/ static final String LAST_EDIT = "last_edit";
         /*package-local*/ static final String DELETED = "deleted";
     }
@@ -157,6 +178,8 @@ package com.oriondev.moneywallet.storage.database.json;
         /*package-local*/ static final String END_DATE = "end_date";
         /*package-local*/ static final String MONEY = "money";
         /*package-local*/ static final String CURRENCY = "currency";
+        /*package-local*/ static final String RULE = "rule";
+        /*package-local*/ static final String RULE_START = "rule_start";
         /*package-local*/ static final String TAG = "tag";
         /*package-local*/ static final String LAST_EDIT = "last_edit";
         /*package-local*/ static final String DELETED = "deleted";
@@ -167,6 +190,15 @@ package com.oriondev.moneywallet.storage.database.json;
         /*package-local*/ static final String ID = "id";
         /*package-local*/ static final String BUDGET = "budget";
         /*package-local*/ static final String WALLET = "wallet";
+        /*package-local*/ static final String LAST_EDIT = "last_edit";
+        /*package-local*/ static final String DELETED = "deleted";
+    }
+
+    /*package-local*/ static final class BudgetCategory {
+        /*package-local*/ static final String ARRAY = "budget_categories";
+        /*package-local*/ static final String ID = "id";
+        /*package-local*/ static final String BUDGET = "budget";
+        /*package-local*/ static final String CATEGORY = "category";
         /*package-local*/ static final String LAST_EDIT = "last_edit";
         /*package-local*/ static final String DELETED = "deleted";
     }
@@ -251,6 +283,17 @@ package com.oriondev.moneywallet.storage.database.json;
         /*package-local*/ static final String CONFIRMED = "confirmed";
         /*package-local*/ static final String COUNT_IN_TOTAL = "count_in_total";
         /*package-local*/ static final String TAG = "tag";
+        /*package-local*/ static final String LAST_EDIT = "last_edit";
+        /*package-local*/ static final String DELETED = "deleted";
+    }
+
+    /*package-local*/ static final class TransactionSplit {
+        /*package-local*/ static final String ARRAY = "transaction_splits";
+        /*package-local*/ static final String ID = "id";
+        /*package-local*/ static final String TRANSACTION = "transaction";
+        /*package-local*/ static final String CATEGORY = "category";
+        /*package-local*/ static final String MONEY = "money";
+        /*package-local*/ static final String NOTE = "note";
         /*package-local*/ static final String LAST_EDIT = "last_edit";
         /*package-local*/ static final String DELETED = "deleted";
     }

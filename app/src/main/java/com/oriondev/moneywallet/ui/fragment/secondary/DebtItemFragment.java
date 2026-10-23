@@ -24,6 +24,7 @@ import android.content.ContentResolver;
 import android.content.ContentUris;
 import android.content.ContentValues;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
@@ -41,8 +42,6 @@ import android.view.ViewGroup;
 import android.widget.ImageView;
 import android.widget.TextView;
 
-import com.afollestad.materialdialogs.DialogAction;
-import com.afollestad.materialdialogs.MaterialDialog;
 import com.oriondev.moneywallet.R;
 import com.oriondev.moneywallet.model.CurrencyUnit;
 import com.oriondev.moneywallet.model.Icon;
@@ -120,41 +119,34 @@ public class DebtItemFragment extends SecondaryPanelFragment implements LoaderMa
 
     @Override
     public boolean onMenuItemClick(MenuItem item) {
-        switch (item.getItemId()) {
-            case R.id.action_show_transaction_list:
-                Intent intent = new Intent(getActivity(), TransactionListActivity.class);
-                intent.putExtra(TransactionListActivity.DEBT_ID, getItemId());
-                startActivity(intent);
-                break;
-            case R.id.action_archive_item:
-                showArchiveDialog(getActivity());
-                break;
-            case R.id.action_unarchive_item:
-                showUnarchiveDialog(getActivity());
-                break;
-            case R.id.action_edit_item:
-                intent = new Intent(getActivity(), NewEditDebtActivity.class);
-                intent.putExtra(NewEditItemActivity.MODE, NewEditItemActivity.Mode.EDIT_ITEM);
-                intent.putExtra(NewEditItemActivity.ID, getItemId());
-                startActivity(intent);
-                break;
-            case R.id.action_delete_item:
-                showDeleteDialog(getActivity());
-                break;
+        int itemId = item.getItemId();
+        if (itemId == R.id.action_show_transaction_list) {
+            Intent intent = new Intent(getActivity(), TransactionListActivity.class);
+            intent.putExtra(TransactionListActivity.DEBT_ID, getItemId());
+            startActivity(intent);
+        } else if (itemId == R.id.action_archive_item) {
+            showArchiveDialog(getActivity());
+        } else if (itemId == R.id.action_unarchive_item) {
+            showUnarchiveDialog(getActivity());
+        } else if (itemId == R.id.action_edit_item) {
+            Intent intent = new Intent(getActivity(), NewEditDebtActivity.class);
+            intent.putExtra(NewEditItemActivity.MODE, NewEditItemActivity.Mode.EDIT_ITEM);
+            intent.putExtra(NewEditItemActivity.ID, getItemId());
+            startActivity(intent);
+        } else if (itemId == R.id.action_delete_item) {
+            showDeleteDialog(getActivity());
         }
         return false;
     }
 
     private void showArchiveDialog(Context context) {
         ThemedDialog.buildMaterialDialog(context)
-                .title(R.string.title_warning)
-                .content(R.string.message_action_archive_debt)
-                .positiveText(android.R.string.yes)
-                .negativeText(android.R.string.no)
-                .onPositive(new MaterialDialog.SingleButtonCallback() {
+                .setTitle(R.string.title_warning)
+                .setMessage(R.string.message_action_archive_debt)
+                .setPositiveButton(android.R.string.yes, new DialogInterface.OnClickListener() {
 
                     @Override
-                    public void onClick(@NonNull MaterialDialog dialog, @NonNull DialogAction which) {
+                    public void onClick(DialogInterface dialog, int which) {
                         Activity activity = getActivity();
                         if (activity != null) {
                             Uri uri = ContentUris.withAppendedId(DataContentProvider.CONTENT_DEBTS, getItemId());
@@ -169,19 +161,18 @@ public class DebtItemFragment extends SecondaryPanelFragment implements LoaderMa
                     }
 
                 })
+                .setNegativeButton(android.R.string.no, null)
                 .show();
     }
 
     private void showUnarchiveDialog(Context context) {
         ThemedDialog.buildMaterialDialog(context)
-                .title(R.string.title_warning)
-                .content(R.string.message_action_unarchive_debt)
-                .positiveText(android.R.string.yes)
-                .negativeText(android.R.string.no)
-                .onPositive(new MaterialDialog.SingleButtonCallback() {
+                .setTitle(R.string.title_warning)
+                .setMessage(R.string.message_action_unarchive_debt)
+                .setPositiveButton(android.R.string.yes, new DialogInterface.OnClickListener() {
 
                     @Override
-                    public void onClick(@NonNull MaterialDialog dialog, @NonNull DialogAction which) {
+                    public void onClick(DialogInterface dialog, int which) {
                         Activity activity = getActivity();
                         if (activity != null) {
                             Uri uri = ContentUris.withAppendedId(DataContentProvider.CONTENT_DEBTS, getItemId());
@@ -196,19 +187,18 @@ public class DebtItemFragment extends SecondaryPanelFragment implements LoaderMa
                     }
 
                 })
+                .setNegativeButton(android.R.string.no, null)
                 .show();
     }
 
     private void showDeleteDialog(Context context) {
         ThemedDialog.buildMaterialDialog(context)
-                .title(R.string.title_warning)
-                .content(R.string.message_delete_debt)
-                .positiveText(android.R.string.ok)
-                .negativeText(android.R.string.cancel)
-                .onPositive(new MaterialDialog.SingleButtonCallback() {
+                .setTitle(R.string.title_warning)
+                .setMessage(R.string.message_delete_debt)
+                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
 
                     @Override
-                    public void onClick(@NonNull MaterialDialog dialog, @NonNull DialogAction which) {
+                    public void onClick(DialogInterface dialog, int which) {
                         Activity activity = getActivity();
                         if (activity != null) {
                             Uri uri = ContentUris.withAppendedId(DataContentProvider.CONTENT_DEBTS, getItemId());
@@ -220,14 +210,15 @@ public class DebtItemFragment extends SecondaryPanelFragment implements LoaderMa
                     }
 
                 })
+                .setNegativeButton(android.R.string.cancel, null)
                 .show();
     }
 
     @Override
     protected void onShowItemId(long itemId) {
         setLoadingScreen(true);
-        getLoaderManager().restartLoader(DEBT_LOADER_ID, null, this);
-        getLoaderManager().restartLoader(PEOPLE_LOADER_ID, null, this);
+        LoaderManager.getInstance(this).restartLoader(DEBT_LOADER_ID, null, this);
+        LoaderManager.getInstance(this).restartLoader(PEOPLE_LOADER_ID, null, this);
     }
 
     private void setLoadingScreen(boolean loading) {

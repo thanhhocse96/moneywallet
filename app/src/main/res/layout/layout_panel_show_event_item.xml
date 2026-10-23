@@ -26,9 +26,10 @@
 
     <com.oriondev.moneywallet.ui.view.theme.ThemedProgressWheel
         android:id="@+id/secondary_panel_progress_wheel"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        app:matProg_progressIndeterminate="true" />
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:indeterminate="true" />
 
     <LinearLayout
         android:id="@+id/secondary_panel_layout"
@@ -41,7 +42,6 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/material_activity_body_edit_text_margin_top"
-            android:inputType="textNoSuggestions"
             app:mtv_mode="floatingLabel"
             app:mtv_floatingLabelText="@string/hint_start_date"
             app:mtv_leftIcon="@drawable/ic_today_black_24dp"
@@ -51,7 +51,6 @@
             android:id="@+id/end_date_text_view"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:inputType="textNoSuggestions"
             app:mtv_mode="floatingLabel"
             app:mtv_floatingLabelText="@string/hint_end_date"
             app:mtv_leftIcon="@drawable/ic_calendar_black_24dp"

@@ -51,6 +51,10 @@ public interface DatabaseImporter {
 
     void importBudgetWallets(ContentResolver contentResolver) throws ImportException;
 
+    void importBudgetCategories(ContentResolver contentResolver) throws ImportException;
+
+    void importCategoryRules(ContentResolver contentResolver) throws ImportException;
+
     void importSavings(ContentResolver contentResolver) throws ImportException;
 
     void importRecurrentTransactions(ContentResolver contentResolver) throws ImportException;
@@ -58,6 +62,8 @@ public interface DatabaseImporter {
     void importRecurrentTransfers(ContentResolver contentResolver) throws ImportException;
 
     void importTransactions(ContentResolver contentResolver) throws ImportException;
+
+    void importTransactionSplits(ContentResolver contentResolver) throws ImportException;
 
     void importTransactionPeople(ContentResolver contentResolver) throws ImportException;
 

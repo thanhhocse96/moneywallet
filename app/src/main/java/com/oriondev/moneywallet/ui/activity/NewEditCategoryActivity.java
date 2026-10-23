@@ -276,9 +276,9 @@ public class NewEditCategoryActivity extends NewEditItemActivity implements Icon
                         }
                         if (contentRes != 0) {
                             ThemedDialog.buildMaterialDialog(this)
-                                    .title(R.string.title_error)
-                                    .content(contentRes)
-                                    .positiveText(android.R.string.ok)
+                                    .setTitle(R.string.title_error)
+                                    .setMessage(contentRes)
+                                    .setPositiveButton(android.R.string.ok, null)
                                     .show();
                         }
                     }
@@ -298,12 +298,15 @@ public class NewEditCategoryActivity extends NewEditItemActivity implements Icon
                             case Contract.ErrorCode.CATEGORY_NOT_CONSISTENT:
                                 contentRes = R.string.message_error_update_category_not_consistent;
                                 break;
+                            case Contract.ErrorCode.CATEGORY_IN_USE:
+                                contentRes = R.string.message_error_update_category_type_in_split;
+                                break;
                         }
                         if (contentRes != 0) {
                             ThemedDialog.buildMaterialDialog(this)
-                                    .title(R.string.title_error)
-                                    .content(contentRes)
-                                    .positiveText(android.R.string.ok)
+                                    .setTitle(R.string.title_error)
+                                    .setMessage(contentRes)
+                                    .setPositiveButton(android.R.string.ok, null)
                                     .show();
                         }
                     }

@@ -34,15 +34,17 @@ import androidx.annotation.Nullable;
 
 import com.oriondev.moneywallet.BuildConfig;
 import com.oriondev.moneywallet.storage.preference.PreferenceManager;
+import com.oriondev.moneywallet.ui.widget.WalletWidgetProvider;
 
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.Callable;
 
 /**
  * Created by andrea on 17/01/18.
  */
 public class DataContentProvider extends ContentProvider {
-
-    private static final boolean IS_REMOTE_SYNC_ENABLED = false;
 
     /*package-local*/ static final String AUTHORITY = BuildConfig.APPLICATION_ID + ".storage.data";
 
@@ -61,7 +63,29 @@ public class DataContentProvider extends ContentProvider {
     public static final Uri CONTENT_TRANSFER_MODELS = Uri.parse("content://" + AUTHORITY + "/models/transfers");
     public static final Uri CONTENT_PLACES = Uri.parse("content://" + AUTHORITY + "/places");
     public static final Uri CONTENT_PEOPLE = Uri.parse("content://" + AUTHORITY + "/people");
+    public static final Uri CONTENT_CATEGORY_RULES = Uri.parse("content://" + AUTHORITY + "/category_rules");
     public static final Uri CONTENT_ATTACHMENTS = Uri.parse("content://" + AUTHORITY + "/attachments");
+    /**
+     * One row per category a transaction's money falls under, a split transaction giving one per
+     * part and one for what is left under its main category. Same columns as
+     * {@link #CONTENT_TRANSACTIONS} plus {@link Contract.Transaction#LINE_ID}.
+     */
+    public static final Uri CONTENT_CATEGORY_LINES = Uri.parse("content://" + AUTHORITY + "/category_lines");
+    /**
+     * The transactions with a line the selection matches, each once, carrying the money of the
+     * lines it matched. The selection itself sees each line with the full total as its money.
+     */
+    public static final Uri CONTENT_CATEGORY_SHARES = Uri.parse("content://" + AUTHORITY + "/category_shares");
+
+    /**
+     * Every uri above sits under this one. An observer registered here with descendants included
+     * is told about every change this provider announces, whichever of those uris the write named,
+     * because the framework collects an observer sitting above a uri for a notification on
+     * anything below it.
+     *
+     * It is what a cursor this provider hands out is registered on, and what the widget watches.
+     */
+    public static final Uri CONTENT_ALL = Uri.parse("content://" + AUTHORITY);
 
     private static final int CURRENCY_LIST = 1;
     private static final int WALLET_LIST = 2;
@@ -103,6 +127,7 @@ public class DataContentProvider extends ContentProvider {
     private static final int TRANSFER_PEOPLE = 36;
     private static final int DEBT_PEOPLE = 37;
     private static final int BUDGET_WALLETS = 38;
+    private static final int BUDGET_CATEGORIES = 46;
 
     private static final int CATEGORY_TRANSACTION_LIST = 39;
     private static final int DEBT_TRANSACTION_LIST = 40;
@@ -111,6 +136,14 @@ public class DataContentProvider extends ContentProvider {
     private static final int EVENT_TRANSACTION_LIST = 43;
     private static final int PLACE_TRANSACTION_LIST = 44;
     private static final int PERSON_TRANSACTION_LIST = 45;
+
+    private static final int CATEGORY_RULE_LIST = 47;
+    private static final int CATEGORY_RULE_ITEM = 48;
+    private static final int CATEGORY_RULE_MATCH = 49;
+
+    private static final int CATEGORY_LINE_LIST = 50;
+    private static final int CATEGORY_SHARE_LIST = 51;
+    private static final int TRANSACTION_SPLIT_LIST = 52;
 
     private static final UriMatcher mUriMatcher = createUriMatcher();
 
@@ -138,6 +171,7 @@ public class DataContentProvider extends ContentProvider {
         matcher.addURI(AUTHORITY, "budgets", BUDGET_LIST);
         matcher.addURI(AUTHORITY, "budgets/#", BUDGET_ITEM);
         matcher.addURI(AUTHORITY, "budgets/#/wallets", BUDGET_WALLETS);
+        matcher.addURI(AUTHORITY, "budgets/#/categories", BUDGET_CATEGORIES);
         matcher.addURI(AUTHORITY, "budgets/#/transactions", BUDGET_TRANSACTION_LIST);
         matcher.addURI(AUTHORITY, "savings", SAVING_LIST);
         matcher.addURI(AUTHORITY, "savings/#", SAVING_ITEM);
@@ -153,6 +187,11 @@ public class DataContentProvider extends ContentProvider {
         matcher.addURI(AUTHORITY, "models/transactions/#", TRANSACTION_MODEL_ITEM);
         matcher.addURI(AUTHORITY, "models/transfers", TRANSFER_MODEL_LIST);
         matcher.addURI(AUTHORITY, "models/transfers/#", TRANSFER_MODEL_ITEM);
+        matcher.addURI(AUTHORITY, "category_rules", CATEGORY_RULE_LIST);
+        matcher.addURI(AUTHORITY, "category_rules/#", CATEGORY_RULE_ITEM);
+        // the description is one encoded path segment, so a slash or a space typed into it
+        // travels whole and comes back out of getLastPathSegment decoded
+        matcher.addURI(AUTHORITY, "category_rules/match/*", CATEGORY_RULE_MATCH);
         matcher.addURI(AUTHORITY, "places", PLACE_LIST);
         matcher.addURI(AUTHORITY, "places/#", PLACE_ITEM);
         matcher.addURI(AUTHORITY, "places/#/transactions", PLACE_TRANSACTION_LIST);
@@ -161,322 +200,211 @@ public class DataContentProvider extends ContentProvider {
         matcher.addURI(AUTHORITY, "people/#/transactions", PERSON_TRANSACTION_LIST);
         matcher.addURI(AUTHORITY, "attachments", ATTACHMENT_LIST);
         matcher.addURI(AUTHORITY, "attachments/#", ATTACHMENT_ITEM);
+        matcher.addURI(AUTHORITY, "category_lines", CATEGORY_LINE_LIST);
+        matcher.addURI(AUTHORITY, "category_shares", CATEGORY_SHARE_LIST);
+        matcher.addURI(AUTHORITY, "transactions/#/splits", TRANSACTION_SPLIT_LIST);
         return matcher;
     }
 
-    private SQLDatabase mDatabase;
+    /**
+     * Read on every use instead of held in a field. A restore swaps the file underneath both
+     * providers and closes the old helper, and a field would then be a closed handle until the
+     * next process start.
+     */
+    private SQLDatabase db() {
+        return SQLDatabase.getShared(getContext());
+    }
 
     @Override
     public boolean onCreate() {
-        initializeDatabase(getContext());
         return true;
     }
 
+    /**
+     * Every cursor is registered on the whole provider and not on the entities its own query
+     * reads. A cursor that names its own is a list that has to be kept in step with the joins
+     * under it and with what each write announces, and getting that list wrong shows up as a
+     * screen holding a figure that is no longer true. One of those lists already needed a uri
+     * added by hand when saving a debt's master transaction started writing the debt's people.
+     *
+     * What it costs is reloads. Twenty five of the forty six cases named two entities or fewer,
+     * ten of them exactly one, and every case now wakes for writes it did not name. The ten are
+     * cheap single table queries; the transaction list is not, and it wakes for a currency or a
+     * budget now where it named nine other things and not those. An import announces once per
+     * list when it commits and not once a row, but a run of single row writes reaches further
+     * than it used to. Attaching several files to one transaction, or the recurrence job posting
+     * a backlog, are the two to picture. A reload is the query run again and then the whole list
+     * rebound on the main thread, since nothing here sets an update throttle on a loader and the
+     * adapters swap a cursor with notifyDataSetChanged.
+     *
+     * The cursor stays wrapped for one uri because the wrapper replays a change that arrives
+     * between this method returning and a loader registering on the cursor. AbstractCursor drops
+     * that one.
+     */
     @Nullable
     @Override
     public Cursor query(@NonNull Uri uri, String[] projection, String selection, String[] selectionArgs, String sortOrder) {
         Cursor cursor = null;
         switch (mUriMatcher.match(uri)) {
             case CURRENCY_LIST:
-                cursor = new MultiUriCursorWrapper(mDatabase.getCurrencies(projection, selection, selectionArgs, sortOrder));
-                cursor.setNotificationUri(getContentResolver(), CONTENT_CURRENCIES);
+                cursor = new MultiUriCursorWrapper(db().getCurrencies(projection, selection, selectionArgs, sortOrder));
                 break;
             case CURRENCY_ITEM:
-                cursor = new MultiUriCursorWrapper(mDatabase.getCurrency(uri.getLastPathSegment(), projection));
-                cursor.setNotificationUri(getContentResolver(), uri);
+                cursor = new MultiUriCursorWrapper(db().getCurrency(uri.getLastPathSegment(), projection));
                 break;
             case WALLET_LIST:
-                cursor = new MultiUriCursorWrapper(mDatabase.getWallets(projection, selection, selectionArgs, sortOrder));
-                cursor.setNotificationUri(getContentResolver(), CONTENT_WALLETS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_TRANSACTIONS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_TRANSFERS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_DEBTS);
+                cursor = new MultiUriCursorWrapper(db().getWallets(projection, selection, selectionArgs, sortOrder));
                 break;
             case WALLET_ITEM:
-                cursor = new MultiUriCursorWrapper(mDatabase.getWallet(ContentUris.parseId(uri), projection));
-                cursor.setNotificationUri(getContentResolver(), uri);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_TRANSACTIONS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_TRANSFERS);
+                cursor = new MultiUriCursorWrapper(db().getWallet(ContentUris.parseId(uri), projection));
                 break;
             case TRANSACTION_LIST:
-                cursor = new MultiUriCursorWrapper(mDatabase.getTransactions(projection, selection, selectionArgs, sortOrder));
-                cursor.setNotificationUri(getContentResolver(), CONTENT_WALLETS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_TRANSACTIONS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_TRANSFERS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_CATEGORIES);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_DEBTS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_EVENTS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_PEOPLE);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_PLACES);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_ATTACHMENTS);
+                cursor = new MultiUriCursorWrapper(db().getTransactions(projection, selection, selectionArgs, sortOrder));
                 break;
             case TRANSACTION_ITEM:
-                cursor = new MultiUriCursorWrapper(mDatabase.getTransaction(ContentUris.parseId(uri), projection));
-                cursor.setNotificationUri(getContentResolver(), uri);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_WALLETS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_TRANSFERS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_CATEGORIES);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_DEBTS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_EVENTS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_PEOPLE);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_PLACES);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_ATTACHMENTS);
+                cursor = new MultiUriCursorWrapper(db().getTransaction(ContentUris.parseId(uri), projection));
                 break;
             case TRANSACTION_ATTACHMENTS:
-                cursor = new MultiUriCursorWrapper(mDatabase.getTransactionAttachments(parseIdAtIndex(uri, 1), projection, selection, selectionArgs, sortOrder));
-                cursor.setNotificationUri(getContentResolver(), CONTENT_TRANSACTIONS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_ATTACHMENTS);
+                cursor = new MultiUriCursorWrapper(db().getTransactionAttachments(parseIdAtIndex(uri, 1), projection, selection, selectionArgs, sortOrder));
                 break;
             case TRANSACTION_PEOPLE:
-                cursor = new MultiUriCursorWrapper(mDatabase.getTransactionPeople(parseIdAtIndex(uri, 1), projection, selection, selectionArgs, sortOrder));
-                cursor.setNotificationUri(getContentResolver(), CONTENT_TRANSACTIONS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_PEOPLE);
+                cursor = new MultiUriCursorWrapper(db().getTransactionPeople(parseIdAtIndex(uri, 1), projection, selection, selectionArgs, sortOrder));
                 break;
             case TRANSFER_LIST:
-                cursor = new MultiUriCursorWrapper(mDatabase.getTransfers(projection, selection, selectionArgs, sortOrder));
-                cursor.setNotificationUri(getContentResolver(), CONTENT_WALLETS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_TRANSACTIONS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_TRANSFERS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_CATEGORIES);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_DEBTS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_EVENTS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_PEOPLE);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_PLACES);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_ATTACHMENTS);
+                cursor = new MultiUriCursorWrapper(db().getTransfers(projection, selection, selectionArgs, sortOrder));
                 break;
             case TRANSFER_ITEM:
-                cursor = new MultiUriCursorWrapper(mDatabase.getTransfer(ContentUris.parseId(uri), projection));
-                cursor.setNotificationUri(getContentResolver(), uri);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_WALLETS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_TRANSACTIONS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_CATEGORIES);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_DEBTS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_EVENTS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_PEOPLE);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_PLACES);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_ATTACHMENTS);
+                cursor = new MultiUriCursorWrapper(db().getTransfer(ContentUris.parseId(uri), projection));
                 break;
             case TRANSFER_ATTACHMENTS:
-                cursor = new MultiUriCursorWrapper(mDatabase.getTransferAttachments(parseIdAtIndex(uri, 1), projection, selection, selectionArgs, sortOrder));
-                cursor.setNotificationUri(getContentResolver(), CONTENT_TRANSFERS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_ATTACHMENTS);
+                cursor = new MultiUriCursorWrapper(db().getTransferAttachments(parseIdAtIndex(uri, 1), projection, selection, selectionArgs, sortOrder));
                 break;
             case TRANSFER_PEOPLE:
-                cursor = new MultiUriCursorWrapper(mDatabase.getTransferPeople(parseIdAtIndex(uri, 1), projection, selection, selectionArgs, sortOrder));
-                cursor.setNotificationUri(getContentResolver(), CONTENT_TRANSFERS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_PEOPLE);
+                cursor = new MultiUriCursorWrapper(db().getTransferPeople(parseIdAtIndex(uri, 1), projection, selection, selectionArgs, sortOrder));
                 break;
             case CATEGORY_LIST:
-                cursor = new MultiUriCursorWrapper(mDatabase.getCategories(projection, selection, selectionArgs, sortOrder));
-                cursor.setNotificationUri(getContentResolver(), CONTENT_CATEGORIES);
+                cursor = new MultiUriCursorWrapper(db().getCategories(projection, selection, selectionArgs, sortOrder));
                 break;
             case CATEGORY_ITEM:
-                cursor = new MultiUriCursorWrapper(mDatabase.getCategory(ContentUris.parseId(uri), projection));
-                cursor.setNotificationUri(getContentResolver(), uri);
+                cursor = new MultiUriCursorWrapper(db().getCategory(ContentUris.parseId(uri), projection));
                 break;
             case CATEGORY_TRANSACTION_LIST:
-                cursor = new MultiUriCursorWrapper(mDatabase.getCategoryTransactions(parseIdAtIndex(uri, 1), projection, selection, selectionArgs, sortOrder));
-                cursor.setNotificationUri(getContentResolver(), CONTENT_TRANSACTIONS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_CATEGORIES);
+                cursor = new MultiUriCursorWrapper(db().getCategoryTransactions(parseIdAtIndex(uri, 1), projection, selection, selectionArgs, sortOrder));
                 break;
             case DEBT_LIST:
-                cursor = new MultiUriCursorWrapper(mDatabase.getDebts(projection, selection, selectionArgs, sortOrder));
-                cursor.setNotificationUri(getContentResolver(), CONTENT_WALLETS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_CATEGORIES);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_TRANSACTIONS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_DEBTS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_PEOPLE);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_PLACES);
+                cursor = new MultiUriCursorWrapper(db().getDebts(projection, selection, selectionArgs, sortOrder));
                 break;
             case DEBT_ITEM:
-                cursor = new MultiUriCursorWrapper(mDatabase.getDebt(ContentUris.parseId(uri), projection));
-                cursor.setNotificationUri(getContentResolver(), uri);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_WALLETS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_CATEGORIES);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_TRANSACTIONS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_PEOPLE);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_PLACES);
+                cursor = new MultiUriCursorWrapper(db().getDebt(ContentUris.parseId(uri), projection));
                 break;
             case DEBT_PEOPLE:
-                cursor = new MultiUriCursorWrapper(mDatabase.getDebtPeople(parseIdAtIndex(uri, 1), projection, selection, selectionArgs, sortOrder));
-                cursor.setNotificationUri(getContentResolver(), CONTENT_DEBTS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_PEOPLE);
+                cursor = new MultiUriCursorWrapper(db().getDebtPeople(parseIdAtIndex(uri, 1), projection, selection, selectionArgs, sortOrder));
                 break;
             case DEBT_TRANSACTION_LIST:
-                cursor = new MultiUriCursorWrapper(mDatabase.getDebtTransactions(parseIdAtIndex(uri, 1), projection, selection, selectionArgs, sortOrder));
-                cursor.setNotificationUri(getContentResolver(), CONTENT_DEBTS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_TRANSACTIONS);
+                cursor = new MultiUriCursorWrapper(db().getDebtTransactions(parseIdAtIndex(uri, 1), projection, selection, selectionArgs, sortOrder));
                 break;
             case BUDGET_LIST:
-                cursor = new MultiUriCursorWrapper(mDatabase.getBudgets(projection, selection, selectionArgs, sortOrder));
-                cursor.setNotificationUri(getContentResolver(), CONTENT_WALLETS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_CATEGORIES);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_TRANSACTIONS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_BUDGETS);
+                cursor = new MultiUriCursorWrapper(db().getBudgets(projection, selection, selectionArgs, sortOrder));
                 break;
             case BUDGET_ITEM:
-                cursor = new MultiUriCursorWrapper(mDatabase.getBudget(ContentUris.parseId(uri), projection));
-                cursor.setNotificationUri(getContentResolver(), uri);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_WALLETS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_CATEGORIES);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_TRANSACTIONS);
+                cursor = new MultiUriCursorWrapper(db().getBudget(ContentUris.parseId(uri), projection));
                 break;
             case BUDGET_WALLETS:
-                cursor = new MultiUriCursorWrapper(mDatabase.getBudgetWallets(parseIdAtIndex(uri, 1), projection, selection, selectionArgs, sortOrder));
-                cursor.setNotificationUri(getContentResolver(), CONTENT_BUDGETS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_WALLETS);
+                cursor = new MultiUriCursorWrapper(db().getBudgetWallets(parseIdAtIndex(uri, 1), projection, selection, selectionArgs, sortOrder));
+                break;
+            case BUDGET_CATEGORIES:
+                cursor = new MultiUriCursorWrapper(db().getBudgetCategories(parseIdAtIndex(uri, 1), projection, selection, selectionArgs, sortOrder));
                 break;
             case BUDGET_TRANSACTION_LIST:
-                cursor = new MultiUriCursorWrapper(mDatabase.getBudgetTransactions(parseIdAtIndex(uri, 1), projection, selection, selectionArgs, sortOrder));
-                cursor.setNotificationUri(getContentResolver(), CONTENT_BUDGETS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_TRANSACTIONS);
+                cursor = new MultiUriCursorWrapper(db().getBudgetTransactions(parseIdAtIndex(uri, 1), projection, selection, selectionArgs, sortOrder));
                 break;
             case SAVING_LIST:
-                cursor = new MultiUriCursorWrapper(mDatabase.getSavings(projection, selection, selectionArgs, sortOrder));
-                cursor.setNotificationUri(getContentResolver(), CONTENT_WALLETS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_CATEGORIES);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_TRANSACTIONS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_SAVINGS);
+                cursor = new MultiUriCursorWrapper(db().getSavings(projection, selection, selectionArgs, sortOrder));
                 break;
             case SAVING_ITEM:
-                cursor = new MultiUriCursorWrapper(mDatabase.getSaving(ContentUris.parseId(uri), projection));
-                cursor.setNotificationUri(getContentResolver(), uri);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_WALLETS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_CATEGORIES);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_TRANSACTIONS);
+                cursor = new MultiUriCursorWrapper(db().getSaving(ContentUris.parseId(uri), projection));
                 break;
             case SAVING_TRANSACTION_LIST:
-                cursor = new MultiUriCursorWrapper(mDatabase.getSavingTransactions(parseIdAtIndex(uri, 1), projection, selection, selectionArgs, sortOrder));
-                cursor.setNotificationUri(getContentResolver(), CONTENT_SAVINGS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_TRANSACTIONS);
+                cursor = new MultiUriCursorWrapper(db().getSavingTransactions(parseIdAtIndex(uri, 1), projection, selection, selectionArgs, sortOrder));
                 break;
             case EVENT_LIST:
-                cursor = new MultiUriCursorWrapper(mDatabase.getEvents(projection, selection, selectionArgs, sortOrder));
-                cursor.setNotificationUri(getContentResolver(), CONTENT_TRANSACTIONS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_EVENTS);
+                cursor = new MultiUriCursorWrapper(db().getEvents(projection, selection, selectionArgs, sortOrder));
                 break;
             case EVENT_ITEM:
-                cursor = new MultiUriCursorWrapper(mDatabase.getEvent(ContentUris.parseId(uri), projection));
-                cursor.setNotificationUri(getContentResolver(), uri);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_TRANSACTIONS);
+                cursor = new MultiUriCursorWrapper(db().getEvent(ContentUris.parseId(uri), projection));
                 break;
             case EVENT_TRANSACTION_LIST:
-                cursor = new MultiUriCursorWrapper(mDatabase.getEventTransactions(parseIdAtIndex(uri, 1), projection, selection, selectionArgs, sortOrder));
-                cursor.setNotificationUri(getContentResolver(), CONTENT_EVENTS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_TRANSACTIONS);
+                cursor = new MultiUriCursorWrapper(db().getEventTransactions(parseIdAtIndex(uri, 1), projection, selection, selectionArgs, sortOrder));
                 break;
             case RECURRENT_TRANSACTION_LIST:
-                cursor = new MultiUriCursorWrapper(mDatabase.getRecurrentTransactions(projection, selection, selectionArgs, sortOrder));
-                cursor.setNotificationUri(getContentResolver(), CONTENT_WALLETS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_TRANSACTION_MODELS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_CATEGORIES);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_DEBTS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_EVENTS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_RECURRENT_TRANSACTIONS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_PLACES);
+                cursor = new MultiUriCursorWrapper(db().getRecurrentTransactions(projection, selection, selectionArgs, sortOrder));
                 break;
             case RECURRENT_TRANSACTION_ITEM:
-                cursor = new MultiUriCursorWrapper(mDatabase.getRecurrentTransaction(ContentUris.parseId(uri), projection));
-                cursor.setNotificationUri(getContentResolver(), uri);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_WALLETS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_TRANSACTION_MODELS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_CATEGORIES);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_DEBTS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_EVENTS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_RECURRENT_TRANSACTIONS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_PLACES);
+                cursor = new MultiUriCursorWrapper(db().getRecurrentTransaction(ContentUris.parseId(uri), projection));
                 break;
             case RECURRENT_TRANSFER_LIST:
-                cursor = new MultiUriCursorWrapper(mDatabase.getRecurrentTransfers(projection, selection, selectionArgs, sortOrder));
-                cursor.setNotificationUri(getContentResolver(), CONTENT_WALLETS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_TRANSFER_MODELS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_CATEGORIES);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_DEBTS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_EVENTS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_RECURRENT_TRANSFERS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_PLACES);
+                cursor = new MultiUriCursorWrapper(db().getRecurrentTransfers(projection, selection, selectionArgs, sortOrder));
                 break;
             case RECURRENT_TRANSFER_ITEM:
-                cursor = new MultiUriCursorWrapper(mDatabase.getRecurrentTransfer(ContentUris.parseId(uri), projection));
-                cursor.setNotificationUri(getContentResolver(), uri);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_WALLETS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_TRANSFER_MODELS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_CATEGORIES);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_DEBTS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_EVENTS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_RECURRENT_TRANSFERS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_PLACES);
+                cursor = new MultiUriCursorWrapper(db().getRecurrentTransfer(ContentUris.parseId(uri), projection));
                 break;
             case TRANSACTION_MODEL_LIST:
-                cursor = new MultiUriCursorWrapper(mDatabase.getTransactionModels(projection, selection, selectionArgs, sortOrder));
-                cursor.setNotificationUri(getContentResolver(), CONTENT_WALLETS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_TRANSACTION_MODELS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_CATEGORIES);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_DEBTS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_EVENTS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_PLACES);
+                cursor = new MultiUriCursorWrapper(db().getTransactionModels(projection, selection, selectionArgs, sortOrder));
                 break;
             case TRANSACTION_MODEL_ITEM:
-                cursor = new MultiUriCursorWrapper(mDatabase.getTransactionModel(ContentUris.parseId(uri), projection));
-                cursor.setNotificationUri(getContentResolver(), uri);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_WALLETS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_CATEGORIES);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_DEBTS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_EVENTS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_PLACES);
+                cursor = new MultiUriCursorWrapper(db().getTransactionModel(ContentUris.parseId(uri), projection));
                 break;
             case TRANSFER_MODEL_LIST:
-                cursor = new MultiUriCursorWrapper(mDatabase.getTransferModels(projection, selection, selectionArgs, sortOrder));
-                cursor.setNotificationUri(getContentResolver(), CONTENT_WALLETS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_TRANSFER_MODELS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_CATEGORIES);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_DEBTS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_EVENTS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_PLACES);
+                cursor = new MultiUriCursorWrapper(db().getTransferModels(projection, selection, selectionArgs, sortOrder));
                 break;
             case TRANSFER_MODEL_ITEM:
-                cursor = new MultiUriCursorWrapper(mDatabase.getTransferModel(ContentUris.parseId(uri), projection));
-                cursor.setNotificationUri(getContentResolver(), uri);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_WALLETS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_CATEGORIES);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_DEBTS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_EVENTS);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_PLACES);
+                cursor = new MultiUriCursorWrapper(db().getTransferModel(ContentUris.parseId(uri), projection));
+                break;
+            case CATEGORY_RULE_LIST:
+                cursor = new MultiUriCursorWrapper(db().getCategoryRules(projection, selection, selectionArgs, sortOrder));
+                break;
+            case CATEGORY_RULE_ITEM:
+                cursor = new MultiUriCursorWrapper(db().getCategoryRule(ContentUris.parseId(uri), projection));
+                break;
+            case CATEGORY_RULE_MATCH:
+                cursor = new MultiUriCursorWrapper(db().getCategoryRuleMatch(uri.getLastPathSegment()));
                 break;
             case PLACE_LIST:
-                cursor = new MultiUriCursorWrapper(mDatabase.getPlaces(projection, selection, selectionArgs, sortOrder));
-                cursor.setNotificationUri(getContentResolver(), CONTENT_PLACES);
+                cursor = new MultiUriCursorWrapper(db().getPlaces(projection, selection, selectionArgs, sortOrder));
                 break;
             case PLACE_ITEM:
-                cursor = new MultiUriCursorWrapper(mDatabase.getPlace(ContentUris.parseId(uri), projection));
-                cursor.setNotificationUri(getContentResolver(), uri);
+                cursor = new MultiUriCursorWrapper(db().getPlace(ContentUris.parseId(uri), projection));
                 break;
             case PLACE_TRANSACTION_LIST:
-                cursor = new MultiUriCursorWrapper(mDatabase.getPlaceTransactions(parseIdAtIndex(uri, 1), projection, selection, selectionArgs, sortOrder));
-                cursor.setNotificationUri(getContentResolver(), CONTENT_PLACES);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_TRANSACTIONS);
+                cursor = new MultiUriCursorWrapper(db().getPlaceTransactions(parseIdAtIndex(uri, 1), projection, selection, selectionArgs, sortOrder));
                 break;
             case PERSON_LIST:
-                cursor = new MultiUriCursorWrapper(mDatabase.getPeople(projection, selection, selectionArgs, sortOrder));
-                cursor.setNotificationUri(getContentResolver(), CONTENT_PEOPLE);
+                cursor = new MultiUriCursorWrapper(db().getPeople(projection, selection, selectionArgs, sortOrder));
                 break;
             case PERSON_ITEM:
-                cursor = new MultiUriCursorWrapper(mDatabase.getPerson(ContentUris.parseId(uri), projection));
-                cursor.setNotificationUri(getContentResolver(), uri);
+                cursor = new MultiUriCursorWrapper(db().getPerson(ContentUris.parseId(uri), projection));
                 break;
             case PERSON_TRANSACTION_LIST:
-                cursor = new MultiUriCursorWrapper(mDatabase.getPeopleTransactions(parseIdAtIndex(uri, 1), projection, selection, selectionArgs, sortOrder));
-                cursor.setNotificationUri(getContentResolver(), CONTENT_PEOPLE);
-                cursor.setNotificationUri(getContentResolver(), CONTENT_TRANSACTIONS);
+                cursor = new MultiUriCursorWrapper(db().getPeopleTransactions(parseIdAtIndex(uri, 1), projection, selection, selectionArgs, sortOrder));
                 break;
             case ATTACHMENT_LIST:
-                cursor = new MultiUriCursorWrapper(mDatabase.getAttachments(projection, selection, selectionArgs, sortOrder));
-                cursor.setNotificationUri(getContentResolver(), CONTENT_ATTACHMENTS);
+                cursor = new MultiUriCursorWrapper(db().getAttachments(projection, selection, selectionArgs, sortOrder));
                 break;
             case ATTACHMENT_ITEM:
-                cursor = new MultiUriCursorWrapper(mDatabase.getAttachment(ContentUris.parseId(uri), projection));
-                cursor.setNotificationUri(getContentResolver(), uri);
+                cursor = new MultiUriCursorWrapper(db().getAttachment(ContentUris.parseId(uri), projection));
                 break;
+            case CATEGORY_LINE_LIST:
+                cursor = new MultiUriCursorWrapper(db().getCategoryLines(projection, selection, selectionArgs, sortOrder));
+                break;
+            case CATEGORY_SHARE_LIST:
+                cursor = new MultiUriCursorWrapper(db().getCategoryShares(projection, selection, selectionArgs, sortOrder));
+                break;
+            case TRANSACTION_SPLIT_LIST:
+                cursor = new MultiUriCursorWrapper(db().getTransactionSplits(parseIdAtIndex(uri, 1), projection, selection, selectionArgs, sortOrder));
+                break;
+        }
+        if (cursor != null) {
+            cursor.setNotificationUri(getContentResolver(), CONTENT_ALL);
         }
         return cursor;
     }
@@ -529,6 +457,8 @@ public class DataContentProvider extends ContentProvider {
                 return "vnd.android.cursor.item/vnd.com.oriondev.moneywallet.storage.budget";
             case BUDGET_WALLETS:
                 return "vnd.android.cursor.dir/vnd.com.oriondev.moneywallet.storage.wallet";
+            case BUDGET_CATEGORIES:
+                return "vnd.android.cursor.dir/vnd.com.oriondev.moneywallet.storage.category";
             case BUDGET_TRANSACTION_LIST:
                 return "vnd.android.cursor.dir/vnd.com.oriondev.moneywallet.storage.transaction";
             case SAVING_LIST:
@@ -559,6 +489,11 @@ public class DataContentProvider extends ContentProvider {
                 return "vnd.android.cursor.dir/vnd.com.oriondev.moneywallet.storage.model.transfer";
             case TRANSFER_MODEL_ITEM:
                 return "vnd.android.cursor.item/vnd.com.oriondev.moneywallet.storage.model.transfer";
+            case CATEGORY_RULE_LIST:
+            case CATEGORY_RULE_MATCH:
+                return "vnd.android.cursor.dir/vnd.com.oriondev.moneywallet.storage.category_rule";
+            case CATEGORY_RULE_ITEM:
+                return "vnd.android.cursor.item/vnd.com.oriondev.moneywallet.storage.category_rule";
             case PLACE_LIST:
                 return "vnd.android.cursor.dir/vnd.com.oriondev.moneywallet.storage.place";
             case PLACE_ITEM:
@@ -575,219 +510,266 @@ public class DataContentProvider extends ContentProvider {
                 return "vnd.android.cursor.dir/vnd.com.oriondev.moneywallet.storage.attachment";
             case ATTACHMENT_ITEM:
                 return "vnd.android.cursor.item/vnd.com.oriondev.moneywallet.storage.attachment";
+            case CATEGORY_LINE_LIST:
+            case CATEGORY_SHARE_LIST:
+                return "vnd.android.cursor.dir/vnd.com.oriondev.moneywallet.storage.transaction";
+            case TRANSACTION_SPLIT_LIST:
+                return "vnd.android.cursor.dir/vnd.com.oriondev.moneywallet.storage.transaction.split";
         }
         return null;
     }
 
+    /**
+     * Every write this provider makes runs inside one transaction, so a method that touches more
+     * than one table cannot leave the database part way through. The observers are told only once
+     * the commit has gone through, since a transaction that rolls back would otherwise have
+     * already announced a change that never happened.
+     */
     @Nullable
     @Override
     public Uri insert(@NonNull Uri uri, ContentValues contentValues) {
+        Uri objectUri = SQLDatabase.inSharedTransaction(getContext(),
+                database -> insertInTransaction(database, uri, contentValues));
+        if (objectUri != null) {
+            // the list, not the row, for the import path. See notifyObservers
+            notifyObservers(objectUri, uri);
+        }
+        return objectUri;
+    }
+
+    private Uri insertInTransaction(SQLDatabase database, Uri uri, ContentValues contentValues) {
         String currencyIso = null;
         long objectId = 0L;
         switch (mUriMatcher.match(uri)) {
             case CURRENCY_LIST:
-                currencyIso = mDatabase.insertCurrency(contentValues);
+                currencyIso = database.insertCurrency(contentValues);
                 break;
             case WALLET_LIST:
-                objectId = mDatabase.insertWallet(contentValues);
+                objectId = database.insertWallet(contentValues);
                 break;
             case TRANSACTION_LIST:
-                objectId = mDatabase.insertTransaction(contentValues);
+                objectId = database.insertTransaction(contentValues);
                 break;
             case TRANSFER_LIST:
-                objectId = mDatabase.insertTransfer(contentValues);
+                objectId = database.insertTransfer(contentValues);
                 break;
             case CATEGORY_LIST:
-                objectId = mDatabase.insertCategory(contentValues);
+                objectId = database.insertCategory(contentValues);
                 break;
             case DEBT_LIST:
-                objectId = mDatabase.insertDebt(contentValues);
+                objectId = database.insertDebt(contentValues);
                 break;
             case BUDGET_LIST:
-                objectId = mDatabase.insertBudget(contentValues);
+                objectId = database.insertBudget(contentValues);
                 break;
             case SAVING_LIST:
-                objectId = mDatabase.insertSaving(contentValues);
+                objectId = database.insertSaving(contentValues);
                 break;
             case EVENT_LIST:
-                objectId = mDatabase.insertEvent(contentValues);
+                objectId = database.insertEvent(contentValues);
                 break;
             case RECURRENT_TRANSACTION_LIST:
-                objectId = mDatabase.insertRecurrentTransaction(contentValues);
+                objectId = database.insertRecurrentTransaction(contentValues);
                 break;
             case RECURRENT_TRANSFER_LIST:
-                objectId = mDatabase.insertRecurrentTransfer(contentValues);
+                objectId = database.insertRecurrentTransfer(contentValues);
                 break;
             case TRANSACTION_MODEL_LIST:
-                objectId = mDatabase.insertTransactionModel(contentValues);
+                objectId = database.insertTransactionModel(contentValues);
                 break;
             case TRANSFER_MODEL_LIST:
-                objectId = mDatabase.insertTransferModel(contentValues);
+                objectId = database.insertTransferModel(contentValues);
+                break;
+            case CATEGORY_RULE_LIST:
+                objectId = database.insertCategoryRule(contentValues);
                 break;
             case PLACE_LIST:
-                objectId = mDatabase.insertPlace(contentValues);
+                objectId = database.insertPlace(contentValues);
                 break;
             case PERSON_LIST:
-                objectId = mDatabase.insertPerson(contentValues);
+                objectId = database.insertPerson(contentValues);
                 break;
             case ATTACHMENT_LIST:
-                objectId = mDatabase.insertAttachment(contentValues);
+                objectId = database.insertAttachment(contentValues);
                 break;
         }
-        if (currencyIso != null || objectId > 0L) {
-            PreferenceManager.setLastTimeDataIsChanged(System.currentTimeMillis());
-            ContentResolver contentResolver = getContentResolver();
-            if (currencyIso != null) {
-                Uri objectUri = Uri.withAppendedPath(uri, currencyIso);
-                if (contentResolver != null) {
-                    contentResolver.notifyChange(objectUri, null);
-                }
-                return objectUri;
-            } else if (objectId > 0L) {
-                Uri objectUri = ContentUris.withAppendedId(uri, objectId);
-                if (contentResolver != null) {
-                    contentResolver.notifyChange(objectUri, null);
-                }
-                return objectUri;
-            }
+        if (currencyIso != null) {
+            return Uri.withAppendedPath(uri, currencyIso);
+        }
+        if (objectId > 0L) {
+            return ContentUris.withAppendedId(uri, objectId);
         }
         return null;
     }
 
     @Override
     public int delete(@NonNull Uri uri, String selection, String[] selectionArgs) {
+        // one element so the body running inside the transaction can hand the uri back out. A
+        // lambda cannot assign a local, and deriving it a second time out here would be the same
+        // sixteen cases written twice
+        Uri[] notifyUri = new Uri[1];
+        int result = SQLDatabase.inSharedTransaction(getContext(),
+                database -> deleteInTransaction(database, uri, notifyUri));
+        // out here with the notify, and not in the WALLET_ITEM case where it used to sit, because
+        // it writes a preference and broadcasts to every open screen and neither of those can be
+        // rolled back. Reading the preference after the delete is the same read, nothing in the
+        // database is what it answers from. Every wallet delete still passes through this point,
+        // which is the reason it lives in the provider and not in the screen that starts one.
+        //
+        // Being out here no longer means the delete has committed. A delete made inside
+        // runInOneTransaction commits only when that import does, so an import that deleted the
+        // wallet in use and then failed leaves the wallet back in the ledger with the preference
+        // already moved off it. Nothing deletes inside one today, and whoever writes the first
+        // importer that does has to answer this
+        Context context = getContext();
+        if (result > 0 && context != null && mUriMatcher.match(uri) == WALLET_ITEM
+                && ContentUris.parseId(uri) == PreferenceManager.getCurrentWallet()) {
+            // the deleted wallet still has its id stored as the current one, and every query the
+            // filter reaches keeps filtering on it, so all of them come back with nothing
+            PreferenceManager.setCurrentWallet(context, PreferenceManager.TOTAL_WALLET_ID);
+        }
+        if (notifyUri[0] != null) {
+            notifyObservers(notifyUri[0], notifyUri[0]);
+        }
+        return result;
+    }
+
+    private int deleteInTransaction(SQLDatabase database, Uri uri, Uri[] notifyUri) {
         int result = 0;
-        Uri notifyUri = null;
         switch (mUriMatcher.match(uri)) {
             case CURRENCY_ITEM:
-                notifyUri = DataContentProvider.CONTENT_CURRENCIES;
-                result = mDatabase.deleteCurrency(uri.getLastPathSegment());
+                notifyUri[0] = DataContentProvider.CONTENT_CURRENCIES;
+                result = database.deleteCurrency(uri.getLastPathSegment());
                 break;
             case WALLET_ITEM:
-                notifyUri = DataContentProvider.CONTENT_WALLETS;
-                result = mDatabase.deleteWallet(ContentUris.parseId(uri));
+                notifyUri[0] = DataContentProvider.CONTENT_WALLETS;
+                result = database.deleteWallet(ContentUris.parseId(uri));
                 break;
             case TRANSACTION_ITEM:
-                notifyUri = DataContentProvider.CONTENT_TRANSACTIONS;
-                result = mDatabase.deleteTransaction(ContentUris.parseId(uri));
+                notifyUri[0] = DataContentProvider.CONTENT_TRANSACTIONS;
+                result = database.deleteTransaction(ContentUris.parseId(uri));
                 break;
             case TRANSFER_ITEM:
-                notifyUri = DataContentProvider.CONTENT_TRANSFERS;
-                result = mDatabase.deleteTransfer(ContentUris.parseId(uri));
+                notifyUri[0] = DataContentProvider.CONTENT_TRANSFERS;
+                result = database.deleteTransfer(ContentUris.parseId(uri));
                 break;
             case CATEGORY_ITEM:
-                notifyUri = DataContentProvider.CONTENT_CATEGORIES;
-                result = mDatabase.deleteCategory(ContentUris.parseId(uri));
+                notifyUri[0] = DataContentProvider.CONTENT_CATEGORIES;
+                result = database.deleteCategory(ContentUris.parseId(uri));
                 break;
             case DEBT_ITEM:
-                notifyUri = DataContentProvider.CONTENT_DEBTS;
-                result = mDatabase.deleteDebt(ContentUris.parseId(uri));
+                notifyUri[0] = DataContentProvider.CONTENT_DEBTS;
+                result = database.deleteDebt(ContentUris.parseId(uri));
                 break;
             case BUDGET_ITEM:
-                notifyUri = DataContentProvider.CONTENT_BUDGETS;
-                result = mDatabase.deleteBudget(ContentUris.parseId(uri));
+                notifyUri[0] = DataContentProvider.CONTENT_BUDGETS;
+                result = database.deleteBudget(ContentUris.parseId(uri));
                 break;
             case SAVING_ITEM:
-                notifyUri = DataContentProvider.CONTENT_SAVINGS;
-                result = mDatabase.deleteSaving(ContentUris.parseId(uri));
+                notifyUri[0] = DataContentProvider.CONTENT_SAVINGS;
+                result = database.deleteSaving(ContentUris.parseId(uri));
                 break;
             case EVENT_ITEM:
-                notifyUri = DataContentProvider.CONTENT_EVENTS;
-                result = mDatabase.deleteEvent(ContentUris.parseId(uri));
+                notifyUri[0] = DataContentProvider.CONTENT_EVENTS;
+                result = database.deleteEvent(ContentUris.parseId(uri));
                 break;
             case RECURRENT_TRANSACTION_ITEM:
-                notifyUri = DataContentProvider.CONTENT_RECURRENT_TRANSACTIONS;
-                result = mDatabase.deleteRecurrentTransaction(ContentUris.parseId(uri));
+                notifyUri[0] = DataContentProvider.CONTENT_RECURRENT_TRANSACTIONS;
+                result = database.deleteRecurrentTransaction(ContentUris.parseId(uri));
                 break;
             case RECURRENT_TRANSFER_ITEM:
-                notifyUri = DataContentProvider.CONTENT_RECURRENT_TRANSFERS;
-                result = mDatabase.deleteRecurrentTransfer(ContentUris.parseId(uri));
+                notifyUri[0] = DataContentProvider.CONTENT_RECURRENT_TRANSFERS;
+                result = database.deleteRecurrentTransfer(ContentUris.parseId(uri));
                 break;
             case TRANSACTION_MODEL_ITEM:
-                notifyUri = DataContentProvider.CONTENT_TRANSACTION_MODELS;
-                result = mDatabase.deleteTransactionModel(ContentUris.parseId(uri));
+                notifyUri[0] = DataContentProvider.CONTENT_TRANSACTION_MODELS;
+                result = database.deleteTransactionModel(ContentUris.parseId(uri));
                 break;
             case TRANSFER_MODEL_ITEM:
-                notifyUri = DataContentProvider.CONTENT_TRANSFER_MODELS;
-                result = mDatabase.deleteTransferModel(ContentUris.parseId(uri));
+                notifyUri[0] = DataContentProvider.CONTENT_TRANSFER_MODELS;
+                result = database.deleteTransferModel(ContentUris.parseId(uri));
+                break;
+            case CATEGORY_RULE_ITEM:
+                notifyUri[0] = DataContentProvider.CONTENT_CATEGORY_RULES;
+                result = database.deleteCategoryRule(ContentUris.parseId(uri));
                 break;
             case PLACE_ITEM:
-                notifyUri = DataContentProvider.CONTENT_PLACES;
-                result = mDatabase.deletePlace(ContentUris.parseId(uri));
+                notifyUri[0] = DataContentProvider.CONTENT_PLACES;
+                result = database.deletePlace(ContentUris.parseId(uri));
                 break;
             case PERSON_ITEM:
-                notifyUri = DataContentProvider.CONTENT_PEOPLE;
-                result = mDatabase.deletePerson(ContentUris.parseId(uri));
+                notifyUri[0] = DataContentProvider.CONTENT_PEOPLE;
+                result = database.deletePerson(ContentUris.parseId(uri));
                 break;
             case ATTACHMENT_ITEM:
-                notifyUri = DataContentProvider.CONTENT_ATTACHMENTS;
-                result = mDatabase.deleteAttachment(ContentUris.parseId(uri));
+                notifyUri[0] = DataContentProvider.CONTENT_ATTACHMENTS;
+                result = database.deleteAttachment(ContentUris.parseId(uri));
                 break;
-        }
-        ContentResolver contentResolver = getContentResolver();
-        if (contentResolver != null && notifyUri != null) {
-            PreferenceManager.setLastTimeDataIsChanged(System.currentTimeMillis());
-            contentResolver.notifyChange(notifyUri, null);
         }
         return result;
     }
 
     @Override
     public int update(@NonNull Uri uri, ContentValues values, String selection, String[] selectionArgs) {
+        int result = SQLDatabase.inSharedTransaction(getContext(),
+                database -> updateInTransaction(database, uri, values));
+        if (result > 0) {
+            notifyObservers(uri, uri);
+        }
+        return result;
+    }
+
+    private int updateInTransaction(SQLDatabase database, Uri uri, ContentValues values) {
         int result = 0;
         switch (mUriMatcher.match(uri)) {
             case CURRENCY_ITEM:
-                result = mDatabase.updateCurrency(uri.getLastPathSegment(), values);
+                result = database.updateCurrency(uri.getLastPathSegment(), values);
                 break;
             case WALLET_ITEM:
-                result = mDatabase.updateWallet(ContentUris.parseId(uri), values);
+                result = database.updateWallet(ContentUris.parseId(uri), values);
                 break;
             case TRANSACTION_ITEM:
-                result = mDatabase.updateTransaction(ContentUris.parseId(uri), values);
+                result = database.updateTransaction(ContentUris.parseId(uri), values);
                 break;
             case TRANSFER_ITEM:
-                result = mDatabase.updateTransfer(ContentUris.parseId(uri), values);
+                result = database.updateTransfer(ContentUris.parseId(uri), values);
                 break;
             case CATEGORY_ITEM:
-                result = mDatabase.updateCategory(ContentUris.parseId(uri), values);
+                result = database.updateCategory(ContentUris.parseId(uri), values);
                 break;
             case DEBT_ITEM:
-                result = mDatabase.updateDebt(ContentUris.parseId(uri), values);
+                result = database.updateDebt(ContentUris.parseId(uri), values);
                 break;
             case BUDGET_ITEM:
-                result = mDatabase.updateBudget(ContentUris.parseId(uri), values);
+                result = database.updateBudget(ContentUris.parseId(uri), values);
                 break;
             case SAVING_ITEM:
-                result = mDatabase.updateSaving(ContentUris.parseId(uri), values);
+                result = database.updateSaving(ContentUris.parseId(uri), values);
                 break;
             case EVENT_ITEM:
-                result = mDatabase.updateEvent(ContentUris.parseId(uri), values);
+                result = database.updateEvent(ContentUris.parseId(uri), values);
                 break;
             case RECURRENT_TRANSACTION_ITEM:
-                result = mDatabase.updateRecurrentTransaction(ContentUris.parseId(uri), values);
+                result = database.updateRecurrentTransaction(ContentUris.parseId(uri), values);
                 break;
             case RECURRENT_TRANSFER_ITEM:
-                result = mDatabase.updateRecurrentTransfer(ContentUris.parseId(uri), values);
+                result = database.updateRecurrentTransfer(ContentUris.parseId(uri), values);
                 break;
             case TRANSACTION_MODEL_ITEM:
-                result = mDatabase.updateTransactionModel(ContentUris.parseId(uri), values);
+                result = database.updateTransactionModel(ContentUris.parseId(uri), values);
                 break;
             case TRANSFER_MODEL_ITEM:
-                result = mDatabase.updateTransferModel(ContentUris.parseId(uri), values);
+                result = database.updateTransferModel(ContentUris.parseId(uri), values);
+                break;
+            case CATEGORY_RULE_ITEM:
+                result = database.updateCategoryRule(ContentUris.parseId(uri), values);
                 break;
             case PLACE_ITEM:
-                result = mDatabase.updatePlace(ContentUris.parseId(uri), values);
+                result = database.updatePlace(ContentUris.parseId(uri), values);
                 break;
             case PERSON_ITEM:
-                result = mDatabase.updatePerson(ContentUris.parseId(uri), values);
+                result = database.updatePerson(ContentUris.parseId(uri), values);
                 break;
-        }
-        if (result > 0) {
-            PreferenceManager.setLastTimeDataIsChanged(System.currentTimeMillis());
-            ContentResolver contentResolver = getContentResolver();
-            if (contentResolver != null) {
-                contentResolver.notifyChange(uri, null);
-            }
         }
         return result;
     }
@@ -795,6 +777,137 @@ public class DataContentProvider extends ContentProvider {
     private ContentResolver getContentResolver() {
         Context context = getContext();
         return context != null ? context.getContentResolver() : null;
+    }
+
+    /**
+     * The uris a write on this thread would have announced, while an import holds one transaction
+     * open around it. Null when this thread is not inside one, which is every write outside an
+     * import and so the only path that announces anything the moment it is made.
+     */
+    private static final ThreadLocal<Set<Uri>> sDeferredNotifications = new ThreadLocal<>();
+
+    /**
+     * True when this thread is inside runInOneTransaction, and so holds a database connection for
+     * as long as that runs. Which connection depends on the thread: a staged import holds the
+     * staging one, everything else holds the one the app shares.
+     *
+     * This is narrower than holding a connection. A single provider write holds one too, through
+     * inSharedTransaction, and does not set this. It covers the case worth covering, which is a
+     * caller that has wrapped other work in a transaction and reaches something that takes a lock
+     * across the database. SQLDatabase.resetShared refuses on a wider condition, the swap read
+     * hold count, which it can read because that lock is private to it. Reaching the same
+     * condition from here would take an accessor on SQLDatabase, which is worth doing the day
+     * something inside a plain provider write can reach code that locks across the database.
+     */
+    public static boolean isInsideOneTransaction() {
+        return sDeferredNotifications.get() != null;
+    }
+
+    /**
+     * Tells the observers about a write, or remembers it for {@link #runInOneTransaction} to tell
+     * them once the import it is running has committed. Announcing each row as it goes in would
+     * name rows that are not committed yet, and a failed import rolls every one of them back with
+     * nothing to take the announcements back.
+     *
+     * An import remembers whatToRemember and not the row it wrote. Insert passes the list it
+     * inserted into, so a file of a hundred thousand rows holds one uri instead of a hundred
+     * thousand and fires one announcement at the end instead of a hundred thousand. Nothing is
+     * lost by it, an observer registered on a row below that list is told when the list is
+     * announced, checked on an emulator by anImportAnnouncesTheListAndReachesTheRowsUnderIt and
+     * not reasoned about. Delete and update pass their own uri unchanged, and update's is a row
+     * uri, so an importer that updates rows would go back to one entry each. None does today.
+     */
+    private void notifyObservers(Uri uri, Uri whatToRemember) {
+        Set<Uri> deferred = sDeferredNotifications.get();
+        if (deferred != null) {
+            deferred.add(whatToRemember);
+            return;
+        }
+        PreferenceManager.setLastTimeDataIsChanged(System.currentTimeMillis());
+        ContentResolver contentResolver = getContentResolver();
+        if (contentResolver != null) {
+            contentResolver.notifyChange(uri, null);
+        }
+    }
+
+    /**
+     * Runs an import inside one transaction, so a row it refuses part way through takes every row
+     * before it back out. Each row still goes in through a provider, and each of those opens a
+     * transaction of its own; SQLDatabase runs those inline once one is already open on the
+     * thread, so there is one transaction and one commit.
+     *
+     * This covers SyncContentProvider's writes as well as this provider's. Both resolve the same
+     * shared helper, so a transaction opened on it here encloses whatever either of them writes on
+     * this thread. Of the two only this provider announces anything, and those announcements are
+     * held back until the commit. The one thing that is not held back is the preference a wallet
+     * delete writes, which is out of the database entirely and is described where it happens.
+     *
+     * Joining is decided from what this method itself left on the thread, so it catches another
+     * call to this method and nothing else. Calling it from inside a provider write, or from
+     * inside a body SQLDatabase is already running, would not join and would announce while that
+     * transaction is still open. It is the entry point an importer starts from, not something to
+     * reach for once a write is already running.
+     *
+     * What it costs, and it is more than it looks. The database is opened without write ahead
+     * logging, so SQLite hands the whole app one connection, and an open transaction holds it.
+     * Every other thread that touches the ledger waits for the import to finish, reads as well as
+     * writes, and some of those writes are made on the main thread, where waiting is a frozen
+     * screen. Keep what runs in here down to the writes themselves and keep the caller somewhere
+     * that can wait, or somewhere nothing else is running yet. The import service and the legacy
+     * upgrade service are the first. CurrencyManager writing the default currency set is the
+     * other, and it reaches here three ways: from a first launch, where nothing else has started
+     * yet; from a restore of a legacy backup, which carries no currencies and so leaves the table
+     * empty, on the backup service thread while the user interface is live; and from deleting the
+     * last currency, on the main thread. The last two can both make a user wait.
+     *
+     * Public, and here, because SQLDatabase is package local and the importers sit in a sub
+     * package, so they cannot name it.
+     */
+    public static <T> T runInOneTransaction(Context context, Callable<T> body) throws Exception {
+        if (sDeferredNotifications.get() != null) {
+            // already inside one on this thread, so join it the way SQLDatabase.inTransaction
+            // does. Opening a second would replace the outer's remembered uris with its own and
+            // then announce them while the outer transaction is still open and can still roll back
+            return body.call();
+        }
+        Set<Uri> deferred = new LinkedHashSet<>();
+        sDeferredNotifications.set(deferred);
+        T result;
+        try {
+            result = SQLDatabase.inSharedTransaction(context, database -> {
+                try {
+                    return body.call();
+                } catch (RuntimeException e) {
+                    throw e;
+                } catch (Exception e) {
+                    // the transaction body cannot declare a checked exception, and the importers
+                    // all throw one. Carried out and rethrown below so the caller still sees the
+                    // failure it knows how to report, and not a wrapper around it
+                    throw new CheckedFailure(e);
+                }
+            });
+        } catch (CheckedFailure e) {
+            throw (Exception) e.getCause();
+        } finally {
+            sDeferredNotifications.remove();
+        }
+        // reached only when the transaction committed, so every uri here names rows that are
+        // really in the ledger
+        ContentResolver contentResolver = context.getContentResolver();
+        if (!deferred.isEmpty()) {
+            PreferenceManager.setLastTimeDataIsChanged(System.currentTimeMillis());
+            for (Uri uri : deferred) {
+                contentResolver.notifyChange(uri, null);
+            }
+        }
+        return result;
+    }
+
+    private static class CheckedFailure extends RuntimeException {
+
+        private CheckedFailure(Exception cause) {
+            super(cause);
+        }
     }
 
     /**
@@ -809,12 +922,34 @@ public class DataContentProvider extends ContentProvider {
         return Long.parseLong(segments.get(fixedIndex - 1));
     }
 
-    private void initializeDatabase(Context context) {
-        if (mDatabase != null) {
-            mDatabase.close();
-        }
-        mDatabase = new SQLDatabase(context);
-        mDatabase.setDeletedObjectCacheEnabled(IS_REMOTE_SYNC_ENABLED);
+    /**
+     * Runs a replacement of the database file with the shared helper closed and no write of this
+     * provider in flight. The runnable does the file work and nothing else.
+     *
+     * Public, and here, because SQLDatabase is package local and the importers that replace the
+     * database file sit in a sub package, so they cannot name it.
+     */
+    public static void replaceDatabaseFile(Context context, Runnable swap) {
+        SQLDatabase.resetShared(context, swap);
+    }
+
+    /**
+     * Sends the calling thread database work to a file of its own until the matching close. A
+     * restore uses it to build its import somewhere other than the live ledger.
+     *
+     * No other thread is affected and no lock is taken, which is the whole reason the restore
+     * redirect is per thread. Public for the same reason as the method above.
+     */
+    public static void openStagingDatabase(Context context, String name) {
+        SQLDatabase.openStaging(context, name);
+    }
+
+    /**
+     * Closes the calling thread staging database and sends its work back to the live ledger.
+     * Does nothing when there is no staging database, so it is safe in a finally.
+     */
+    public static void closeStagingDatabase() {
+        SQLDatabase.closeStaging();
     }
 
     @SuppressLint("Recycle")
@@ -824,8 +959,15 @@ public class DataContentProvider extends ContentProvider {
         if (client != null) {
             ContentProvider contentProvider = client.getLocalContentProvider();
             if (contentProvider instanceof DataContentProvider) {
-                ((DataContentProvider) contentProvider).initializeDatabase(context);
+                SQLDatabase.resetShared(context);
                 PreferenceManager.setCurrentWallet(context, PreferenceManager.NO_CURRENT_WALLET);
+                PreferenceManager.setDefaultWallet(PreferenceManager.NO_DEFAULT_WALLET);
+                // Same reason the current and default wallets are cleared just above. Every
+                // wallet is inserted fresh by a restore, so the ids come back naming other wallets,
+                // and a widget is pointed at one by its id. Left alone it would show a wallet
+                // nobody chose and file new transactions into it. Nothing on this path calls
+                // notifyChange either, which is why the redraw is asked for here.
+                WalletWidgetProvider.forgetConfiguredWallets(context);
             }
             client.close();
         }

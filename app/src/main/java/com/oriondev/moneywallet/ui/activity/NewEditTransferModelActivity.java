@@ -36,6 +36,7 @@ import android.widget.TextView;
 import com.oriondev.moneywallet.R;
 import com.oriondev.moneywallet.model.CurrencyUnit;
 import com.oriondev.moneywallet.model.Event;
+import com.oriondev.moneywallet.model.MoneyScale;
 import com.oriondev.moneywallet.model.Place;
 import com.oriondev.moneywallet.model.Wallet;
 import com.oriondev.moneywallet.picker.CurrencyConverterPicker;
@@ -50,6 +51,7 @@ import com.oriondev.moneywallet.ui.view.text.MaterialEditText;
 import com.oriondev.moneywallet.ui.view.text.Validator;
 import com.oriondev.moneywallet.utils.CurrencyManager;
 import com.oriondev.moneywallet.utils.DateUtils;
+import com.oriondev.moneywallet.utils.DefaultWallet;
 import com.oriondev.moneywallet.utils.IconLoader;
 import com.oriondev.moneywallet.utils.MoneyFormatter;
 
@@ -324,7 +326,9 @@ public class NewEditTransferModelActivity extends NewEditItemActivity implements
                                     DateUtils.getDateFromSQLDateString(cursor.getString(cursor.getColumnIndex(Contract.TransferModel.EVENT_END_DATE)))
                             );
                         }
-                        conversionRate = (double) moneyTo / moneyFrom;
+                        conversionRate = MoneyScale.deriveRate(moneyFrom, moneyTo,
+                                CurrencyManager.getDecimals(walletFrom.getCurrency()),
+                                CurrencyManager.getDecimals(walletTo.getCurrency()));
                         mConfirmedCheckBox.setChecked(cursor.getInt(cursor.getColumnIndex(Contract.TransferModel.CONFIRMED)) == 1);
                         mCountInTotalCheckBox.setChecked(cursor.getInt(cursor.getColumnIndex(Contract.TransferModel.COUNT_IN_TOTAL)) == 1);
                     }
@@ -339,11 +343,13 @@ public class NewEditTransferModelActivity extends NewEditItemActivity implements
                         Contract.Wallet.START_MONEY,
                         Contract.Wallet.TOTAL_MONEY
                 };
-                long currentWallet = PreferenceManager.getCurrentWallet();
+                long currentWallet = DefaultWallet.resolveNewItemWallet(contentResolver);
                 Cursor cursor;
                 if (currentWallet == PreferenceManager.TOTAL_WALLET_ID) {
                     Uri uri = DataContentProvider.CONTENT_WALLETS;
-                    cursor = contentResolver.query(uri, projection, null, null, null);
+                    cursor = contentResolver.query(uri, projection,
+                            Contract.Wallet.ARCHIVED + " = 0", null,
+                            Contract.Wallet.INDEX + " ASC, " + Contract.Wallet.NAME + " ASC");
                 } else {
                     Uri uri = ContentUris.withAppendedId(DataContentProvider.CONTENT_WALLETS, currentWallet);
                     cursor = contentResolver.query(uri, projection, null, null, null);
@@ -426,7 +432,7 @@ public class NewEditTransferModelActivity extends NewEditItemActivity implements
         if (currencyUnit1 != null && currencyUnit2 != null && !currencyUnit1.equals(currencyUnit2)) {
             // we have two different currencies, its time to show the secondary currency line and do
             // a conversion on the fly with the provided conversion rate.
-            mExchangeRateTextView.setText(String.format(Locale.getDefault(), "%s ➡ %s: %.2f", currencyUnit1.getSymbol(), currencyUnit2.getSymbol(), conversionRate));
+            mExchangeRateTextView.setText(String.format(Locale.getDefault(), "%s -> %s: %.2f", currencyUnit1.getSymbol(), currencyUnit2.getSymbol(), conversionRate));
             long convertedAmount = mConverterPicker.convert(mMoneyPicker.getCurrentMoney());
             mMoneyFormatter.applyNotTinted(mSecondaryMoneyTextView, currencyUnit2, convertedAmount);
             mExchangeRateTextView.setVisibility(View.VISIBLE);

@@ -42,6 +42,11 @@ public class Contract {
         public static final String DECIMALS = Schema.Currency.DECIMALS;
         public static final String FAVOURITE = Schema.Currency.FAVOURITE;
         public static final String FIX_MONEY_DECIMALS = "action_fix_money_decimals";
+        /**
+         * Asks an insert to bring back a row that is present and not served instead of being
+         * refused by it. Only the default set sets this. See SQLDatabase.insertCurrency.
+         */
+        public static final String REVIVE_IF_DELETED = "action_revive_if_deleted";
     }
 
     public static final class Wallet {
@@ -56,6 +61,7 @@ public class Contract {
         public static final String ARCHIVED = Schema.Wallet.ARCHIVED;
         public static final String TAG = Schema.Wallet.TAG;
         public static final String INDEX = Schema.Wallet.INDEX;
+        public static final String GROUP = Schema.Wallet.GROUP;
     }
 
     public static final class Transaction {
@@ -70,6 +76,22 @@ public class Contract {
         public static final String CATEGORY_TYPE = "transaction_" + Schema.Category.TYPE;
         public static final String CATEGORY_TAG = "transaction_" + Schema.Category.TAG;
         public static final String CATEGORY_SHOW_REPORT = "transaction_" + Schema.Category.SHOW_REPORT;
+        public static final String CATEGORY_PARENT_SHOW_REPORT = "transaction_" + Category.PARENT_SHOW_REPORT;
+        /**
+         * A transaction belongs in the reports only when its own category is included and, for a
+         * transaction filed on a subcategory, the parent is included too. Both report screens
+         * filter on this, so a category hidden on one of them cannot still be counted on the other.
+         */
+        public static final String REPORT_FILTER = "(" + CATEGORY_SHOW_REPORT + " = 1 AND IFNULL(" + CATEGORY_PARENT_SHOW_REPORT + ", 1) = 1)";
+        /**
+         * Money moved between two of the user's own wallets is neither earned nor spent, so a
+         * screen that sums one direction on its own leaves both legs out. A screen that shows a
+         * net keeps them, since a wallet that sent money does hold less of it. The tag is what
+         * tells a transfer apart and not the transaction type, because the fee on a transfer
+         * carries the same type and is money genuinely spent. The tag is null on every category
+         * the user made.
+         */
+        public static final String NOT_TRANSFER = "IFNULL(" + CATEGORY_TAG + ", '') <> '" + CategoryTag.TRANSFER + "'";
         public static final String DIRECTION = Schema.Transaction.DIRECTION;
         public static final String TYPE = Schema.Transaction.TYPE;
         public static final String WALLET_ID = Schema.Transaction.WALLET;
@@ -102,6 +124,40 @@ public class Contract {
         public static final String PEOPLE_IDS = "transaction_person_ids";
         public static final String ATTACHMENT_IDS = "transaction_attachment_ids";
         public static final String TAG = Schema.Transaction.TAG;
+        /**
+         * Read only from {@link DataContentProvider#CONTENT_CATEGORY_LINES} and
+         * {@link DataContentProvider#CONTENT_CATEGORY_SHARES}. The line is a key unique to one
+         * line, and the split is the part a line comes from, null on the line of the main category.
+         */
+        public static final String LINE_ID = "transaction_line_id";
+        public static final String SPLIT_ID = Schema.TransactionSplit.ID;
+        /**
+         * Written with a wallet that moves a transaction across currency decimals, holding the
+         * decimals of the new currency minus those of the old one, so the parts are rescaled in
+         * the same write as the total.
+         */
+        public static final String FIX_SPLIT_DECIMALS = "action_fix_split_decimals";
+        public static final String SPLIT_PARTS = "transaction_split_parts";
+        public static final String SPLIT_CATEGORIES = "transaction_split_categories";
+    }
+
+    /**
+     * Columns of the parts table as {@link SyncContentProvider#CONTENT_TRANSACTION_SPLIT} reads
+     * it, every part there whether its transaction reads as split or not.
+     */
+    public static final class TransactionSplit {
+        public static final String TRANSACTION_ID = Schema.TransactionSplit.TRANSACTION;
+        public static final String DELETED = Schema.TransactionSplit.DELETED;
+        public static final String ID = Schema.TransactionSplit.ID;
+        public static final String CATEGORY_ID = Schema.TransactionSplit.CATEGORY;
+        public static final String CATEGORY_NAME = "split_" + Schema.Category.NAME;
+        public static final String CATEGORY_ICON = "split_" + Schema.Category.ICON;
+        public static final String CATEGORY_TYPE = "split_" + Schema.Category.TYPE;
+        public static final String MONEY = Schema.TransactionSplit.MONEY;
+        public static final String NOTE = Schema.TransactionSplit.NOTE;
+        public static final String PART_CATEGORY = "category";
+        public static final String PART_MONEY = "money";
+        public static final String PART_NOTE = "note";
     }
 
     public static final class Transfer {
@@ -212,7 +268,23 @@ public class Contract {
     public static final class Budget {
         public static final String ID = Schema.Budget.ID;
         public static final String TYPE = Schema.Budget.TYPE;
+        /**
+         * The first of {@link #CATEGORY_IDS}, kept so a release that predates that list still
+         * shows the budget running on one category instead of on none. Nothing matches
+         * transactions on it any more, that is the join table behind {@link #CATEGORY_IDS}.
+         * A write and an upgrade both leave it naming a category the join table also holds; a
+         * release old enough to write it and not the table can put it out of step, and the next
+         * upgrade puts it back.
+         */
         public static final String CATEGORY_ID = Schema.Budget.CATEGORY;
+        /**
+         * Every category the budget covers, in the same angle bracketed form
+         * {@link #WALLET_IDS} uses, written on an insert or an update and read back on a query.
+         * A query hands them over lowest id first, and so does the editor when it reads the
+         * categories of the budget it is opening, which is what keeps {@link #CATEGORY_ID} on
+         * the same category through an edit and through a period rolled forward.
+         */
+        public static final String CATEGORY_IDS = "budget_category_ids";
         public static final String CATEGORY_NAME = "budget_" + Schema.Category.NAME;
         public static final String CATEGORY_ICON = "budget_" + Schema.Category.ICON;
         public static final String CATEGORY_TYPE = "budget_" + Schema.Category.TYPE;
@@ -221,11 +293,190 @@ public class Contract {
         public static final String START_DATE = Schema.Budget.START_DATE;
         public static final String END_DATE = Schema.Budget.END_DATE;
         public static final String MONEY = Schema.Budget.MONEY;
+        // on an insert and on an update through DataContentProvider the value sent is ignored and
+        // the currency is taken from the budget's wallets
         public static final String CURRENCY = Schema.Budget.CURRENCY;
+        public static final String RULE = Schema.Budget.RULE;
+        public static final String RULE_START = Schema.Budget.RULE_START;
+        // insert only, never a column: the id of the period this one was rolled forward from
+        public static final String ROLLED_FROM_ID = "budget_rolled_from_id";
         public static final String PROGRESS = "budget_" + Schema.Alias.PROGRESS;
         public static final String WALLET_IDS = "budget_wallet_ids";
         public static final String HAS_WALLET_IN_TOTAL = "budget_has_wallet_in_total";
         public static final String TAG = Schema.Budget.TAG;
+    }
+
+    /**
+     * Selection over the raw budgets table naming the budgets a roll forward can open a period
+     * for: repeating, not deleted, and left with wallets that still exist and still agree on one
+     * currency. Each of the last two stops a roll on its own, for its own reason. A budget with
+     * no wallet left is absent from the rows this class describes, which come from a join over
+     * those wallets, so the roll never sees it. A budget whose wallets disagree is handed out,
+     * but refuses every write, because both the insert and the update check that before writing
+     * anything. Waking the roll for either leaves it with nothing to do and the same reason to
+     * wake again, and the two go round for as long as the budget stays in that state.
+     */
+    public static final String ROLLABLE_BUDGET_SELECTION =
+            Schema.Budget.RULE + " IS NOT NULL AND " + Schema.Budget.DELETED + " = 0 AND (SELECT COUNT(DISTINCT w." +
+            Schema.Wallet.CURRENCY + ") FROM " + Schema.BudgetWallet.TABLE + " AS bw JOIN " + Schema.Wallet.TABLE +
+            " AS w ON bw." + Schema.BudgetWallet.WALLET + " = w." + Schema.Wallet.ID + " WHERE bw." +
+            Schema.BudgetWallet.BUDGET + " = " + Schema.Budget.TABLE + "." + Schema.Budget.ID + " AND bw." +
+            Schema.BudgetWallet.DELETED + " = 0 AND w." + Schema.Wallet.DELETED + " = 0) = 1";
+
+    /**
+     * Selection over the raw budgets table naming the budgets of one chain that come after a given
+     * one. Takes three arguments: the id of the budget asking, the uuid of the budget its chain
+     * started from escaped for LIKE and followed by ":%", and the whole uuid of the budget asking.
+     *
+     * Every period a roll opens is named after the budget its chain started from, so the chain is
+     * what the uuid argument matches; the day a schedule is anchored to is not an identity, since
+     * two budgets set up on the same afternoon are anchored to the same day.
+     *
+     * A chain is ordered by those names and not by the dates its rows carry. It holds the budget
+     * it started from, whose uuid carries no appended day, and one row per period after that,
+     * named after the chain then a colon then the day that period begins on. Schema declares the
+     * column TEXT with no collation of its own, so SQLite compares it byte for byte, and both
+     * halves of the order follow: the name of the budget the chain started from is a prefix of
+     * every other name in the chain, so it sorts before all of them, and the rest share that
+     * prefix and differ only in a date written the ISO way, so comparing those as text compares
+     * them as dates. That is the order the roll opened them in. A uuid is never rewritten once
+     * minted, so nothing an owner does can reorder a chain, while the dates on a row are freely
+     * editable: ordering a chain by its start dates let an old period be edited forward past the
+     * live one, which then reported the live period as history and refused every save it was
+     * offered.
+     *
+     * The chain argument is only ever matched with LIKE, and never for equality, because equality
+     * could not return a row. {@link #budgetChainOf(String)} hands back either the whole uuid it
+     * was given or the front of it, so the chain is always a prefix of the uuid of the budget
+     * asking and therefore never above it, while a row matched by equality would have to be above
+     * it to clear the last test. Nothing an owner has, restored or otherwise, satisfies both.
+     *
+     * A row flagged deleted is counted too, because it still holds the name of the period it
+     * covered and a chain restarted from behind it would ask the roll for a name already spoken
+     * for. Deleting a budget in the app does not produce such a row: DataContentProvider turns the
+     * deleted flag off at startup, so a delete there takes the row away. This is for rows that
+     * arrive already flagged.
+     *
+     * The caller escapes the second argument because a uuid is only plain hexadecimal while it is
+     * minted here. One restored from a backup is whatever that file held, and an underscore in
+     * it would stand for any character and match a chain it has nothing to do with.
+     */
+    public static final String LATER_PERIOD_OF_CHAIN_SELECTION =
+            Schema.Budget.ID + " <> ? AND " + Schema.Budget.UUID + " LIKE ? ESCAPE '\\' AND " +
+            Schema.Budget.UUID + " > ?";
+
+    /**
+     * The raw uuid column of the budgets table. It is not part of the rows this class otherwise
+     * describes; a caller reading it has to go to the table itself.
+     */
+    public static final String BUDGET_UUID = Schema.Budget.UUID;
+
+    /** A day as a roll writes it into the name of the period it opens. */
+    private static final String APPENDED_DAY = "\\d{4}-\\d{2}-\\d{2}";
+
+    /**
+     * The uuid of the budget the given budget's chain started from. A roll names each period it
+     * opens after the chain, a colon, and the day that period begins on, so this takes such a day
+     * back off again and hands back whatever the chain started from. A budget that is itself the
+     * start of its chain is its own answer.
+     *
+     * The day is taken off the END and only when it really is a day. Both matter for a uuid that
+     * did not come from this app: the ones minted here are hexadecimal and hold no colon of their
+     * own, while one restored from a backup file is whatever that file held. Cutting at the first
+     * colon instead put a chain root that contained a colon after its own periods, since it then
+     * shared their prefix and carried something other than a date where they carry one, and every
+     * period of that chain read as history because a later member appeared to exist. The budget
+     * could then never be saved while it repeated.
+     *
+     * This stops such a chain being built that way, and does not put one right that already was.
+     * A chain whose periods were opened while the first colon was the cut is named for the part
+     * before that colon, its root still sorts after all of them, and it stays unsavable while it
+     * repeats. Turning repeat off does not give it back either: the budget then reads as a period
+     * its chain has moved past, which is what hides the box that would turn it on again. That was
+     * so before this method changed too.
+     *
+     * One reading stays ambiguous and cannot be recovered: a chain root whose own uuid ends in a
+     * colon and eight digits split by dashes is indistinguishable from a period, and is read as
+     * one. Nothing this app writes looks like that.
+     *
+     * @param budgetUUID uuid of a budget in the chain.
+     * @return the uuid of the budget the chain started from.
+     */
+    public static String budgetChainOf(String budgetUUID) {
+        int separator = budgetUUID.lastIndexOf(':');
+        return separator >= 0 && budgetUUID.substring(separator + 1).matches(APPENDED_DAY)
+                ? budgetUUID.substring(0, separator) : budgetUUID;
+    }
+
+    /**
+     * The lowest a saving's balance reaches from a given moment onwards, over the rows it
+     * already carries. A withdrawal dated at that moment can take at most this, because taking
+     * more puts the saving under zero on some date at or after it.
+     *
+     * A saving's own sum cannot answer that. It is a total over the whole set of rows and holds
+     * no date order, so a withdrawal dated before the deposit that funds it clears it and the
+     * saving sits under zero in between.
+     *
+     * dates and signedMoney describe the same rows in the same positions, ordered by date
+     * ascending. A deposit is positive and a withdrawal negative. A deposit that is not
+     * confirmed belongs in neither array; a withdrawal belongs in them whether it is confirmed
+     * or not. The caller orders on the raw date column and this compares those
+     * same strings, so the two orders are one order, and a date this app writes is a fixed width
+     * yyyy-MM-dd HH:mm:ss whose byte order is its time order.
+     *
+     * The answer can be negative, which says the saving is already under zero on some date from
+     * here on and has nothing at all to give. A caller deciding what a withdrawal may take holds
+     * it at zero itself.
+     *
+     * @param startMoney the saving's start money.
+     * @param dates the date of each row, ascending.
+     * @param signedMoney what each row moves the saving by, in the same positions.
+     * @param from the moment to count from, as a date string of the same kind.
+     * @return the lowest balance the saving reaches at or after from.
+     */
+    public static long lowestSavingBalanceFrom(long startMoney, String[] dates,
+                                               long[] signedMoney, String from) {
+        long balance = startMoney;
+        int row = 0;
+        while (row < dates.length && dates[row].compareTo(from) <= 0) {
+            balance += signedMoney[row];
+            row++;
+        }
+        long lowest = balance;
+        for (; row < dates.length; row++) {
+            balance += signedMoney[row];
+            // Only at the end of a run of rows sharing a date. The balance part way through
+            // such a run is not one the saving ever holds, and the order inside the run is
+            // whatever the query gives back, so comparing there both invents a low point and
+            // makes the answer depend on that order.
+            if ((row + 1 == dates.length || !dates[row + 1].equals(dates[row]))
+                    && balance < lowest) {
+                lowest = balance;
+            }
+        }
+        return lowest;
+    }
+
+    /**
+     * Selection over the rows {@link Transaction} describes naming every side of a transfer, tax
+     * side included, that links any of the given people. A transfer keeps its people only in the
+     * transfer people table, so the people ids column of its rows is always empty.
+     *
+     * @param people number of person id arguments the selection takes.
+     * @return the selection, with one placeholder per person.
+     */
+    public static String transferSideWithPeopleSelection(int people) {
+        StringBuilder placeholders = new StringBuilder();
+        for (int i = 0; i < people; i++) {
+            placeholders.append(i == 0 ? "?" : ", ?");
+        }
+        return "EXISTS (SELECT 1 FROM " + Schema.Transfer.TABLE + " AS tr JOIN " +
+                Schema.TransferPeople.TABLE + " AS tp ON tp." + Schema.TransferPeople.TRANSFER +
+                " = tr." + Schema.Transfer.ID + " WHERE tr." + Schema.Transfer.DELETED +
+                " = 0 AND tp." + Schema.TransferPeople.DELETED + " = 0 AND tp." +
+                Schema.TransferPeople.PERSON + " IN (" + placeholders + ") AND " + Transaction.ID +
+                " IN (tr." + Schema.Transfer.TRANSACTION_FROM + ", tr." + Schema.Transfer.TRANSACTION_TO +
+                ", tr." + Schema.Transfer.TRANSACTION_TAX + "))";
     }
 
     public static final class Saving {
@@ -433,6 +684,19 @@ public class Contract {
         public static final String TAG = Schema.Place.TAG;
     }
 
+    public static final class CategoryRule {
+        public static final String ID = Schema.CategoryRule.ID;
+        public static final String PATTERN = Schema.CategoryRule.PATTERN;
+        public static final String CATEGORY_ID = Schema.CategoryRule.CATEGORY;
+        /** Read only, joined from the category the rule names. Writes ignore it. */
+        public static final String CATEGORY_NAME = "rule_category_name";
+        /**
+         * The priority the rules are matched in, lowest first. An insert that names no index of
+         * its own is appended after the rules already stored.
+         */
+        public static final String INDEX = Schema.CategoryRule.INDEX;
+    }
+
     public static final class Person {
         public static final String ID = Schema.Person.ID;
         public static final String NAME = Schema.Person.NAME;
@@ -572,6 +836,9 @@ public class Contract {
         public static final int SYSTEM_CATEGORY_NOT_MODIFIABLE = 4543;
         public static final int TRANSACTION_USED_IN_TRANSFER = 4544;
         public static final int INVALID_RECURRENCE_RULE = 4545;
+        public static final int SPLIT_NOT_VALID = 4546;
+        public static final int CATEGORY_IN_SPLIT = 4547;
+        public static final int SAVING_IN_OTHER_WALLET = 4548;
     }
 
     public static List<Long> parseObjectIds(String encodedIds) {

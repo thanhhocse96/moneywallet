@@ -21,11 +21,14 @@ package com.oriondev.moneywallet.ui.fragment.dialog;
 
 import android.app.Activity;
 import android.app.Dialog;
+import android.content.DialogInterface;
 import android.os.Bundle;
 import androidx.annotation.NonNull;
+import androidx.appcompat.app.AlertDialog;
 import androidx.fragment.app.DialogFragment;
 import androidx.fragment.app.FragmentManager;
 import android.view.View;
+import android.widget.AdapterView;
 import android.widget.CheckBox;
 import android.widget.CompoundButton;
 import android.widget.EditText;
@@ -33,16 +36,16 @@ import android.widget.LinearLayout;
 import android.widget.RadioButton;
 import android.widget.TextView;
 
-import com.afollestad.materialdialogs.DialogAction;
-import com.afollestad.materialdialogs.MaterialDialog;
-import com.jaredrummler.materialspinner.MaterialSpinner;
 import com.oriondev.moneywallet.R;
 import com.oriondev.moneywallet.model.RecurrenceSetting;
 import com.oriondev.moneywallet.picker.DateTimePicker;
+import com.oriondev.moneywallet.ui.view.text.MaterialEditText;
 import com.oriondev.moneywallet.ui.view.theme.ThemedDialog;
+import com.oriondev.moneywallet.ui.view.theme.ThemedSpinner;
 import com.oriondev.moneywallet.utils.DateFormatter;
 
 import java.util.Date;
+import java.util.Locale;
 
 /**
  * Created by andrea on 07/11/18.
@@ -53,6 +56,8 @@ public class RecurrencePickerDialog extends DialogFragment implements DateTimePi
     private static final String TAG_END_DATE_PICKER = "RecurrencePickerDialog::Tag::EndDatePicker";
 
     private static final String SS_RECURRENCE_SETTING = "RecurrencePickerDialog::SavedState::RecurrenceSetting";
+    private static final String SS_END_TYPE_ENABLED = "RecurrencePickerDialog::SavedState::EndTypeEnabled";
+    private static final String SS_ONCE_A_PERIOD = "RecurrencePickerDialog::SavedState::OnceAPeriod";
 
     public static RecurrencePickerDialog newInstance() {
         return new RecurrencePickerDialog();
@@ -62,8 +67,12 @@ public class RecurrencePickerDialog extends DialogFragment implements DateTimePi
 
     private RecurrenceSetting mRecurrenceSetting;
 
-    private MaterialSpinner mRecurrenceTypeSpinner;
-    private MaterialSpinner mRecurrenceStartDateSpinner;
+    private boolean mEndTypeEnabled = true;
+
+    private boolean mOnceAPeriod = false;
+
+    private ThemedSpinner mRecurrenceTypeSpinner;
+    private MaterialEditText mRecurrenceStartDateSpinner;
     private EditText mRecurrenceEveryNumberEditText;
     private TextView mRecurrenceEveryItemTextView;
     private LinearLayout mRecurrenceTypeWeeklyLayout;
@@ -76,10 +85,10 @@ public class RecurrencePickerDialog extends DialogFragment implements DateTimePi
     private CheckBox mRecurrenceTypeWeeklySaturdayRadioButton;
     private LinearLayout mRecurrenceTypeMonthlyLayout;
     private RadioButton mRecurrenceTypeMonthlySameDayRadioButton;
-    private MaterialSpinner mRecurrenceEndTypeSpinner;
+    private ThemedSpinner mRecurrenceEndTypeSpinner;
     private LinearLayout mRecurrenceTimesLayout;
     private EditText mRecurrenceTimesNumberEditText;
-    private MaterialSpinner mRecurrenceEndDateSpinner;
+    private MaterialEditText mRecurrenceEndDateSpinner;
 
     private DateTimePicker mStartDatePicker;
     private DateTimePicker mEndDatePicker;
@@ -93,17 +102,18 @@ public class RecurrencePickerDialog extends DialogFragment implements DateTimePi
         }
         if (savedInstanceState != null) {
             mRecurrenceSetting = savedInstanceState.getParcelable(SS_RECURRENCE_SETTING);
+            mEndTypeEnabled = savedInstanceState.getBoolean(SS_END_TYPE_ENABLED, true);
+            mOnceAPeriod = savedInstanceState.getBoolean(SS_ONCE_A_PERIOD, false);
         }
         // create the dialog
-        MaterialDialog dialog = ThemedDialog.buildMaterialDialog(activity)
-                .title(R.string.dialog_recurrence_title)
-                .customView(R.layout.dialog_recurrence_setting_picker, true)
-                .positiveText(android.R.string.ok)
-                .negativeText(android.R.string.cancel)
-                .onPositive(new MaterialDialog.SingleButtonCallback() {
+        View view = ThemedDialog.inflateScrollableView(activity, R.layout.dialog_recurrence_setting_picker);
+        AlertDialog dialog = ThemedDialog.buildMaterialDialog(activity)
+                .setTitle(R.string.dialog_recurrence_title)
+                .setView(view)
+                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
 
                     @Override
-                    public void onClick(@NonNull MaterialDialog dialog, @NonNull DialogAction which) {
+                    public void onClick(DialogInterface dialog, int which) {
                         mRecurrenceSetting = getCurrentRecurrenceSetting();
                         if (mCallback != null) {
                             mCallback.onRecurrenceSettingChanged(mRecurrenceSetting);
@@ -111,109 +121,114 @@ public class RecurrencePickerDialog extends DialogFragment implements DateTimePi
                     }
 
                 })
+                .setNegativeButton(android.R.string.cancel, null)
                 .show();
-        View view = dialog.getCustomView();
-        if (view != null) {
-            mRecurrenceTypeSpinner = view.findViewById(R.id.type_spinner);
-            mRecurrenceStartDateSpinner = view.findViewById(R.id.start_date_spinner);
-            mRecurrenceEveryNumberEditText = view.findViewById(R.id.every_number_edit_text);
-            mRecurrenceEveryItemTextView = view.findViewById(R.id.every_item_text_view);
-            mRecurrenceTypeWeeklyLayout = view.findViewById(R.id.type_weekly_layout);
-            mRecurrenceTypeWeeklySundayRadioButton = view.findViewById(R.id.type_weekly_sunday);
-            mRecurrenceTypeWeeklyMondayRadioButton = view.findViewById(R.id.type_weekly_monday);
-            mRecurrenceTypeWeeklyTuesdayRadioButton = view.findViewById(R.id.type_weekly_tuesday);
-            mRecurrenceTypeWeeklyWednesdayRadioButton = view.findViewById(R.id.type_weekly_wednesday);
-            mRecurrenceTypeWeeklyThursdayRadioButton = view.findViewById(R.id.type_weekly_thursday);
-            mRecurrenceTypeWeeklyFridayRadioButton = view.findViewById(R.id.type_weekly_friday);
-            mRecurrenceTypeWeeklySaturdayRadioButton = view.findViewById(R.id.type_weekly_saturday);
-            mRecurrenceTypeMonthlyLayout = view.findViewById(R.id.type_monthly_layout);
-            mRecurrenceTypeMonthlySameDayRadioButton = view.findViewById(R.id.type_monthly_repeat_same_day);
-            mRecurrenceEndTypeSpinner = view.findViewById(R.id.end_type_spinner);
-            mRecurrenceTimesLayout = view.findViewById(R.id.end_type_for_layout);
-            mRecurrenceTimesNumberEditText = view.findViewById(R.id.end_type_for_edit_text);
-            mRecurrenceEndDateSpinner = view.findViewById(R.id.end_date_spinner);
-            // setup margins
-            mRecurrenceTypeSpinner.setPadding(0, mRecurrenceTypeSpinner.getPaddingTop(), 0, mRecurrenceTypeSpinner.getPaddingBottom());
-            mRecurrenceStartDateSpinner.setPadding(0, mRecurrenceStartDateSpinner.getPaddingTop(), 0, mRecurrenceStartDateSpinner.getPaddingBottom());
-            mRecurrenceEndTypeSpinner.setPadding(0, mRecurrenceEndTypeSpinner.getPaddingTop(), 0, mRecurrenceEndTypeSpinner.getPaddingBottom());
-            mRecurrenceEndDateSpinner.setPadding(0, mRecurrenceEndDateSpinner.getPaddingTop(), 0, mRecurrenceEndDateSpinner.getPaddingBottom());
-            // configure spinners
-            mRecurrenceTypeSpinner.setItems(
-                    getString(R.string.recurrence_type_daily),
-                    getString(R.string.recurrence_type_weekly),
-                    getString(R.string.recurrence_type_monthly),
-                    getString(R.string.recurrence_type_yearly)
-            );
-            mRecurrenceEndTypeSpinner.setItems(
-                    getString(R.string.recurrence_end_type_forever),
-                    getString(R.string.recurrence_end_type_until),
-                    getString(R.string.recurrence_end_type_for)
-            );
-            mRecurrenceTypeSpinner.setOnItemSelectedListener(new MaterialSpinner.OnItemSelectedListener() {
+        mRecurrenceTypeSpinner = view.findViewById(R.id.type_spinner);
+        mRecurrenceStartDateSpinner = view.findViewById(R.id.start_date_spinner);
+        mRecurrenceEveryNumberEditText = view.findViewById(R.id.every_number_edit_text);
+        mRecurrenceEveryItemTextView = view.findViewById(R.id.every_item_text_view);
+        mRecurrenceTypeWeeklyLayout = view.findViewById(R.id.type_weekly_layout);
+        mRecurrenceTypeWeeklySundayRadioButton = view.findViewById(R.id.type_weekly_sunday);
+        mRecurrenceTypeWeeklyMondayRadioButton = view.findViewById(R.id.type_weekly_monday);
+        mRecurrenceTypeWeeklyTuesdayRadioButton = view.findViewById(R.id.type_weekly_tuesday);
+        mRecurrenceTypeWeeklyWednesdayRadioButton = view.findViewById(R.id.type_weekly_wednesday);
+        mRecurrenceTypeWeeklyThursdayRadioButton = view.findViewById(R.id.type_weekly_thursday);
+        mRecurrenceTypeWeeklyFridayRadioButton = view.findViewById(R.id.type_weekly_friday);
+        mRecurrenceTypeWeeklySaturdayRadioButton = view.findViewById(R.id.type_weekly_saturday);
+        mRecurrenceTypeMonthlyLayout = view.findViewById(R.id.type_monthly_layout);
+        mRecurrenceTypeMonthlySameDayRadioButton = view.findViewById(R.id.type_monthly_repeat_same_day);
+        mRecurrenceEndTypeSpinner = view.findViewById(R.id.end_type_spinner);
+        mRecurrenceTimesLayout = view.findViewById(R.id.end_type_for_layout);
+        mRecurrenceTimesNumberEditText = view.findViewById(R.id.end_type_for_edit_text);
+        mRecurrenceEndDateSpinner = view.findViewById(R.id.end_date_spinner);
+        // these two rows open a date picker instead of a dropdown, so they must not take focus
+        // or raise the keyboard the way an editable field would
+        mRecurrenceStartDateSpinner.setTextViewMode(true);
+        mRecurrenceEndDateSpinner.setTextViewMode(true);
+        // configure spinners
+        mRecurrenceTypeSpinner.setAdapter(new ThemedSpinner.Adapter(activity,
+                getString(R.string.recurrence_type_daily),
+                getString(R.string.recurrence_type_weekly),
+                getString(R.string.recurrence_type_monthly),
+                getString(R.string.recurrence_type_yearly)
+        ));
+        mRecurrenceEndTypeSpinner.setAdapter(new ThemedSpinner.Adapter(activity,
+                getString(R.string.recurrence_end_type_forever),
+                getString(R.string.recurrence_end_type_until),
+                getString(R.string.recurrence_end_type_for)
+        ));
+        mRecurrenceTypeSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
 
-                @Override
-                public void onItemSelected(MaterialSpinner view, int position, long id, Object item) {
-                    switch (position) {
-                        case 0:
-                            updateRecurrenceType(RecurrenceSetting.TYPE_DAILY, true);
-                            break;
-                        case 1:
-                            updateRecurrenceType(RecurrenceSetting.TYPE_WEEKLY, true);
-                            break;
-                        case 2:
-                            updateRecurrenceType(RecurrenceSetting.TYPE_MONTHLY, true);
-                            break;
-                        case 3:
-                            updateRecurrenceType(RecurrenceSetting.TYPE_YEARLY, true);
-                            break;
-                    }
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                switch (position) {
+                    case 0:
+                        updateRecurrenceType(RecurrenceSetting.TYPE_DAILY, true);
+                        break;
+                    case 1:
+                        updateRecurrenceType(RecurrenceSetting.TYPE_WEEKLY, true);
+                        break;
+                    case 2:
+                        updateRecurrenceType(RecurrenceSetting.TYPE_MONTHLY, true);
+                        break;
+                    case 3:
+                        updateRecurrenceType(RecurrenceSetting.TYPE_YEARLY, true);
+                        break;
                 }
+            }
 
-            });
-            mRecurrenceStartDateSpinner.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+                // only reached when the adapter empties, which it never does here
+            }
 
-                @Override
-                public void onClick(View v) {
-                    mStartDatePicker.showDatePicker();
-                    mRecurrenceStartDateSpinner.collapse();
+        });
+        mRecurrenceStartDateSpinner.setOnClickListener(new View.OnClickListener() {
+
+            @Override
+            public void onClick(View v) {
+                mStartDatePicker.showDatePicker();
+            }
+
+        });
+        mRecurrenceTypeWeeklySundayRadioButton.setOnCheckedChangeListener(mWeekdayChangeListener);
+        mRecurrenceTypeWeeklyMondayRadioButton.setOnCheckedChangeListener(mWeekdayChangeListener);
+        mRecurrenceTypeWeeklyTuesdayRadioButton.setOnCheckedChangeListener(mWeekdayChangeListener);
+        mRecurrenceTypeWeeklyWednesdayRadioButton.setOnCheckedChangeListener(mWeekdayChangeListener);
+        mRecurrenceTypeWeeklyThursdayRadioButton.setOnCheckedChangeListener(mWeekdayChangeListener);
+        mRecurrenceTypeWeeklyFridayRadioButton.setOnCheckedChangeListener(mWeekdayChangeListener);
+        mRecurrenceTypeWeeklySaturdayRadioButton.setOnCheckedChangeListener(mWeekdayChangeListener);
+        mRecurrenceEndTypeSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                switch (position) {
+                    case 0:
+                        updateRecurrenceEndType(RecurrenceSetting.END_FOREVER, true);
+                        break;
+                    case 1:
+                        updateRecurrenceEndType(RecurrenceSetting.END_UNTIL, true);
+                        break;
+                    case 2:
+                        updateRecurrenceEndType(RecurrenceSetting.END_FOR, true);
+                        break;
                 }
+            }
 
-            });
-            mRecurrenceTypeWeeklySundayRadioButton.setOnCheckedChangeListener(mWeekdayChangeListener);
-            mRecurrenceTypeWeeklyMondayRadioButton.setOnCheckedChangeListener(mWeekdayChangeListener);
-            mRecurrenceTypeWeeklyTuesdayRadioButton.setOnCheckedChangeListener(mWeekdayChangeListener);
-            mRecurrenceTypeWeeklyWednesdayRadioButton.setOnCheckedChangeListener(mWeekdayChangeListener);
-            mRecurrenceTypeWeeklyThursdayRadioButton.setOnCheckedChangeListener(mWeekdayChangeListener);
-            mRecurrenceTypeWeeklyFridayRadioButton.setOnCheckedChangeListener(mWeekdayChangeListener);
-            mRecurrenceTypeWeeklySaturdayRadioButton.setOnCheckedChangeListener(mWeekdayChangeListener);
-            mRecurrenceEndTypeSpinner.setOnItemSelectedListener(new MaterialSpinner.OnItemSelectedListener() {
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+                // only reached when the adapter empties, which it never does here
+            }
 
-                @Override
-                public void onItemSelected(MaterialSpinner view, int position, long id, Object item) {
-                    switch (position) {
-                        case 0:
-                            updateRecurrenceEndType(RecurrenceSetting.END_FOREVER, true);
-                            break;
-                        case 1:
-                            updateRecurrenceEndType(RecurrenceSetting.END_UNTIL, true);
-                            break;
-                        case 2:
-                            updateRecurrenceEndType(RecurrenceSetting.END_FOR, true);
-                            break;
-                    }
-                }
+        });
+        mRecurrenceEndDateSpinner.setOnClickListener(new View.OnClickListener() {
 
-            });
-            mRecurrenceEndDateSpinner.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                mEndDatePicker.showDatePicker();
+            }
 
-                @Override
-                public void onClick(View v) {
-                    mEndDatePicker.showDatePicker();
-                    mRecurrenceEndDateSpinner.collapse();
-                }
-
-            });
-        }
+        });
         // create sub-pickers
         FragmentManager fragmentManager = getChildFragmentManager();
         mStartDatePicker = DateTimePicker.createPicker(fragmentManager, TAG_START_DATE_PICKER, mRecurrenceSetting.getStartDate());
@@ -225,6 +240,12 @@ public class RecurrencePickerDialog extends DialogFragment implements DateTimePi
         updateRecurrenceMonthDay(mRecurrenceSetting.getMonthDay());
         updateRecurrenceEndType(mRecurrenceSetting.getEndType(), false);
         updateRecurrenceOccurrenceValue(mRecurrenceSetting.getOccurrenceValue());
+        if (view != null && !mEndTypeEnabled) {
+            view.findViewById(R.id.end_layout).setVisibility(View.GONE);
+        }
+        if (mOnceAPeriod) {
+            mRecurrenceTypeWeeklyLayout.setVisibility(View.GONE);
+        }
         return dialog;
     }
 
@@ -232,6 +253,8 @@ public class RecurrencePickerDialog extends DialogFragment implements DateTimePi
     public void onSaveInstanceState(Bundle outState) {
         super.onSaveInstanceState(outState);
         outState.putParcelable(SS_RECURRENCE_SETTING, getCurrentRecurrenceSetting());
+        outState.putBoolean(SS_END_TYPE_ENABLED, mEndTypeEnabled);
+        outState.putBoolean(SS_ONCE_A_PERIOD, mOnceAPeriod);
     }
 
     private void updateRecurrenceType(int type, boolean self) {
@@ -249,28 +272,28 @@ public class RecurrencePickerDialog extends DialogFragment implements DateTimePi
                 mRecurrenceEveryItemTextView.setText(R.string.recurrence_hint_years);
                 break;
         }
-        mRecurrenceTypeWeeklyLayout.setVisibility(type == RecurrenceSetting.TYPE_WEEKLY ? View.VISIBLE : View.GONE);
+        mRecurrenceTypeWeeklyLayout.setVisibility(type == RecurrenceSetting.TYPE_WEEKLY && !mOnceAPeriod ? View.VISIBLE : View.GONE);
         mRecurrenceTypeMonthlyLayout.setVisibility(type == RecurrenceSetting.TYPE_MONTHLY ? View.VISIBLE : View.GONE);
         if (!self) {
             switch (type) {
                 case RecurrenceSetting.TYPE_DAILY:
-                    mRecurrenceTypeSpinner.setSelectedIndex(0);
+                    mRecurrenceTypeSpinner.setSelection(0);
                     break;
                 case RecurrenceSetting.TYPE_WEEKLY:
-                    mRecurrenceTypeSpinner.setSelectedIndex(1);
+                    mRecurrenceTypeSpinner.setSelection(1);
                     break;
                 case RecurrenceSetting.TYPE_MONTHLY:
-                    mRecurrenceTypeSpinner.setSelectedIndex(2);
+                    mRecurrenceTypeSpinner.setSelection(2);
                     break;
                 case RecurrenceSetting.TYPE_YEARLY:
-                    mRecurrenceTypeSpinner.setSelectedIndex(3);
+                    mRecurrenceTypeSpinner.setSelection(3);
                     break;
             }
         }
     }
 
     private void updateRecurrenceOffsetValue(int offset) {
-        mRecurrenceEveryNumberEditText.setText(String.valueOf(offset));
+        mRecurrenceEveryNumberEditText.setText(String.format(Locale.getDefault(), "%d", offset));
     }
 
     private void updateRecurrenceWeekDays(boolean[] days) {
@@ -293,24 +316,24 @@ public class RecurrencePickerDialog extends DialogFragment implements DateTimePi
         if (!self) {
             switch (type) {
                 case RecurrenceSetting.END_FOREVER:
-                    mRecurrenceEndTypeSpinner.setSelectedIndex(0);
+                    mRecurrenceEndTypeSpinner.setSelection(0);
                     break;
                 case RecurrenceSetting.END_UNTIL:
-                    mRecurrenceEndTypeSpinner.setSelectedIndex(1);
+                    mRecurrenceEndTypeSpinner.setSelection(1);
                     break;
                 case RecurrenceSetting.END_FOR:
-                    mRecurrenceEndTypeSpinner.setSelectedIndex(2);
+                    mRecurrenceEndTypeSpinner.setSelection(2);
                     break;
             }
         }
     }
 
     private void updateRecurrenceOccurrenceValue(int occurrences) {
-        mRecurrenceTimesNumberEditText.setText(String.valueOf(occurrences));
+        mRecurrenceTimesNumberEditText.setText(String.format(Locale.getDefault(), "%d", occurrences));
     }
 
     private int getCurrentRecurrenceType() {
-        switch (mRecurrenceTypeSpinner.getSelectedIndex()) {
+        switch (mRecurrenceTypeSpinner.getSelectedItemPosition()) {
             case 0:
                 return RecurrenceSetting.TYPE_DAILY;
             case 1:
@@ -343,7 +366,7 @@ public class RecurrencePickerDialog extends DialogFragment implements DateTimePi
     }
 
     private int getCurrentRecurrenceEndType() {
-        switch (mRecurrenceEndTypeSpinner.getSelectedIndex()) {
+        switch (mRecurrenceEndTypeSpinner.getSelectedItemPosition()) {
             case 0:
                 return RecurrenceSetting.END_FOREVER;
             case 1:
@@ -366,10 +389,12 @@ public class RecurrencePickerDialog extends DialogFragment implements DateTimePi
         int type = getCurrentRecurrenceType();
         RecurrenceSetting.Builder builder = new RecurrenceSetting.Builder(startDate, type);
         builder.setOffset(getCurrentRecurrenceOffset());
-        if (type == RecurrenceSetting.TYPE_WEEKLY) {
+        if (type == RecurrenceSetting.TYPE_WEEKLY && !mOnceAPeriod) {
             builder.setRepeatWeekDay(getCurrentRecurrenceWeekDays());
         } else if (type == RecurrenceSetting.TYPE_MONTHLY) {
             builder.setRepeatSameMonthDay();
+        } else if (type == RecurrenceSetting.TYPE_YEARLY) {
+            builder.setRepeatSameYearDay();
         }
         switch (getCurrentRecurrenceEndType()) {
             case RecurrenceSetting.END_UNTIL:
@@ -386,8 +411,10 @@ public class RecurrencePickerDialog extends DialogFragment implements DateTimePi
         mCallback = callback;
     }
 
-    public void showPicker(FragmentManager fragmentManager, String tag, RecurrenceSetting recurrenceSetting) {
+    public void showPicker(FragmentManager fragmentManager, String tag, RecurrenceSetting recurrenceSetting, boolean endTypeEnabled, boolean onceAPeriod) {
         mRecurrenceSetting = recurrenceSetting;
+        mEndTypeEnabled = endTypeEnabled;
+        mOnceAPeriod = onceAPeriod;
         show(fragmentManager, tag);
     }
 

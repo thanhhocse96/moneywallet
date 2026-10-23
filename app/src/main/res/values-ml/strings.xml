@@ -2,7 +2,7 @@
 ~ translated by haneefi
 -->
 <resources>
-    <string name="app_name">മണി വാലറ്റ്</string>
+    <string name="app_name">Tallybook</string>
 
     <string name="menu_transaction">"ഇടപാടുകൾ"</string>
     <string name="menu_category">"വിഭാഗങ്ങൾ"</string>
@@ -17,10 +17,7 @@
     <string name="menu_people">"ആളുകൾ"</string>
     <string name="menu_converter">"പരിവർത്തന"</string>
     <string name="menu_calculator">"കാൽക്കുലേറ്റർ"</string>
-    <string name="menu_search_atm">"എടിഎമ്മിൽ തിരയുക"</string>
-    <string name="menu_search_bank">"തിരയൽ ബാങ്ക്"</string>
     <string name="menu_setting">"ക്രമീകരണങ്ങൾ"</string>
-    <string name="menu_support_developer">"പിന്തുണാ ഡവലപ്പർ"</string>
     <string name="menu_about">"കുറിച്ച്"</string>
 
     
@@ -63,7 +60,6 @@
     <string name="action_new">"പുതിയത്"</string>
     <string name="action_edit">"എഡിറ്റുചെയ്യുക"</string>
     <string name="action_search">"തിരയുക"</string>
-    <string name="action_filter">"ഫിൽട്ടർ"</string>
     <string name="action_remove">"നീക്കംചെയ്യുക"</string>
     <string name="action_open">"തുറക്കുക"</string>
     <string name="action_undo">"പഴയപടിയാക്കുക"</string>
@@ -108,6 +104,7 @@
     <string name="hint_type">"ടൈപ്പ് ചെയ്യുക"</string>
     <string name="hint_incomes">"വരുമാനം"</string>
     <string name="hint_expenses">"ചെലവുകൾ"</string>
+    <string name="hint_transfers">"കൈമാറ്റങ്ങൾ"</string>
     <string name="hint_net_incomes">"അറ്റ വരുമാനം"</string>
     <string name="hint_summary">"സംഗ്രഹം"</string>
     <string name="hint_address">"വിലാസം"</string>
@@ -117,8 +114,6 @@
     <string name="hint_directory">"ഡയറക്ടറി"</string>
     <string name="hint_navigate_up">"നാവിഗേറ്റുചെയ്യുക"</string>
     <string name="hint_password">"Password"</string>
-    <string name="hint_atm_name">"എടിഎം നാമം"</string>
-    <string name="hint_bank_name">"ബാങ്കിന്റെ പേര്"</string>
     <string name="hint_attachments">"അറ്റാച്ചുമെന്റുകൾ"</string>
     <string name="hint_operation_in_progress">"പുരോഗതിയിൽ…"</string>
     <string name="hint_search_something">"എന്തെങ്കിലും തിരയുക"</string>
@@ -147,7 +142,6 @@
     <string name="hint_auto_backup_only_if_data_changed">"ഡാറ്റ മാറ്റിയാൽ മാത്രം"</string>
     <string name="hint_auto_backup_every_n_hours">"ഓരോ %d മണിക്കൂറിലും"</string>
     <string name="hint_auto_backup_folder">"ഫോൾഡർ"</string>
-    <string name="hint_auto_backup_root_folder">"റൂട്ട്"</string>
 
     <string name="total_wallet_name">"ആകെ"</string>
 
@@ -189,10 +183,7 @@
     <string name="title_activity_search_transaction">"തിരയുക"</string>
     <string name="title_activity_calendar">"കലണ്ടർ"</string>
     <string name="title_activity_map">"മാപ്പ്"</string>
-    <string name="title_activity_backend_explorer">"ബാക്കെൻഡ് പര്യവേക്ഷണം ചെയ്യുക"</string>
-    <string name="title_activity_backend_file_picker">"ഒരു ഫയൽ തിരഞ്ഞെടുക്കുക"</string>
     <string name="title_activity_backend_folder_picker">"ഒരു ഫോൾഡർ തിരഞ്ഞെടുക്കുക"</string>
-    <string name="title_activity_support_developer">"പിന്തുണാ ഡവലപ്പർ"</string>
     <string name="title_activity_import_data">"ഡാറ്റ ഇമ്പോർട്ടുചെയ്യുക"</string>
     <string name="title_activity_export_data">"ഡാറ്റ എക്സ്പോർട്ടുചെയ്യുക"</string>
 
@@ -228,9 +219,6 @@
     <string name="menu_action_import_data">"ഡാറ്റ ഇമ്പോർട്ടുചെയ്യുക"</string>
     <string name="menu_action_export_data">"ഡാറ്റ എക്സ്പോർട്ടുചെയ്യുക"</string>
 
-    <string name="bottom_sheet_icon_picker_title">"ഐക്കൺ വ്യക്തിഗതമാക്കുക"</string>
-    <string name="bottom_sheet_icon_picker_action_select_icon">"ഒരു ഐക്കൺ തിരഞ്ഞെടുക്കുക"</string>
-    <string name="bottom_sheet_icon_picker_action_change_icon">"ഐക്കൺ മാറ്റുക"</string>
     <string name="bottom_sheet_icon_picker_action_remove_icon">"ഐക്കൺ നീക്കംചെയ്യുക"</string>
     <string name="bottom_sheet_icon_picker_action_change_bg_color">"പശ്ചാത്തല വർണ്ണം മാറ്റുക"</string>
 
@@ -242,7 +230,6 @@
     <string name="dialog_budget_type_picker_title">"ബജറ്റ് തരങ്ങൾ"</string>
     <string name="dialog_place_picker_title">"സ്ഥലങ്ങൾ"</string>
     <string name="dialog_people_picker_title">"ആളുകൾ"</string>
-    <string name="dialog_filter_search_title">"ഫിൽട്ടർ"</string>
     <string name="dialog_change_log_title">"ലോഗ് മാറ്റുക"</string>
     <string name="dialog_overview_setting_title">"വിപുലമായ ക്രമീകരണങ്ങൾ"</string>
     <string name="dialog_recurrence_title">"ആവർത്തിച്ച്"</string>
@@ -327,11 +314,7 @@
     <string name="message_error_backend_recoverable">"കണക്ഷൻ പ്രശ്നം. ദയവായി വീണ്ടും ശ്രമിക്കുക."</string>
 
     <string name="cover_message_backup_external_memory_title">"ഉപകരണത്തിന്റെ ബാഹ്യ സംഭരണത്തിൽ നിന്ന് നേരിട്ട് അപ്ലിക്കേഷന് ബാക്കപ്പുകൾ സൃഷ്ടിക്കാനും പുന restore സ്ഥാപിക്കാനും കഴിയും"</string>
-    <string name="cover_message_backup_dropbox_title">"നിങ്ങളുടെ സ്വകാര്യ ഡ്രോപ്പ്ബോക്സ് അക്ക from ണ്ടിൽ നിന്ന് ബാക്കപ്പുകൾ സൃഷ്ടിക്കാനും പുന restore സ്ഥാപിക്കാനും അപ്ലിക്കേഷന് കഴിയും"</string>
-    <string name="cover_message_backup_google_drive_title">"അപ്ലിക്കേഷന് നിങ്ങളുടെ സ്വകാര്യ Google ഡ്രൈവ് അക്കൗണ്ടിൽ നിന്ന് ബാക്കപ്പുകൾ സൃഷ്ടിക്കാനും പുന restore സ്ഥാപിക്കാനും കഴിയും"</string>
     <string name="cover_message_backup_external_memory_button">"തുടരുക"</string>
-    <string name="cover_message_backup_dropbox_button">"ലോഗിൻ"</string>
-    <string name="cover_message_backup_google_drive_button">"ലോഗിൻ"</string>
 
     <string name="empty_message_secondary_panel">"വിശദാംശങ്ങൾ കാണുന്നതിന് ഇടത് പാനലിൽ നിന്ന് ഒരു ഘടകം തിരഞ്ഞെടുക്കുക"</string>
     <string name="empty_message_backup_cover">"നിങ്ങളുടെ സ്വകാര്യ ബാക്കപ്പുകൾ സംഭരിക്കുന്നതിനും വീണ്ടെടുക്കുന്നതിനും നിങ്ങൾ ഉപയോഗിക്കാൻ ആഗ്രഹിക്കുന്ന സേവനം തിരഞ്ഞെടുക്കുക"</string>
@@ -346,8 +329,6 @@
     <string name="title_success">"വിജയം"</string>
     <string name="title_failed">"പരാജയപ്പെട്ടു"</string>
     <string name="title_error">"പിശക്"</string>
-    <string name="title_atm_search">"എടിഎം തിരയുക"</string>
-    <string name="title_bank_search">"തിരയൽ ബാങ്ക്"</string>
     <string name="title_changelog">"ചേഞ്ച്ലോഗ്"</string>
     <string name="title_licenses">"ലൈസൻസുകൾ"</string>
     <string name="title_debt_insert_master_transaction">"നന്നായി"</string>
@@ -371,8 +352,6 @@
     <string name="message_backup_restoring_success">"ബാക്കപ്പ് ശരിയായി പുന ored സ്ഥാപിച്ചു."</string>
     <string name="message_backup_creation_failed">"ബാക്കപ്പ് സൃഷ്ടിക്കുമ്പോൾ പരാജയപ്പെട്ടു. സന്ദേശം: %s"</string>
     <string name="message_backup_restoring_failed">"ബാക്കപ്പ് പുന oring സ്ഥാപിക്കുന്ന സമയത്ത് പരാജയം. സന്ദേശം: %s"</string>
-    <string name="message_backup_service_dropbox_disconnect">"നിങ്ങളുടെ ഡ്രോപ്പ്ബോക്സ് അക്കൗണ്ട് വിച്ഛേദിക്കണമെന്ന് നിങ്ങൾക്ക് ഉറപ്പാണോ?"</string>
-    <string name="message_backup_service_google_drive_disconnect">"നിങ്ങളുടെ Google ഡ്രൈവ് അക്കൗണ്ട് വിച്ഛേദിക്കണമെന്ന് നിങ്ങൾക്ക് ഉറപ്പാണോ?"</string>
     <string name="message_action_archive_wallet">"ഈ വാലറ്റ് ആർക്കൈവുചെയ്യണമെന്ന് നിങ്ങൾക്ക് ഉറപ്പാണോ? ഇത് ഇനി മെനുവിൽ ദൃശ്യമാകില്ല."</string>
     <string name="message_action_unarchive_wallet">"ഈ വാലറ്റ് ആർക്കൈവ് ചെയ്യണമെന്ന് നിങ്ങൾക്ക് ഉറപ്പാണോ? ഇത് മെനുവിൽ വീണ്ടും ദൃശ്യമാകും."</string>
     <string name="message_action_archive_debt">"ഈ കടം ശേഖരിക്കണമെന്ന് നിങ്ങൾക്ക് ഉറപ്പാണോ?"</string>
@@ -435,8 +414,6 @@
     <string name="spinner_item_start_date">"അയച്ചയാൾ: %s"</string>
     <string name="spinner_item_end_date">"സ്വീകർത്താവ്: %s"</string>
 
-    <string name="service_backup_drop_box">"ഡ്രോപ്പ്ബോക്സ്"</string>
-    <string name="service_backup_google_drive">"ഗൂഗിൾ ഡ്രൈവ്"</string>
     <string name="service_backup_external_memory">"ബാഹ്യ മെമ്മറി"</string>
 
     <string name="setting_title_user_interface">"ഉപയോക്തൃ ഇന്റർഫേസ്"</string>
@@ -456,13 +433,12 @@
     <string name="setting_title_ui_group_type">"ഗ്രൂപ്പിംഗ്"</string>
     <string name="setting_title_ui_theme_color_primary">"കളർ പ്രൈമറി"</string>
     <string name="setting_title_ui_theme_color_accent">"കളർ ആക്സന്റ്"</string>
-    <string name="setting_title_ui_theme_type">"ടൈപ്പ് ചെയ്യുക"</string>
 
     <string name="setting_category_utility_notification">"അറിയിപ്പ്"</string>
     <string name="setting_category_utility_security">"സുരക്ഷ"</string>
     <string name="setting_category_utility_exchange_rates">"വിനിമയ നിരക്ക്"</string>
     <string name="setting_title_daily_reminder">"പ്രതിദിന ഓർമ്മപ്പെടുത്തൽ"</string>
-    <string name="setting_summary_daily_reminder">"എല്ലാ ദിവസവും: d: 00"</string>
+    <string name="setting_summary_daily_reminder">"എല്ലാ ദിവസവും: %1$s"</string>
     <string name="setting_title_security">"ആക്സസ് പരിരക്ഷണം"</string>
     <string name="setting_title_security_change_pin">"പിൻ കോഡ് മാറ്റുക"</string>
     <string name="setting_title_security_change_sequence">"അൺലോക്ക് സീക്വൻസ് മാറ്റുക"</string>
@@ -528,7 +504,6 @@
 
     <string name="about_hint_version">"ബിൽഡ് പതിപ്പ്"</string>
     <string name="about_hint_changelog">"ചേഞ്ച്ലോഗ്"</string>
-    <string name="about_hint_support">"വികസനത്തെ പിന്തുണയ്ക്കുക"</string>
     <string name="about_hint_rate_app">"ഈ അപ്ലിക്കേഷൻ റേറ്റുചെയ്യുക"</string>
     <string name="about_hint_open_source_libraries">"ഓപ്പൺ സോഴ്സ് ലൈബ്രറികൾ"</string>
     <string name="about_hint_report_bug">"ഒരു ബഗ് റിപ്പോർട്ടുചെയ്യുക"</string>
@@ -545,20 +520,15 @@
     <string name="about_hint_translators">"വിവർത്തകർ"</string>
 
     <string name="activity_launcher_legacy_edition_upgrade_title">"നവീകരിക്കുന്നു…"</string>
-    <string name="activity_launcher_first_start_title">"മണി വാലറ്റിലേക്ക് സ്വാഗതം"</string>
-    <string name="activity_launcher_first_start_content">"നിങ്ങൾ ആദ്യമായാണ് ഈ അപ്ലിക്കേഷൻ ഉപയോഗിക്കുന്നത് അല്ലെങ്കിൽ മുമ്പത്തെ ബാക്കപ്പ് പുന restore സ്ഥാപിക്കാൻ നിങ്ങൾ ആഗ്രഹിക്കുന്നുണ്ടോ?"</string>
+    <string name="activity_launcher_first_start_title">"Tallybookിലേക്ക് സ്വാഗതം"</string>
     <string name="activity_launcher_first_start_button_first_time">"ആദ്യതവണ"</string>
     <string name="activity_launcher_first_start_button_restore_backup">"ബാക്കപ്പ് പുന ore സ്ഥാപിക്കുക"</string>
 
     <string name="activity_intro_title_slide_1">"കൂടുതൽ മോശം ആശ്ചര്യങ്ങളൊന്നുമില്ല"</string>
     <string name="activity_intro_title_slide_2">"കണ്ടെത്തി ആസൂത്രണം ചെയ്യുക"</string>
     <string name="activity_intro_title_slide_3">"ഓപ്പൺ സോഴ്സ്"</string>
-    <string name="activity_intro_title_slide_4">"ക്ലൗഡ് ബാക്കപ്പുകൾ"</string>
     <string name="activity_intro_title_slide_5">"നന്നായി"</string>
-    <string name="activity_intro_description_slide_1">"ഇത് നിങ്ങളുടെ എല്ലാ ചെലവുകളും ട്രാക്കുചെയ്യാൻ സഹായിക്കും"</string>
     <string name="activity_intro_description_slide_2">"നിങ്ങൾ എവിടെയാണ് ധാരാളം ചെലവഴിക്കുന്നതെന്ന് വിശകലനം ചെയ്യാനും കുറച്ച് ബജറ്റ് സജ്ജീകരിക്കാനും കഴിയും"</string>
-    <string name="activity_intro_description_slide_3">"പ്രോജക്റ്റ് ഇപ്പോൾ ഓപ്പൺ സോഴ്സ് ആണ്, എല്ലാവർക്കും സംഭാവന ചെയ്യാൻ കഴിയും"</string>
-    <string name="activity_intro_description_slide_4">"നിങ്ങളുടെ ഡാറ്റ ഒരിക്കലും നഷ്ടപ്പെടുത്താൻ സഹായിക്കുന്നതിന് ഇത് ഏറ്റവും കൂടുതൽ ഉപയോഗിച്ച ക്ലൗഡ് സേവനങ്ങളെ പിന്തുണയ്ക്കുന്നു"</string>
     <string name="activity_intro_description_slide_5">"നിങ്ങളുടെ ആദ്യ വാലറ്റ് സൃഷ്ടിക്കുന്നതിന് നിങ്ങളെ ഇപ്പോൾ റീഡയറക്ട് ചെയ്യും"</string>
 
     <string name="help_create_new_pin_code">"ഒരു പുതിയ പിൻ കോഡ് സൃഷ്ടിക്കുക"</string>
@@ -666,22 +636,5 @@
     <string name="notification_channel_name_exchange_rate">"വിനിമയ നിരക്ക്"</string>
     <string name="notification_channel_name_error">"പിശക്"</string>
 
-    <string name="activity_donation_first_title">"നന്ദി!"</string>
-    <string name="activity_donation_first_content">"നിങ്ങൾ ഈ ആപ്ലിക്കേഷൻ ഇഷ്ടപ്പെടുകയും അത് ഉപയോഗപ്രദമാണെന്ന് തോന്നുകയും ചെയ്യുന്നുവെങ്കിൽ, എനിക്ക് ഒരു ബിയർ വാങ്ങുന്നത് പരിഗണിക്കുക. ഇത് ഈ പ്രോജക്റ്റിനെ പിന്തുണയ്ക്കുകയും വികസനത്തിൽ തുടരാൻ എന്നെ പ്രോത്സാഹിപ്പിക്കുകയും ചെയ്യും."</string>
-    <string name="activity_donation_second_title">"എന്തുകൊണ്ട് ഞാന്?"</string>
-    <string name="activity_donation_second_content">"ജീവിതത്തിലെ മികച്ച കാര്യങ്ങൾ സ are ജന്യമാണ്" എന്ന് ആരെങ്കിലും പറഞ്ഞേക്കാം, ഞാൻ അതിനോട് യോജിക്കുന്നു. നിങ്ങൾക്ക് സൗഹൃദമോ സ്നേഹമോ മനോഹരമായ സൂര്യോദയത്തിന്റെ ഓർമ്മയോ വാങ്ങാൻ കഴിയില്ല. അതിനാലാണ് ഈ ആപ്ലിക്കേഷന്റെ സോഴ്സ് കോഡ് സ share ജന്യമായി പങ്കിടാൻ ഞാൻ തീരുമാനിച്ചത്. നിർഭാഗ്യവശാൽ, ജീവിതം സ is ജന്യമല്ല. നിങ്ങൾക്ക് എല്ലാ ദിവസവും 24 മണിക്കൂർ മാത്രമേയുള്ളൂ, സ്വയം പിന്തുണയ്ക്കാൻ അവ എങ്ങനെ ചെലവഴിക്കണമെന്ന് നിങ്ങൾ തീരുമാനമെടുക്കണം.നിങ്ങൾ ഈ പ്രോജക്റ്റ് ഇഷ്ടപ്പെടുകയും ഭാവിയിൽ ഇത് വികസിക്കുന്നത് കാണാൻ ആഗ്രഹിക്കുകയും ചെയ്യുന്നുവെങ്കിൽ, പിന്തുണയ്ക്കുന്നതിനെക്കുറിച്ച് ചിന്തിക്കുക അതിൽ കൂടുതൽ സമയം അനുവദിക്കാൻ എന്നെ അനുവദിക്കുന്ന എന്റെ ജോലി. ഏത് സംഭാവനയും വളരെയധികം വ്യത്യാസങ്ങൾ സൃഷ്ടിക്കുന്നു. "</string>
-    <string name="activity_donation_third_title">"ധനസമ്പാദനം നടത്താൻ കഴിയുന്നില്ലേ? കുഴപ്പമില്ല, നിങ്ങൾക്ക് ഇപ്പോഴും വളരെയധികം സഹായിക്കാനാകും!"</string>
-    <string name="activity_donation_crypto_address_copied">"വിലാസം പകർത്തി"</string>
-    <string name="activity_donation_action_share_title">"പങ്കിടുക"</string>
-    <string name="activity_donation_action_share_content">"നിങ്ങളുടെ സുഹൃത്തുക്കൾക്കിടയിൽ ഇത് പ്രചരിപ്പിക്കുക"</string>
-    <string name="activity_donation_action_share_message">"ഹായ്, %s നോക്കൂ"</string>
-    <string name="activity_donation_action_share_using">"ഉപയോഗിച്ച് പങ്കിടുക"</string>
-    <string name="activity_donation_action_rate_title">"നിരക്ക്"</string>
-    <string name="activity_donation_action_rate_content">"ഇതിനെക്കുറിച്ച് നിങ്ങളുടെ അഭിപ്രായം ഞങ്ങളോട് പറയുന്ന 5 ആരംഭ അവലോകനം എഴുതുക"</string>
-    <string name="activity_donation_action_translate_title">"വിവർത്തനം"</string>
-    <string name="activity_donation_action_translate_content">"നിങ്ങളുടെ ഭാഷയിലെ സ്ട്രിംഗുകൾ പ്രാദേശികവൽക്കരിക്കുക"</string>
-    <string name="activity_donation_action_contribute_title">"സംഭാവന ചെയ്യുക"</string>
-    <string name="activity_donation_action_contribute_content">"ഉറവിട കോഡ് എല്ലാവർക്കുമുള്ളതിനാൽ എല്ലാവർക്കും സഹകരിക്കാൻ കഴിയും"</string>
-    <string name="activity_donation_final_content">"പണമോ പണേതരമോ ആയ എല്ലാ സംഭാവനകളും തുല്യമാണ്, എന്നെ സംബന്ധിച്ചിടത്തോളം കാര്യമായ വ്യത്യാസമുണ്ടാക്കുന്നു. നിങ്ങൾ ഇത് ആസ്വദിക്കുമെന്ന് പ്രതീക്ഷിക്കുന്നു, ഈ ആപ്ലിക്കേഷൻ ഉപയോഗിക്കാൻ തിരഞ്ഞെടുത്തതിന് വീണ്ടും നന്ദി."</string>
 
 </resources>

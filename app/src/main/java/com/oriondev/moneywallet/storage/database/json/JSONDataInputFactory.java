@@ -123,6 +123,7 @@ import java.util.Map;
         wallet.mArchived = object.optBoolean(JSONDatabase.Wallet.ARCHIVED, false);
         wallet.mNote = object.optString(JSONDatabase.Wallet.NOTE, null);
         wallet.mTag = object.optString(JSONDatabase.Wallet.TAG, null);
+        wallet.mGroup = object.optString(JSONDatabase.Wallet.GROUP, null);
         wallet.mIndex = object.optInt(JSONDatabase.Wallet.INDEX, 0);
         wallet.mUUID = object.optString(JSONDatabase.Wallet.ID, null);
         wallet.mLastEdit = object.optLong(JSONDatabase.Wallet.LAST_EDIT, 0L);
@@ -157,6 +158,17 @@ import java.util.Map;
         event.mLastEdit = object.optLong(JSONDatabase.Event.LAST_EDIT, 0L);
         event.mDeleted = object.optBoolean(JSONDatabase.Event.DELETED, false);
         return event;
+    }
+
+    /*package-local*/ CategoryRule getCategoryRule(JSONObject object) {
+        CategoryRule categoryRule = new CategoryRule();
+        categoryRule.mPattern = object.optString(JSONDatabase.CategoryRule.PATTERN, null);
+        categoryRule.mCategory = mCacheCategories.get(object.optString(JSONDatabase.CategoryRule.CATEGORY, null));
+        categoryRule.mIndex = object.optInt(JSONDatabase.CategoryRule.INDEX, 0);
+        categoryRule.mUUID = object.optString(JSONDatabase.CategoryRule.ID, null);
+        categoryRule.mLastEdit = object.optLong(JSONDatabase.CategoryRule.LAST_EDIT, 0L);
+        categoryRule.mDeleted = object.optBoolean(JSONDatabase.CategoryRule.DELETED, false);
+        return categoryRule;
     }
 
     /*package-local*/ Place getPlace(JSONObject object) {
@@ -232,11 +244,23 @@ import java.util.Map;
         budget.mEndDate = object.optString(JSONDatabase.Budget.END_DATE, null);
         budget.mMoney = object.optLong(JSONDatabase.Budget.MONEY, 0L);
         budget.mCurrency = object.optString(JSONDatabase.Budget.CURRENCY, null);
+        budget.mRule = object.optString(JSONDatabase.Budget.RULE, null);
+        budget.mRuleStart = object.optString(JSONDatabase.Budget.RULE_START, null);
         budget.mTag = object.optString(JSONDatabase.Budget.TAG, null);
         budget.mUUID = object.optString(JSONDatabase.Budget.ID, null);
         budget.mLastEdit = object.optLong(JSONDatabase.Budget.LAST_EDIT, 0L);
         budget.mDeleted = object.optBoolean(JSONDatabase.Budget.DELETED, false);
         return budget;
+    }
+
+    /*package-local*/ BudgetCategory getBudgetCategory(JSONObject object) {
+        BudgetCategory budgetCategory = new BudgetCategory();
+        budgetCategory.mBudget = mCacheBudgets.get(object.optString(JSONDatabase.BudgetCategory.BUDGET, null));
+        budgetCategory.mCategory = mCacheCategories.get(object.optString(JSONDatabase.BudgetCategory.CATEGORY, null));
+        budgetCategory.mUUID = object.optString(JSONDatabase.BudgetCategory.ID, null);
+        budgetCategory.mLastEdit = object.optLong(JSONDatabase.BudgetCategory.LAST_EDIT, 0L);
+        budgetCategory.mDeleted = object.optBoolean(JSONDatabase.BudgetCategory.DELETED, false);
+        return budgetCategory;
     }
 
     /*package-local*/ BudgetWallet getBudgetWallet(JSONObject object) {
@@ -335,6 +359,18 @@ import java.util.Map;
         transaction.mLastEdit = object.optLong(JSONDatabase.Transaction.LAST_EDIT, 0L);
         transaction.mDeleted = object.optBoolean(JSONDatabase.Transaction.DELETED, false);
         return transaction;
+    }
+
+    /*package-local*/ TransactionSplit getTransactionSplit(JSONObject object) {
+        TransactionSplit transactionSplit = new TransactionSplit();
+        transactionSplit.mTransaction = mCacheTransactions.get(object.optString(JSONDatabase.TransactionSplit.TRANSACTION, null));
+        transactionSplit.mCategory = mCacheCategories.get(object.optString(JSONDatabase.TransactionSplit.CATEGORY, null));
+        transactionSplit.mMoney = object.optLong(JSONDatabase.TransactionSplit.MONEY, 0L);
+        transactionSplit.mNote = object.optString(JSONDatabase.TransactionSplit.NOTE, null);
+        transactionSplit.mUUID = object.optString(JSONDatabase.TransactionSplit.ID, null);
+        transactionSplit.mLastEdit = object.optLong(JSONDatabase.TransactionSplit.LAST_EDIT, 0L);
+        transactionSplit.mDeleted = object.optBoolean(JSONDatabase.TransactionSplit.DELETED, false);
+        return transactionSplit;
     }
 
     /*package-local*/ TransactionPerson getTransactionPerson(JSONObject object) {

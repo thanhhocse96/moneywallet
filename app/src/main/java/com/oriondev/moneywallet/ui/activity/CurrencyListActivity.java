@@ -20,15 +20,24 @@
 package com.oriondev.moneywallet.ui.activity;
 
 import android.app.Activity;
+import android.content.ContentValues;
 import android.content.Intent;
 import android.database.Cursor;
+import android.graphics.Rect;
 import android.net.Uri;
 import android.os.Bundle;
+import android.text.Editable;
+import android.text.TextWatcher;
+import android.view.View;
+import android.widget.EditText;
+
 import androidx.annotation.NonNull;
 import androidx.annotation.StringRes;
+import androidx.appcompat.widget.Toolbar;
 import androidx.loader.content.CursorLoader;
 import androidx.loader.content.Loader;
 import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 
 import com.oriondev.moneywallet.R;
 import com.oriondev.moneywallet.model.CurrencyUnit;
@@ -48,10 +57,62 @@ public class CurrencyListActivity extends SinglePanelSimpleListActivity implemen
     public static final String ACTIVITY_MODE = "CurrencyListActivity::ActivityMode";
     public static final String RESULT_CURRENCY = "CurrencyListActivity::Result::SelectedCurrency";
 
+    private static final String SS_QUERY = "CurrencyListActivity::SavedState::Query";
+
     public static final int CURRENCY_MANAGER = 0;
     public static final int CURRENCY_PICKER = 1;
 
     private int mActivityMode;
+
+    private String mQuery = "";
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        // The base runs the first load before the toolbar exists, so a restored query has to be
+        // in the field already when it does.
+        if (savedInstanceState != null) {
+            mQuery = savedInstanceState.getString(SS_QUERY, "");
+        }
+        super.onCreate(savedInstanceState);
+    }
+
+    @Override
+    protected void onSaveInstanceState(@NonNull Bundle outState) {
+        super.onSaveInstanceState(outState);
+        outState.putString(SS_QUERY, mQuery);
+    }
+
+    @Override
+    protected void onToolbarReady(Toolbar toolbar) {
+        toolbar.setTitle(null);
+        View view = getLayoutInflater().inflate(R.layout.layout_toolbar_search_view, toolbar, true);
+        EditText searchEditText = view.findViewById(R.id.search_edit_text);
+        searchEditText.setText(mQuery);
+        searchEditText.addTextChangedListener(new TextWatcher() {
+
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                String query = s.toString();
+                // The view state restore after a rotation sets the same text again and would
+                // reload for nothing.
+                if (!query.equals(mQuery)) {
+                    mQuery = query;
+                    recreateLoader();
+                }
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {
+
+            }
+
+        });
+    }
 
     @Override
     protected void onPrepareRecyclerView(AdvancedRecyclerView recyclerView) {
@@ -63,6 +124,19 @@ public class CurrencyListActivity extends SinglePanelSimpleListActivity implemen
         }
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
         recyclerView.setEmptyText(R.string.message_no_currency_found);
+        if (mActivityMode == CURRENCY_MANAGER) {
+            // The button covers the star of the last row otherwise, and nothing can scroll it out
+            // from under it.
+            recyclerView.getRecyclerView().addItemDecoration(new RecyclerView.ItemDecoration() {
+
+                @Override
+                public void getItemOffsets(@NonNull Rect outRect, @NonNull View view, @NonNull RecyclerView parent, @NonNull RecyclerView.State state) {
+                    boolean lastItem = parent.getChildAdapterPosition(view) == state.getItemCount() - 1;
+                    outRect.bottom = lastItem ? getResources().getDimensionPixelSize(R.dimen.currency_list_fab_clearance) : 0;
+                }
+
+            });
+        }
     }
 
     @Override
@@ -99,8 +173,16 @@ public class CurrencyListActivity extends SinglePanelSimpleListActivity implemen
                 Contract.Currency.DECIMALS,
                 Contract.Currency.FAVOURITE
         };
-        String sortBy = Contract.Currency.NAME;
-        return new CursorLoader(this, uri, projection, null, null, sortBy);
+        String query = mQuery.trim();
+        String selection = null;
+        String[] selectionArgs = null;
+        if (!query.isEmpty()) {
+            selection = Contract.Currency.NAME + " LIKE '%'||?||'%' OR " +
+                    Contract.Currency.ISO + " LIKE '%'||?||'%'";
+            selectionArgs = new String[] {query, query};
+        }
+        String sortBy = Contract.Currency.FAVOURITE + " DESC, " + Contract.Currency.NAME + " ASC";
+        return new CursorLoader(this, uri, projection, selection, selectionArgs, sortBy);
     }
 
     @Override
@@ -121,9 +203,9 @@ public class CurrencyListActivity extends SinglePanelSimpleListActivity implemen
 
     @Override
     public void onCurrencyFavourite(String iso, boolean newValue) {
-        // TODO handle it properly: if we update the database directly than the uri will be notify
-        // TODO to be changed and the content provider will re-query the database. At the end the
-        // TODO adapter will be refreshed and the new item will be at the top of the list.
-        // TODO we need a wrapper to keep the data static until a refresh occurs.
+        ContentValues values = new ContentValues();
+        values.put(Contract.Currency.FAVOURITE, newValue);
+        Uri uri = Uri.withAppendedPath(DataContentProvider.CONTENT_CURRENCIES, iso);
+        getContentResolver().update(uri, values, null, null);
     }
 }

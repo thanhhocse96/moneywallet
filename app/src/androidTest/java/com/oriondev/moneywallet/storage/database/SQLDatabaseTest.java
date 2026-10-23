@@ -20,31 +20,56 @@
 package com.oriondev.moneywallet.storage.database;
 
 import android.app.Instrumentation;
+import android.content.ContentResolver;
+import android.content.ContentUris;
 import android.content.ContentValues;
 import android.content.Context;
+import android.content.ContextWrapper;
+import android.database.ContentObserver;
 import android.database.Cursor;
+import android.database.DatabaseErrorHandler;
+import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteException;
-import android.test.RenamingDelegatingContext;
-import android.test.suitebuilder.annotation.LargeTest;
+import android.net.Uri;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.SystemClock;
 import android.text.TextUtils;
 
+import androidx.test.filters.LargeTest;
 import androidx.test.platform.app.InstrumentationRegistry;
 
 import com.oriondev.moneywallet.R;
+import com.oriondev.moneywallet.model.Attachment;
+import com.oriondev.moneywallet.model.ColorIcon;
 import com.oriondev.moneywallet.model.Money;
 import com.oriondev.moneywallet.utils.DateUtils;
+import org.apache.commons.io.FileUtils;
 
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
+import java.io.File;
+import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 import static junit.framework.Assert.assertEquals;
+import static junit.framework.Assert.assertFalse;
 import static junit.framework.Assert.assertNotNull;
+import static junit.framework.Assert.assertNull;
+import static junit.framework.Assert.assertSame;
+import static junit.framework.Assert.assertTrue;
+import static junit.framework.Assert.fail;
 
 /**
  * Created by andrea on 28/08/18.
@@ -54,27 +79,135 @@ public class SQLDatabaseTest {
 
     private Context mContext;
     private SQLDatabase mDatabase;
+    private long mRealDatabaseLength;
+
+    /**
+     * Keeps the suite off the storage of the build it is running against. Database names are
+     * prefixed and the attachment directory moves into a subdirectory, so SQLDatabase opens
+     * test.database.db and deletes attachment files under a test folder, never the real ones
+     * beside them. This replaces android.test.RenamingDelegatingContext, which shipped in the
+     * android.test.runner library that this change removes.
+     */
+    private static class TestStorageContext extends ContextWrapper {
+
+        private static final String PREFIX = "test.";
+        private static final String EXTERNAL_SUBDIR = "test";
+
+        TestStorageContext(Context base) {
+            super(base);
+        }
+
+        @Override
+        public SQLiteDatabase openOrCreateDatabase(String name, int mode,
+                                                   SQLiteDatabase.CursorFactory factory) {
+            return super.openOrCreateDatabase(PREFIX + name, mode, factory);
+        }
+
+        @Override
+        public SQLiteDatabase openOrCreateDatabase(String name, int mode,
+                                                   SQLiteDatabase.CursorFactory factory,
+                                                   DatabaseErrorHandler errorHandler) {
+            return super.openOrCreateDatabase(PREFIX + name, mode, factory, errorHandler);
+        }
+
+        @Override
+        public File getDatabasePath(String name) {
+            return super.getDatabasePath(PREFIX + name);
+        }
+
+        @Override
+        public boolean deleteDatabase(String name) {
+            return super.deleteDatabase(PREFIX + name);
+        }
+
+        /**
+         * SQLDatabase.getAttachmentFolder resolves this and the delete paths then call delete()
+         * on file names taken from a column, and a restored backup can put any name in that
+         * column. The folder need not exist, since nothing lists it and a delete that finds
+         * nothing returns false.
+         */
+        @Override
+        public File getExternalFilesDir(String type) {
+            File external = super.getExternalFilesDir(type);
+            return external != null ? new File(external, EXTERNAL_SUBDIR) : null;
+        }
+
+        /**
+         * Without this, SQLDatabase.getShared normalizes straight past the wrapper and the shared
+         * helper opens the real ledger, so the whole shared static was untestable. ContextWrapper
+         * answers this from the context it wraps, and every redirect above lives on this object.
+         *
+         * The cost is that the static is process wide, so a case that installs a test helper into
+         * it has to put it back. releaseSharedHelper does that.
+         */
+        @Override
+        public Context getApplicationContext() {
+            return this;
+        }
+    }
 
     @Before
     public void setUp() {
         Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
-        Context baseContext = instrumentation.getTargetContext();
-        mContext = new RenamingDelegatingContext(baseContext, "test.");
-        // load existing databases and files if found
-        if (mContext instanceof RenamingDelegatingContext) {
-            ((RenamingDelegatingContext) mContext).makeExistingFilesAndDbsAccessible();
-        }
-        // remove existing database (if any) before starting the test
-        mContext.deleteDatabase(SQLDatabase.DATABASE_NAME);
+        Context targetContext = instrumentation.getTargetContext();
+        File testDatabase = targetContext.getDatabasePath(
+                TestStorageContext.PREFIX + SQLDatabase.DATABASE_NAME);
+        mRealDatabaseLength = targetContext.getDatabasePath(SQLDatabase.DATABASE_NAME).length();
+        // the prefix has to name a different file, which is what everything below rests on and
+        // is what a check written against the prefix itself cannot tell you
+        assertFalse(targetContext.getDatabasePath(SQLDatabase.DATABASE_NAME).getPath()
+                .equals(testDatabase.getPath()));
+        mContext = new TestStorageContext(targetContext);
+        assertEquals(testDatabase.getPath(),
+                mContext.getDatabasePath(SQLDatabase.DATABASE_NAME).getPath());
+        // remove the previous case's database. Through the unwrapped context, so the delete every
+        // case makes cannot land on the real database when the wrapper is the thing that is broken
+        targetContext.deleteDatabase(TestStorageContext.PREFIX + SQLDatabase.DATABASE_NAME);
         // create a new database for testing purposes
-        mDatabase = new SQLDatabase(mContext);
-        mDatabase.setDeletedObjectCacheEnabled(false);
+        mDatabase = new SQLDatabase(mContext, SQLDatabase.DATABASE_NAME);
+        // and ask SQLDatabase which file it actually opened, whichever way it got there
+        assertEquals(testDatabase.getPath(), mDatabase.getWritableDatabase().getPath());
+        // point the process wide shared helper at the same test file. These cases run inside the
+        // app's own process, so its providers have already put a helper built on the real context
+        // into that static, and getShared hands back whatever is there. Without this an
+        // inSharedTransaction case reads and writes the real ledger and only its rollback keeps
+        // that from showing. resetShared replaces it unconditionally; releaseSharedHelper puts a
+        // real one back afterwards
+        SQLDatabase.resetShared(mContext);
+        assertEquals(testDatabase.getPath(),
+                sharedPath());
+    }
+
+    /**
+     * Puts the process wide shared helper back on the real context. Any case that reached
+     * getShared through the wrapper left a helper pointed at the test database in a static that
+     * outlives this class. The replacement has opened nothing, since SQLiteOpenHelper opens on
+     * first use, so the real ledger is not touched by putting it there.
+     */
+    @After
+    public void releaseSharedHelper() {
+        // the staged import goes first. A case that opened one and failed before closing it would
+        // otherwise leave this thread writing into the staged file for every later case in the
+        // run, since the redirect lives on the thread and the runner reuses it
+        SQLDatabase.closeStaging();
+        SQLDatabase.resetShared(InstrumentationRegistry.getInstrumentation().getTargetContext());
     }
 
     @After
     public void tearDown() {
+        if (mDatabase == null) {
+            return;
+        }
         mDatabase.close();
-        mContext.deleteDatabase(SQLDatabase.DATABASE_NAME);
+        Context targetContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        targetContext.deleteDatabase(TestStorageContext.PREFIX + SQLDatabase.DATABASE_NAME);
+        targetContext.deleteDatabase(
+                TestStorageContext.PREFIX + SQLDatabaseImporter.STAGING_DATABASE_NAME);
+        // the database the build under test owns was not unlinked, and was not replaced by a
+        // smaller one. Against the size setUp saw and not against zero, so a device without that
+        // database reads nothing against nothing and passes instead of failing every case
+        assertTrue(targetContext.getDatabasePath(SQLDatabase.DATABASE_NAME).length()
+                >= mRealDatabaseLength);
     }
 
     //////////////////////////////////////////////////////////////////////////////////////////
@@ -120,6 +253,24 @@ public class SQLDatabaseTest {
         assertEquals(true, cursorSize >= minSize);
         cursor.close();
         return cursorSize;
+    }
+
+    /**
+     * Rows straight from the table, with no deleted = 0 filter on the way. Every accessor this
+     * class otherwise reads through carries that filter, so a row flagged as deleted and a row
+     * that is gone look the same through them, and only a direct read separates the two. The
+     * selection is where a caller names the flag it is asking about.
+     */
+    private void assertRowCount(String table, String selection, int expected) {
+        Cursor cursor = mDatabase.getReadableDatabase()
+                .query(table, null, selection, null, null, null, null);
+        assertNotNull(cursor);
+        try {
+            // named, because every caller passes the same expected count and the same selection
+            assertEquals(table, expected, cursor.getCount());
+        } finally {
+            cursor.close();
+        }
     }
 
     private void checkCursorSize(Cursor cursor, int expectedSize) {
@@ -342,6 +493,118 @@ public class SQLDatabaseTest {
         return mDatabase.updatePlace(id, contentValues);
     }
 
+    private long insertCategoryRule(String pattern, long categoryId) {
+        ContentValues contentValues = new ContentValues();
+        contentValues.put(Contract.CategoryRule.PATTERN, pattern);
+        contentValues.put(Contract.CategoryRule.CATEGORY_ID, categoryId);
+        return mDatabase.insertCategoryRule(contentValues);
+    }
+
+    /**
+     * The category the rules name for a description, read the way the content provider reads it.
+     *
+     * @param description text to match the patterns against.
+     * @return the category id, or null when no rule matches.
+     */
+    private Long matchCategoryRule(String description) {
+        Cursor cursor = mDatabase.getCategoryRuleMatch(description);
+        assertNotNull(cursor);
+        Long categoryId = null;
+        if (cursor.moveToFirst()) {
+            categoryId = cursor.getLong(cursor.getColumnIndex(Contract.CategoryRule.CATEGORY_ID));
+        }
+        cursor.close();
+        return categoryId;
+    }
+
+    private void checkCategoryRuleId(long id, String pattern, long categoryId, int index) {
+        Cursor cursor = mDatabase.getCategoryRule(id, null);
+        assertNotNull(cursor);
+        assertEquals(1, cursor.getCount());
+        assertEquals(true, cursor.moveToFirst());
+        assertEquals(pattern, cursor.getString(cursor.getColumnIndex(Contract.CategoryRule.PATTERN)));
+        assertEquals(categoryId, cursor.getLong(cursor.getColumnIndex(Contract.CategoryRule.CATEGORY_ID)));
+        assertEquals(index, cursor.getInt(cursor.getColumnIndex(Contract.CategoryRule.INDEX)));
+        cursor.close();
+    }
+
+    @Test
+    public void categoryRulesAreAppendedInOrder() throws Exception {
+        long food = insertCategory("Food", "encoded-icon-food", 1, null, true, "tag-food");
+        long petrol = insertCategory("Petrol", "encoded-icon-petrol", 1, null, true, "tag-petrol");
+        long first = insertCategoryRule("tesco", food);
+        long second = insertCategoryRule("shell", petrol);
+        checkCategoryRuleId(first, "tesco", food, 0);
+        checkCategoryRuleId(second, "shell", petrol, 1);
+        checkCursorSize(mDatabase.getCategoryRules(null, null, null, null), 2);
+    }
+
+    @Test
+    public void categoryRuleMatchesDescriptionWhateverTheCase() throws Exception {
+        long food = insertCategory("Food", "encoded-icon-food", 1, null, true, "tag-food");
+        insertCategoryRule("TeSCo", food);
+        assertEquals(Long.valueOf(food), matchCategoryRule("Weekly shop at tesco extra"));
+        assertEquals(Long.valueOf(food), matchCategoryRule("TESCO"));
+        assertNull(matchCategoryRule("Corner shop"));
+    }
+
+    @Test
+    public void categoryRuleMatchTakesTheLowestIndexThatFits() throws Exception {
+        long food = insertCategory("Food", "encoded-icon-food", 1, null, true, "tag-food");
+        long petrol = insertCategory("Petrol", "encoded-icon-petrol", 1, null, true, "tag-petrol");
+        // both patterns are in the description, and only the one appended first answers
+        insertCategoryRule("tesco", food);
+        insertCategoryRule("petrol", petrol);
+        assertEquals(Long.valueOf(food), matchCategoryRule("tesco petrol station"));
+    }
+
+    @Test
+    public void categoryRulePatternIsNotAWildcard() throws Exception {
+        // a percent and an underscore are wildcards under LIKE, and the lookup uses instr, so
+        // they stand for themselves and match nothing else
+        long food = insertCategory("Food", "encoded-icon-food", 1, null, true, "tag-food");
+        insertCategoryRule("100% ju_ce", food);
+        assertNull(matchCategoryRule("orange juice"));
+        assertEquals(Long.valueOf(food), matchCategoryRule("Bought 100% ju_ce today"));
+    }
+
+    @Test
+    public void updateCategoryRuleReplacesPatternAndCategory() throws Exception {
+        long food = insertCategory("Food", "encoded-icon-food", 1, null, true, "tag-food");
+        long petrol = insertCategory("Petrol", "encoded-icon-petrol", 1, null, true, "tag-petrol");
+        long rule = insertCategoryRule("tesco", food);
+        ContentValues contentValues = new ContentValues();
+        contentValues.put(Contract.CategoryRule.PATTERN, "shell");
+        contentValues.put(Contract.CategoryRule.CATEGORY_ID, petrol);
+        assertEquals(1, mDatabase.updateCategoryRule(rule, contentValues));
+        checkCategoryRuleId(rule, "shell", petrol, 0);
+        assertNull(matchCategoryRule("tesco extra"));
+        assertEquals(Long.valueOf(petrol), matchCategoryRule("shell garage"));
+    }
+
+    @Test
+    public void deleteCategoryRuleLeavesTheOthers() throws Exception {
+        long food = insertCategory("Food", "encoded-icon-food", 1, null, true, "tag-food");
+        long petrol = insertCategory("Petrol", "encoded-icon-petrol", 1, null, true, "tag-petrol");
+        long first = insertCategoryRule("tesco", food);
+        insertCategoryRule("shell", petrol);
+        assertEquals(1, mDatabase.deleteCategoryRule(first));
+        checkCursorSize(mDatabase.getCategoryRules(null, null, null, null), 1);
+        assertNull(matchCategoryRule("tesco extra"));
+        assertEquals(Long.valueOf(petrol), matchCategoryRule("shell garage"));
+    }
+
+    @Test
+    public void deletingACategoryTakesItsRulesWithIt() throws Exception {
+        long food = insertCategory("Food", "encoded-icon-food", 1, null, true, "tag-food");
+        long petrol = insertCategory("Petrol", "encoded-icon-petrol", 1, null, true, "tag-petrol");
+        insertCategoryRule("tesco", food);
+        insertCategoryRule("shell", petrol);
+        mDatabase.deleteCategory(food);
+        checkCursorSize(mDatabase.getCategoryRules(null, null, null, null), 1);
+        assertNull(matchCategoryRule("tesco extra"));
+    }
+
     private void checkPersonId(long id, String name, String icon, String note, String tag) {
         Cursor cursor = mDatabase.getPerson(id, null);
         assertNotNull(cursor);
@@ -514,6 +777,56 @@ public class SQLDatabaseTest {
         contentValues.put(Contract.Budget.WALLET_IDS, getObjectIds(walletIds));
         contentValues.put(Contract.Budget.TAG, tag);
         return mDatabase.updateBudget(id, contentValues);
+    }
+
+    private long insertBudgetCovering(int type, Long[] categoryIds, Date startDate, Date endDate, long money,
+                              String currency, Long[] walletIds, String tag) {
+        ContentValues contentValues = new ContentValues();
+        contentValues.put(Contract.Budget.TYPE, type);
+        contentValues.put(Contract.Budget.CATEGORY_IDS, getObjectIds(categoryIds));
+        contentValues.put(Contract.Budget.START_DATE, DateUtils.getSQLDateString(startDate));
+        contentValues.put(Contract.Budget.END_DATE, DateUtils.getSQLDateString(endDate));
+        contentValues.put(Contract.Budget.MONEY, money);
+        contentValues.put(Contract.Budget.CURRENCY, currency);
+        contentValues.put(Contract.Budget.WALLET_IDS, getObjectIds(walletIds));
+        contentValues.put(Contract.Budget.TAG, tag);
+        return mDatabase.insertBudget(contentValues);
+    }
+
+    private int updateBudgetCovering(long id, int type, Long[] categoryIds, Date startDate, Date endDate,
+                             long money, String currency, Long[] walletIds, String tag) {
+        ContentValues contentValues = new ContentValues();
+        contentValues.put(Contract.Budget.TYPE, type);
+        contentValues.put(Contract.Budget.CATEGORY_IDS, getObjectIds(categoryIds));
+        contentValues.put(Contract.Budget.START_DATE, DateUtils.getSQLDateString(startDate));
+        contentValues.put(Contract.Budget.END_DATE, DateUtils.getSQLDateString(endDate));
+        contentValues.put(Contract.Budget.MONEY, money);
+        contentValues.put(Contract.Budget.CURRENCY, currency);
+        contentValues.put(Contract.Budget.WALLET_IDS, getObjectIds(walletIds));
+        contentValues.put(Contract.Budget.TAG, tag);
+        return mDatabase.updateBudget(id, contentValues);
+    }
+
+    /**
+     * Reads back what a budget covers, both the way the editor reads it and the way the list row
+     * shows it.
+     *
+     * @param id of the budget.
+     * @param categoryIds every category it should cover, lowest id first, which is the order
+     *                    a query hands them over in.
+     * @param joinedNames the names the list row should show, joined the way the query joins them.
+     * @param progress the figure the budget should now be at.
+     */
+    private void checkBudgetCategories(long id, Long[] categoryIds, String joinedNames, long progress) {
+        Cursor cursor = mDatabase.getBudget(id, null);
+        assertNotNull(cursor);
+        assertEquals(1, cursor.getCount());
+        assertEquals(true, cursor.moveToFirst());
+        assertEquals(getObjectIds(categoryIds), cursor.getString(cursor.getColumnIndex(Contract.Budget.CATEGORY_IDS)));
+        assertEquals(joinedNames, cursor.getString(cursor.getColumnIndex(Contract.Budget.CATEGORY_NAME)));
+        assertEquals((long) categoryIds[0], cursor.getLong(cursor.getColumnIndex(Contract.Budget.CATEGORY_ID)));
+        assertEquals(progress, cursor.getLong(cursor.getColumnIndex(Contract.Budget.PROGRESS)));
+        cursor.close();
     }
 
     private void checkSavingId(long id, String description, String icon, long startMoney,
@@ -850,6 +1163,61 @@ public class SQLDatabaseTest {
     //////////////////////////////////// START THE TEST /////////////////////////////////////
     /////////////////////////////////////////////////////////////////////////////////////////
 
+    /**
+     * Covers the wrapper's other three database methods, which nothing else in here reaches on
+     * the runners this suite is run on. Without this they are three overrides whose loss nothing
+     * would notice.
+     */
+    @Test
+    public void everyDatabaseMethodOnTheWrapperIsPrefixed() {
+        File expected = InstrumentationRegistry.getInstrumentation().getTargetContext()
+                .getDatabasePath(TestStorageContext.PREFIX + SQLDatabase.DATABASE_NAME);
+        // closed first, so the delete at the end is not unlinking a file still open here
+        mDatabase.close();
+        SQLiteDatabase threeArgument = mContext.openOrCreateDatabase(
+                SQLDatabase.DATABASE_NAME, Context.MODE_PRIVATE, null);
+        try {
+            assertEquals(expected.getPath(), threeArgument.getPath());
+        } finally {
+            threeArgument.close();
+        }
+        SQLiteDatabase fourArgument = mContext.openOrCreateDatabase(
+                SQLDatabase.DATABASE_NAME, Context.MODE_PRIVATE, null, null);
+        try {
+            assertEquals(expected.getPath(), fourArgument.getPath());
+        } finally {
+            fourArgument.close();
+        }
+        mContext.deleteDatabase(SQLDatabase.DATABASE_NAME);
+        assertFalse(expected.exists());
+    }
+
+    /**
+     * Proves the attachment deletes land in the wrapper's folder. The file is made under the
+     * wrapper's own external directory, so nothing here writes into the app's attachments, and it
+     * has to be gone afterwards.
+     */
+    @Test
+    public void attachmentFileIsDeletedUnderTheTestFolder() throws Exception {
+        // built from the unwrapped context, never from the wrapper, or an emptied EXTERNAL_SUBDIR
+        // would move this file and the delete together and they would still agree
+        File external = InstrumentationRegistry.getInstrumentation().getTargetContext()
+                .getExternalFilesDir(null);
+        // same reason as the prefix check in setUp, and before anything is written below
+        assertFalse(external.equals(mContext.getExternalFilesDir(null)));
+        File folder = new File(new File(external, TestStorageContext.EXTERNAL_SUBDIR),
+                Attachment.FOLDER_NAME);
+        assertTrue(folder.isDirectory() || folder.mkdirs());
+        File sentinel = new File(folder, "path1");
+        assertTrue(sentinel.isFile() || sentinel.createNewFile());
+        long id1 = insertWallet("Test wallet 1", "encoded-icon-1", "EUR", "note-wallet-1", true, 2000L, false, "tag-wallet-1");
+        long id2 = insertCategory("Test category 1", "encoded-icon-1", Contract.CategoryType.INCOME.getValue(), null, true, "tag-category-1");
+        long id3 = insertAttachment("path1", "name-1", "mime-type-1", 90L, "tag-1");
+        long id4 = insertTransaction(2000L, new Date(), "desc", id2, Contract.Direction.INCOME, 0, id1, null, "note", null, null, null, true, true, null, new Long[] {id3}, "tag");
+        mDatabase.deleteTransaction(id4);
+        assertFalse(sentinel.exists());
+    }
+
     @Test
     public void insertWallet() throws Exception {
         // insert 4 wallets and then query for each one and check the returned id
@@ -925,6 +1293,1390 @@ public class SQLDatabaseTest {
         checkCursorSize(mDatabase.getSaving(id7, null), 0);
         checkCursorSize(mDatabase.getDebt(id8, null), 0);
         checkBudgetId(id9, Schema.BudgetType.CATEGORY, id3, startDate, endDate, 3000L, "EUR", new Long[] {id2}, null, 0L);
+    }
+
+    /**
+     * Puts a file where SQLDatabase.getAttachmentFolder will look for it, by the same route that
+     * method takes. That is deliberate and it is not the identity a sentinel built from the
+     * wrapper would be, because the pair of cases below differ only in whether the transaction
+     * commits. A wrong folder makes the committed case fail, so the path is under test too.
+     */
+    private File writeAttachmentFile(String name) throws Exception {
+        File folder = new File(mContext.getExternalFilesDir(null), Attachment.FOLDER_NAME);
+        assertTrue("cannot create " + folder, folder.exists() || folder.mkdirs());
+        File file = new File(folder, name);
+        assertTrue("cannot create " + file, file.exists() || file.createNewFile());
+        return file;
+    }
+
+    private long walletWithAnAttachedTransaction(String fileName) {
+        long walletId = insertWallet("Attached", "icon", "EUR", "note", true, 0L, false, "tag");
+        long categoryId = insertCategory("category", "icon", 0, null, true, "tag");
+        long attachmentId = insertAttachment(fileName, "name", "mime-type", 90L, "tag");
+        insertTransaction(10, new Date(), "desc", categoryId, Contract.Direction.EXPENSE, 0,
+                walletId, null, null, null, null, null, true, true, null,
+                new Long[] {attachmentId}, null);
+        return walletId;
+    }
+
+    /**
+     * The four cases below are the two sided proof of the transaction wrapper, and each pair needs
+     * both halves. Without the committing case, a wrapper that rolled everything back and
+     * committed nothing would satisfy the rollback case, and no other case in this class would
+     * see it, because they all call SQLDatabase directly and never open a transaction at all.
+     */
+    @Test
+    public void inTransactionCommitsWhatTheBodyWrote() {
+        long walletId = mDatabase.inTransaction(() ->
+                insertWallet("Committed", "icon", "EUR", "note", true, 0L, false, "tag"));
+        assertTrue(walletId > 0L);
+        checkCursorSize(mDatabase.getWallets(null, null, null, null), 1);
+    }
+
+    @Test
+    public void inTransactionRollsBackEveryWriteWhenTheBodyThrows() {
+        insertWallet("Written before the transaction", "icon", "EUR", "note", true, 0L, false, "tag");
+        try {
+            mDatabase.<Long>inTransaction(() -> {
+                insertWallet("Rolled back", "icon", "EUR", "note", true, 0L, false, "tag");
+                insertPerson("Rolled back too", "icon", "note", "tag");
+                throw new IllegalStateException("forced from the body");
+            });
+            fail("the body's exception did not leave inTransaction");
+        } catch (IllegalStateException expected) {
+            // it has to reach the caller, since that is how a provider learns its write is undone
+        }
+        // both writes inside the transaction are gone, and the one before it is untouched, so
+        // this fails either way round: on a wrapper that does not roll back, and on one that
+        // rolls back more than the transaction
+        checkCursorSize(mDatabase.getWallets(null, null, null, null), 1);
+        checkCursorSize(mDatabase.getPeople(null, null, null, null), 0);
+    }
+
+    /**
+     * The shared helper, its swap, and the lock between them had no coverage at all until the
+     * wrapper started answering getApplicationContext for itself. Removing the lock left every
+     * other case in this class green, which made it a guard nothing could see.
+     */
+    @Test
+    public void theSharedHelperResolvesThroughTheTestWrapper() {
+        // the assertion that everything below rests on. If the wrapper were bypassed here the
+        // shared helper would be the real ledger, and these cases would be writing into it
+        assertEquals(mContext.getDatabasePath(SQLDatabase.DATABASE_NAME).getPath(),
+                sharedPath());
+    }
+
+    @Test
+    public void resetSharedReplacesTheInstanceAndGetSharedKeepsIt() {
+        SQLDatabase first = shared();
+        assertTrue("getShared handed back two helpers for one process",
+                first == shared());
+        SQLDatabase.resetShared(mContext);
+        assertFalse("resetShared left the old helper installed",
+                first == shared());
+    }
+
+    @Test
+    public void inSharedTransactionRunsOnTheSharedHelperAndRollsBack() {
+        SQLDatabase shared = shared();
+        try {
+            SQLDatabase.<Long>inSharedTransaction(mContext, database -> {
+                assertTrue("the body was handed a different helper than the transaction was "
+                        + "opened on", database == shared);
+                ContentValues cv = new ContentValues();
+                cv.put(Schema.Wallet.NAME, "rolled back");
+                cv.put(Schema.Wallet.ICON, "icon");
+                cv.put(Schema.Wallet.CURRENCY, "EUR");
+                cv.put(Schema.Wallet.START_MONEY, 0L);
+                cv.put(Schema.Wallet.COUNT_IN_TOTAL, true);
+                cv.put(Schema.Wallet.ARCHIVED, false);
+                cv.put(Schema.Wallet.INDEX, 0);
+                cv.put(Schema.Wallet.UUID, java.util.UUID.randomUUID().toString());
+                cv.put(Schema.Wallet.LAST_EDIT, System.currentTimeMillis());
+                cv.put(Schema.Wallet.DELETED, false);
+                database.getWritableDatabase().insert(Schema.Wallet.TABLE, null, cv);
+                throw new IllegalStateException("forced from the body");
+            });
+            fail("the body's exception did not leave inSharedTransaction");
+        } catch (IllegalStateException expected) {
+            // as elsewhere
+        }
+        Cursor cursor = shared.getWritableDatabase().query(Schema.Wallet.TABLE, null, null, null,
+                null, null, null);
+        assertNotNull(cursor);
+        try {
+            assertEquals(0, cursor.getCount());
+        } finally {
+            cursor.close();
+        }
+    }
+
+    /**
+     * The only case that fails if the swap lock is deleted, downgraded or inverted. Everything
+     * else in this class is single threaded and stays green without it.
+     */
+    @Test(timeout = 20000)
+    public void resetSharedWaitsForAWriteAlreadyInFlight() throws Exception {
+        final CountDownLatch inside = new CountDownLatch(1);
+        final CountDownLatch release = new CountDownLatch(1);
+        final CountDownLatch resetReturned = new CountDownLatch(1);
+        Thread writer = new Thread(() -> SQLDatabase.inSharedTransaction(mContext, database -> {
+            inside.countDown();
+            try {
+                release.await();
+            } catch (InterruptedException e) {
+                throw new IllegalStateException(e);
+            }
+            return 1L;
+        }));
+        writer.start();
+        assertTrue("the write never entered the transaction", inside.await(10, TimeUnit.SECONDS));
+
+        Thread resetter = new Thread(() -> {
+            SQLDatabase.resetShared(mContext);
+            resetReturned.countDown();
+        });
+        resetter.start();
+        try {
+            // it has to still be waiting. Closing the helper here is what sends the rest of an
+            // unfinished write to a second connection with no transaction on it
+            assertFalse("resetShared swapped the helper while a write was still in flight",
+                    resetReturned.await(1, TimeUnit.SECONDS));
+        } finally {
+            // in a finally for the reason given on the case below
+            release.countDown();
+        }
+        writer.join(10000);
+        assertTrue("resetShared never completed once the write finished",
+                resetReturned.await(10, TimeUnit.SECONDS));
+        resetter.join(10000);
+    }
+
+    /**
+     * The same exclusion for the overload that carries the work. The case above drives the plain
+     * overload, so a version that took the write lock only there would keep it green while every
+     * rename in AbstractBackupImporter ran with a write still open on the file being moved.
+     */
+    @Test(timeout = 20000)
+    public void resetSharedWaitsForAWriteAlreadyInFlightBeforeRunningTheWork() throws Exception {
+        final CountDownLatch inside = new CountDownLatch(1);
+        final CountDownLatch release = new CountDownLatch(1);
+        final CountDownLatch workRan = new CountDownLatch(1);
+        Thread writer = new Thread(() -> SQLDatabase.inSharedTransaction(mContext, database -> {
+            inside.countDown();
+            try {
+                release.await();
+            } catch (InterruptedException e) {
+                throw new IllegalStateException(e);
+            }
+            return 1L;
+        }));
+        writer.start();
+        assertTrue("the write never entered the transaction", inside.await(10, TimeUnit.SECONDS));
+
+        Thread resetter = new Thread(() -> SQLDatabase.resetShared(mContext, workRan::countDown));
+        resetter.start();
+        try {
+            assertFalse("the work ran while a write was still in flight, which is the rename "
+                            + "moving the database file out from under an open transaction",
+                    workRan.await(1, TimeUnit.SECONDS));
+        } finally {
+            // in a finally, or a failed assertion leaves the writer parked forever inside an open
+            // transaction holding the read lock, and the next resetShared waits on it for good.
+            // The suite then hangs instead of reporting, which reads as a broken run and not as a
+            // broken guard
+            release.countDown();
+        }
+        writer.join(10000);
+        assertTrue("the work never ran once the write finished",
+                workRan.await(10, TimeUnit.SECONDS));
+        resetter.join(10000);
+    }
+
+    /**
+     * The slot a restore renames the database file in. If the work ran anywhere else the file
+     * would move with a connection open on it, which strands that connection's journal at the
+     * old path and refuses its next write.
+     */
+    @Test
+    public void resetSharedRunsTheWorkWithTheFileClosedAndReplacesTheHelperAfterIt() {
+        SQLDatabase first = shared();
+        SQLiteDatabase open = first.getWritableDatabase();
+        assertTrue("the helper was not open before the swap", open.isOpen());
+        final boolean[] ran = new boolean[1];
+        SQLDatabase.resetShared(mContext, () -> {
+            ran[0] = true;
+            assertFalse("the work ran with the database still open", open.isOpen());
+            // and before the replacement, which is what leaves the path free for the rename
+            assertTrue("the helper was replaced before the work ran",
+                    shared() == first);
+        });
+        assertTrue("the work never ran", ran[0]);
+        assertFalse("resetShared left the old helper installed",
+                shared() == first);
+    }
+
+    @Test
+    public void resetSharedInstallsAWorkingHelperEvenWhenTheWorkThrows() {
+        SQLDatabase first = shared();
+        try {
+            SQLDatabase.resetShared(mContext, () -> {
+                throw new IllegalStateException("forced from the work");
+            });
+            fail("the work's exception did not leave resetShared");
+        } catch (IllegalStateException expected) {
+            // it has to leave, since the caller is the one that knows what a failed file swap
+            // means. What must not happen is the helper being left closed behind it
+        }
+        SQLDatabase replacement = shared();
+        assertFalse("the closed helper was left installed after the work threw",
+                replacement == first);
+        assertTrue("the helper installed after the work threw cannot open the database",
+                replacement.getWritableDatabase().isOpen());
+    }
+
+    private ContentValues wallet(String name) {
+        ContentValues values = new ContentValues();
+        values.put(Contract.Wallet.NAME, name);
+        values.put(Contract.Wallet.ICON, "icon");
+        values.put(Contract.Wallet.CURRENCY, "EUR");
+        values.put(Contract.Wallet.NOTE, "note");
+        values.put(Contract.Wallet.COUNT_IN_TOTAL, true);
+        values.put(Contract.Wallet.START_MONEY, 0L);
+        values.put(Contract.Wallet.ARCHIVED, false);
+        values.put(Contract.Wallet.TAG, "tag");
+        return values;
+    }
+
+    /**
+     * A wallet row as a restore writes one. SyncContentProvider inserts raw with no defaults of
+     * its own, so the columns SQLDatabase.insertWallet would have generated have to be here.
+     */
+    private ContentValues syncWallet(String name) {
+        ContentValues values = new ContentValues();
+        values.put(Schema.Wallet.NAME, name);
+        values.put(Schema.Wallet.ICON, "icon");
+        values.put(Schema.Wallet.CURRENCY, "EUR");
+        values.put(Schema.Wallet.START_MONEY, 0L);
+        values.put(Schema.Wallet.COUNT_IN_TOTAL, true);
+        values.put(Schema.Wallet.ARCHIVED, false);
+        values.put(Schema.Wallet.INDEX, 0);
+        values.put(Schema.Wallet.NOTE, "note");
+        values.put(Schema.Wallet.TAG, "tag");
+        values.put(Schema.Wallet.UUID, java.util.UUID.randomUUID().toString());
+        values.put(Schema.Wallet.LAST_EDIT, System.currentTimeMillis());
+        values.put(Schema.Wallet.DELETED, false);
+        return values;
+    }
+
+    /** Counts through whichever file this thread is currently resolving. */
+    private long sharedWalletsNamed(String name) {
+        Cursor cursor = SQLDatabase.getShared(mContext).getReadableDatabase().rawQuery(
+                "SELECT COUNT(*) FROM " + Schema.Wallet.TABLE
+                        + " WHERE " + Schema.Wallet.NAME + " = ?", new String[]{name});
+        try {
+            cursor.moveToFirst();
+            return cursor.getLong(0);
+        } finally {
+            cursor.close();
+        }
+    }
+
+    /** The helper this thread resolves, which is the staged one while a staged import is open. */
+    private SQLDatabase shared() {
+        return SQLDatabase.getShared(mContext);
+    }
+
+    /** The file this thread is open on. */
+    private String sharedPath() {
+        return SQLDatabase.getShared(mContext).getWritableDatabase().getPath();
+    }
+
+    /**
+     * The claim the whole redesign rests on, and the reason the redirect is per thread. The
+     * importing thread has to write into the staged file, and every other thread has to go on
+     * writing into the live ledger, because that is what keeps the live file name still and lets
+     * every read in the app run with no lock at all.
+     *
+     * The first assertion is the one that matters. A staged name resolving to the live file
+     * would make everything below pass without testing anything.
+     */
+    @Test
+    public void aStagedImportRedirectsItsOwnThreadAndNoOther() throws InterruptedException {
+        final String onImporter = "Written on the importing thread";
+        final String onOther = "Written on another thread";
+        File live = mContext.getDatabasePath(SQLDatabase.DATABASE_NAME);
+        File staged = mContext.getDatabasePath(SQLDatabaseImporter.STAGING_DATABASE_NAME);
+        assertFalse("the staged name resolves to the live file, so nothing below can fail",
+                live.getPath().equals(staged.getPath()));
+        assertEquals(live.getPath(), sharedPath());
+
+        final String[] otherPath = new String[1];
+        final Throwable[] otherFailure = new Throwable[1];
+        SQLDatabase.openStaging(mContext, SQLDatabaseImporter.STAGING_DATABASE_NAME);
+        try {
+            assertEquals("the importing thread did not follow the staged name",
+                    staged.getPath(), sharedPath());
+            SQLDatabase.inSharedTransaction(mContext,
+                    database -> database.insertWallet(wallet(onImporter)));
+
+            Thread other = new Thread(() -> {
+                try {
+                    otherPath[0] = sharedPath();
+                    SQLDatabase.inSharedTransaction(mContext,
+                            database -> database.insertWallet(wallet(onOther)));
+                } catch (Throwable t) {
+                    otherFailure[0] = t;
+                }
+            });
+            other.start();
+            other.join();
+        } finally {
+            SQLDatabase.closeStaging();
+        }
+        assertNull("the other thread failed: " + otherFailure[0], otherFailure[0]);
+        assertEquals("another thread was redirected to the staged file too",
+                live.getPath(), otherPath[0]);
+        assertEquals("the importing thread did not come back to the live database",
+                live.getPath(), sharedPath());
+
+        assertEquals("the other thread row is not in the live ledger",
+                1, sharedWalletsNamed(onOther));
+        assertEquals("the staged row reached the live ledger",
+                0, sharedWalletsNamed(onImporter));
+
+        // and the staged row really is in the staged file. Without this the assertion above
+        // passes just as well when the insert wrote nowhere at all
+        SQLDatabase.openStaging(mContext, SQLDatabaseImporter.STAGING_DATABASE_NAME);
+        try {
+            assertEquals("the staged row never reached the staged database",
+                    1, sharedWalletsNamed(onImporter));
+            assertEquals("the other thread row reached the staged database",
+                    0, sharedWalletsNamed(onOther));
+        } finally {
+            SQLDatabase.closeStaging();
+        }
+    }
+
+    /**
+     * The path a restore actually writes on. Every row an import puts in goes ContentResolver to
+     * SyncContentProvider, which resolves the helper on each call and takes no transaction, so a
+     * redirect that only reached inSharedTransaction would leave every restored row in the live
+     * ledger. inSharedTransaction is DataContentProvider entry point and no restore uses it.
+     *
+     * The provider is used against the live ledger first on purpose, and that is what gives this
+     * case its teeth. SyncContentProvider.db resolves the helper on every use instead of holding
+     * it in a field, and its own javadoc says so; hold it in a field instead and the read below
+     * fills that field with the live helper, so the staged insert goes into the ledger and this
+     * case fails. Without the read first, a field would be filled by the staged insert itself and
+     * the same broken provider would pass.
+     */
+    @Test
+    public void aRowWrittenThroughTheSyncProviderFollowsTheStagedRedirect() {
+        final String viaProvider = "Written through the sync provider";
+        ContentResolver resolver = mContext.getContentResolver();
+
+        Cursor warmUp = resolver.query(SyncContentProvider.CONTENT_WALLETS, null, null, null, null);
+        assertNotNull("the sync provider answered nothing on the live ledger", warmUp);
+        warmUp.close();
+
+        SQLDatabase.openStaging(mContext, SQLDatabaseImporter.STAGING_DATABASE_NAME);
+        try {
+            resolver.insert(SyncContentProvider.CONTENT_WALLETS, syncWallet(viaProvider));
+            assertEquals("the row did not reach the staged database",
+                    1, sharedWalletsNamed(viaProvider));
+        } finally {
+            SQLDatabase.closeStaging();
+        }
+        assertEquals("the row written through the sync provider landed in the live ledger",
+                0, sharedWalletsNamed(viaProvider));
+    }
+
+    /**
+     * closeStaging is called from a finally on a path where the open may never have happened, so
+     * calling it with nothing staged, and calling it twice, both have to be no ops. If either
+     * moved this thread off the live database the whole suite after it would read the wrong file.
+     *
+     * The second close here runs against a helper with a connection really open on it, since
+     * openStaging opens the staged file instead of leaving it to the first row.
+     */
+    @Test
+    public void closingAStagedImportIsSafeWithoutOneAndTwiceOver() {
+        File live = mContext.getDatabasePath(SQLDatabase.DATABASE_NAME);
+        SQLDatabase.closeStaging();
+        assertEquals("closing with nothing staged moved this thread", live.getPath(), sharedPath());
+
+        SQLDatabase.openStaging(mContext, SQLDatabaseImporter.STAGING_DATABASE_NAME);
+        SQLDatabase.closeStaging();
+        SQLDatabase.closeStaging();
+        assertEquals("a second close moved this thread off the live database",
+                live.getPath(), sharedPath());
+    }
+
+    /**
+     * An import that writes no rows still has to leave a file behind for the promote to rename.
+     * SQLiteOpenHelper creates the file on first use, so openStaging opens the staged database
+     * itself; without that, a backup whose arrays are all empty writes nothing, the rename finds
+     * no source and the restore reports a failure for a backup with nothing wrong with it. A
+     * legacy backup of an empty install is the reachable one, since that importer reads no
+     * currencies and so has no table that is always written.
+     */
+    @Test
+    public void openingAStagedImportCreatesTheFileBeforeAnyRowIsWritten() {
+        File staged = mContext.getDatabasePath(SQLDatabaseImporter.STAGING_DATABASE_NAME);
+        staged.delete();
+        assertFalse("the precondition failed, a staged file was already on disk", staged.exists());
+
+        SQLDatabase.openStaging(mContext, SQLDatabaseImporter.STAGING_DATABASE_NAME);
+        try {
+            assertTrue("openStaging left no file for the promote to rename", staged.exists());
+        } finally {
+            SQLDatabase.closeStaging();
+        }
+        assertTrue("the staged file went away when the helper closed", staged.exists());
+    }
+
+    /**
+     * Two staged imports on one thread would leak the first helper, leaving a connection open on
+     * a file the promote is about to rename, so the second is refused instead. Nothing does this
+     * today and the refusal is what keeps it that way.
+     */
+    @Test
+    public void aSecondStagedImportOnOneThreadIsRefused() {
+        SQLDatabase.openStaging(mContext, SQLDatabaseImporter.STAGING_DATABASE_NAME);
+        try {
+            SQLDatabase.openStaging(mContext, SQLDatabaseImporter.STAGING_DATABASE_NAME);
+            fail("a second staged import was allowed on one thread");
+        } catch (IllegalStateException expected) {
+            assertTrue("refused for the wrong reason: " + expected.getMessage(),
+                    expected.getMessage().contains("already open"));
+        } finally {
+            SQLDatabase.closeStaging();
+        }
+    }
+
+    /**
+     * What promoteStagedDatabase rests on. It renames the staged file straight over the live one
+     * and deletes nothing ahead of it, so that a rename which fails leaves the user's ledger
+     * where it was. That is only safe if a rename replaces an existing target instead of
+     * refusing it, which is a platform promise and not one this code can make.
+     */
+    @Test
+    public void aRenameOverAnExistingFileReplacesItInOneStep() throws IOException {
+        File live = new File(mContext.getCacheDir(), "rename-live.db");
+        File staged = new File(mContext.getCacheDir(), "rename-staged.db");
+        try {
+            FileUtils.write(live, "the ledger", "UTF-8");
+            FileUtils.write(staged, "the import", "UTF-8");
+            assertTrue("the rename refused an existing target, so a promote would have to delete "
+                            + "the live database first and a failure there would destroy both",
+                    staged.renameTo(live));
+            assertEquals("the import", FileUtils.readFileToString(live, "UTF-8"));
+            assertFalse("the staged file outlived its own rename", staged.exists());
+        } finally {
+            FileUtils.deleteQuietly(live);
+            FileUtils.deleteQuietly(staged);
+        }
+    }
+
+
+    @Test
+    public void aNestedInTransactionRollsBackWithTheOuterOne() {
+        // outside the transaction, so the count below fails both ways round: on a nested call that
+        // committed on its own, and on one that rolled back past the wallet written before
+        insertWallet("Written before the transaction", "icon", "EUR", "note", true, 0L, false, "tag");
+        try {
+            mDatabase.<Long>inTransaction(() -> {
+                insertWallet("Written before the nested call", "icon", "EUR", "note", true, 0L, false, "tag");
+                long nested = mDatabase.inTransaction(() ->
+                        insertWallet("Nested", "icon", "EUR", "note", true, 0L, false, "tag"));
+                // the nested call has to have written something for the count below to be
+                // testing a rollback. A build that refused to nest never reaches this line, and
+                // one that ran the body and threw the row away would fail here
+                assertTrue("the nested call inserted nothing", nested > 0L);
+                // its own type. IllegalStateException is what a build that refuses to nest throws
+                // from the line above, and a catch on that type below cannot tell the two apart
+                throw new ImportStopped();
+            });
+            fail("the body's exception did not leave inTransaction");
+        } catch (ImportStopped expected) {
+            // this is the failure the import path has to survive, a row is refused after earlier
+            // rows have gone in through the provider, each of those opening a transaction of its
+            // own. Only the wallet written before the outer transaction may be left
+        }
+        checkCursorSize(mDatabase.getWallets(null, null, null, null), 1);
+    }
+
+    /** How the case below ends its import, told apart from anything the app itself raises. */
+    private static class ImportStopped extends RuntimeException {
+    }
+
+    /** The values an import builds for a wallet it has to create before it can use one. */
+    private ContentValues walletValues(String name) {
+        ContentValues contentValues = new ContentValues();
+        contentValues.put(Contract.Wallet.NAME, name);
+        contentValues.put(Contract.Wallet.ICON, "icon");
+        contentValues.put(Contract.Wallet.CURRENCY, "EUR");
+        contentValues.put(Contract.Wallet.COUNT_IN_TOTAL, true);
+        contentValues.put(Contract.Wallet.START_MONEY, 0L);
+        contentValues.put(Contract.Wallet.ARCHIVED, false);
+        return contentValues;
+    }
+
+    /**
+     * A transaction naming a wallet and a category that are not there. Every column the table
+     * insists on is filled, so the only thing wrong with this row is the two ids, and the insert
+     * fails on them and not on something left out.
+     */
+    private ContentValues transactionValuesOnMissingRows() {
+        return transactionValues(987654321L, 987654321L);
+    }
+
+    /**
+     * The whole of what this change buys an import, driven the way an import drives it: rows in
+     * through the provider, one refused part way, and nothing left behind.
+     */
+    @Test
+    public void aRowTheProviderRefusesTakesEveryRowBeforeItBackOut() throws Exception {
+        ContentResolver contentResolver = mContext.getContentResolver();
+        try {
+            DataContentProvider.runInOneTransaction(mContext, () -> {
+                Uri saved = contentResolver.insert(DataContentProvider.CONTENT_WALLETS,
+                        walletValues("Saved before the refused row"));
+                assertNotNull("the provider refused a wallet that is fine", saved);
+                // foreign keys are on, so this one cannot go in, and the provider says so by
+                // answering nothing. An importer that ignored that answer is what used to let a
+                // refused row disappear while the import reported that it had worked
+                Uri refused = contentResolver.insert(DataContentProvider.CONTENT_TRANSACTIONS,
+                        transactionValuesOnMissingRows());
+                assertNull("the provider took a transaction on a wallet that does not exist, so "
+                        + "this case is no longer testing a refusal", refused);
+                // its own type, and not one the code under test also raises. Catching
+                // IllegalStateException here would swallow the one a provider write throws when
+                // it refuses to run inside a transaction already open, and this case would go
+                // green on a build where no row ever reached the database
+                throw new ImportStopped();
+            });
+            fail("the failure did not leave runInOneTransaction");
+        } catch (ImportStopped expected) {
+            // the importers all end the import here, and the transaction has to go with it
+        }
+        checkCursorSize(mDatabase.getWallets(null, null, null, null), 0);
+    }
+
+    @Test
+    public void everyRowOfAnImportThatFinishesIsThere() throws Exception {
+        ContentResolver contentResolver = mContext.getContentResolver();
+        DataContentProvider.runInOneTransaction(mContext, () -> {
+            contentResolver.insert(DataContentProvider.CONTENT_WALLETS, walletValues("First"));
+            contentResolver.insert(DataContentProvider.CONTENT_WALLETS, walletValues("Second"));
+            return null;
+        });
+        checkCursorSize(mDatabase.getWallets(null, null, null, null), 2);
+    }
+
+    /**
+     * Watches the wallet list the way an open list screen does, descendants included, so it hears
+     * about a write whichever uri that write announces.
+     */
+    private CountDownLatch watchWallets(ContentResolver contentResolver, ContentObserver[] out) {
+        return watch(contentResolver, DataContentProvider.CONTENT_WALLETS, true, out);
+    }
+
+    private CountDownLatch watch(ContentResolver contentResolver, Uri uri, boolean descendants,
+                                 ContentObserver[] out) {
+        CountDownLatch told = new CountDownLatch(1);
+        ContentObserver observer = new ContentObserver(new Handler(Looper.getMainLooper())) {
+
+            @Override
+            public void onChange(boolean selfChange) {
+                told.countDown();
+            }
+        };
+        contentResolver.registerContentObserver(uri, descendants, observer);
+        out[0] = observer;
+        return told;
+    }
+
+    /**
+     * What an import announces, and what that reaches. Both watchers here take descendants off, so
+     * each one hears about exactly one uri: the list watcher only if the list itself was
+     * announced, and the row watcher only if announcing the list reaches the rows under it.
+     *
+     * The second half is the reason an import is allowed to remember one uri per list instead of
+     * one per row, and it is a claim about the framework, so it is checked here and not argued.
+     */
+    @Test
+    public void anImportAnnouncesTheListAndReachesTheRowsUnderIt() throws Exception {
+        ContentResolver contentResolver = mContext.getContentResolver();
+        long existing = insertWallet("Open on a detail screen", "icon", "EUR", "note", true, 0L, false, "tag");
+        ContentObserver[] listObserver = new ContentObserver[1];
+        ContentObserver[] rowObserver = new ContentObserver[1];
+        CountDownLatch listTold = watch(contentResolver, DataContentProvider.CONTENT_WALLETS, false, listObserver);
+        CountDownLatch rowTold = watch(contentResolver,
+                ContentUris.withAppendedId(DataContentProvider.CONTENT_WALLETS, existing), false, rowObserver);
+        try {
+            DataContentProvider.runInOneTransaction(mContext, () -> contentResolver.insert(
+                    DataContentProvider.CONTENT_WALLETS, walletValues("Imported")));
+            assertTrue("the import announced the row it wrote instead of the list it wrote into",
+                    listTold.await(5, TimeUnit.SECONDS));
+            assertTrue("announcing the list did not reach a screen watching a row under it, so "
+                            + "remembering the list instead of the row loses a watcher",
+                    rowTold.await(5, TimeUnit.SECONDS));
+        } finally {
+            contentResolver.unregisterContentObserver(listObserver[0]);
+            contentResolver.unregisterContentObserver(rowObserver[0]);
+        }
+    }
+
+    @Test
+    public void anImportThatFinishesTellsTheOpenScreens() throws Exception {
+        ContentResolver contentResolver = mContext.getContentResolver();
+        ContentObserver[] observer = new ContentObserver[1];
+        CountDownLatch told = watchWallets(contentResolver, observer);
+        try {
+            DataContentProvider.runInOneTransaction(mContext, () -> {
+                assertNotNull("the provider refused a wallet that is fine, so this case is no "
+                                + "longer testing an import that wrote anything",
+                        contentResolver.insert(DataContentProvider.CONTENT_WALLETS, walletValues("Imported")));
+                return null;
+            });
+            // that an import which finished says something at all. It does not pin WHEN, since a
+            // latch that has already counted down reads the same either way, and an import that
+            // announced every row as it went would satisfy this too. What pins the holding back
+            // is anImportThatFailedAnnouncesNothing, where an announcement must never arrive
+            assertTrue("nothing was announced after the import committed",
+                    told.await(5, TimeUnit.SECONDS));
+        } finally {
+            contentResolver.unregisterContentObserver(observer[0]);
+        }
+    }
+
+    @Test
+    public void anImportThatFailedAnnouncesNothing() throws Exception {
+        ContentResolver contentResolver = mContext.getContentResolver();
+        ContentObserver[] observer = new ContentObserver[1];
+        CountDownLatch told = watchWallets(contentResolver, observer);
+        try {
+            DataContentProvider.runInOneTransaction(mContext, () -> {
+                assertNotNull("the provider refused a wallet that is fine, so there is no row for "
+                                + "this case to roll back",
+                        contentResolver.insert(DataContentProvider.CONTENT_WALLETS, walletValues("Rolled back")));
+                throw new ImportStopped();
+            });
+            fail("the failure did not leave runInOneTransaction");
+        } catch (ImportStopped expected) {
+            // the wallet above went in and came back out, and announcing it would send every open
+            // screen to look for a row that is not there. Checked here and not in the finally,
+            // where a failure of its own would replace the one the case was really reporting and
+            // leave the observer registered on the process wide resolver for the rest of the run
+            assertFalse("a row that was rolled back was announced anyway",
+                    told.await(2, TimeUnit.SECONDS));
+        } finally {
+            contentResolver.unregisterContentObserver(observer[0]);
+        }
+    }
+
+    @Test
+    public void anImportInsideAnImportIsOneImport() throws Exception {
+        ContentResolver contentResolver = mContext.getContentResolver();
+        ContentObserver[] observer = new ContentObserver[1];
+        CountDownLatch told = watchWallets(contentResolver, observer);
+        try {
+            DataContentProvider.runInOneTransaction(mContext, () -> {
+                // the inner has to run the body. Every assertion this case makes afterwards is a
+                // negative one, so an inner branch that returned without calling the body at all
+                // would satisfy every one of them
+                assertNotNull("the nested call wrote nothing",
+                        DataContentProvider.runInOneTransaction(mContext, () -> contentResolver.insert(
+                                DataContentProvider.CONTENT_WALLETS, walletValues("Inner"))));
+                // after the inner call returns, and this is the write that matters. An inner call
+                // that cleared what the outer had left on the thread instead of leaving it alone
+                // would send this one straight to the observers, mid transaction
+                assertNotNull("the provider refused a wallet that is fine",
+                        contentResolver.insert(DataContentProvider.CONTENT_WALLETS, walletValues("After the inner")));
+                throw new ImportStopped();
+            });
+            fail("the failure did not leave runInOneTransaction");
+        } catch (ImportStopped expected) {
+            // the inner call must not commit or announce anything of its own. Nothing nests
+            // today, and this is what keeps the first caller that does from announcing rows the
+            // outer transaction then rolls back
+            assertFalse("the inner import announced rows the outer one rolled back",
+                    told.await(2, TimeUnit.SECONDS));
+        } finally {
+            contentResolver.unregisterContentObserver(observer[0]);
+        }
+        checkCursorSize(mDatabase.getWallets(null, null, null, null), 0);
+    }
+
+    /**
+     * The success path of the same nesting, which is where an inner call that kept a set of its
+     * own would show. Its row would go in and the outer commit would announce only what the outer
+     * itself wrote, so an open screen would never hear about the rows the inner call made.
+     */
+    @Test
+    public void anImportInsideAnImportAnnouncesTheInnerRowsToo() throws Exception {
+        ContentResolver contentResolver = mContext.getContentResolver();
+        ContentObserver[] observer = new ContentObserver[1];
+        CountDownLatch told = watch(contentResolver, DataContentProvider.CONTENT_WALLETS, false, observer);
+        try {
+            DataContentProvider.runInOneTransaction(mContext, () -> {
+                assertNotNull("the nested call wrote nothing",
+                        DataContentProvider.runInOneTransaction(mContext, () -> contentResolver.insert(
+                                DataContentProvider.CONTENT_WALLETS, walletValues("Inner"))));
+                return null;
+            });
+            assertTrue("the row the nested call wrote was never announced",
+                    told.await(5, TimeUnit.SECONDS));
+        } finally {
+            contentResolver.unregisterContentObserver(observer[0]);
+        }
+        checkCursorSize(mDatabase.getWallets(null, null, null, null), 1);
+    }
+
+    /**
+     * The sixteen top level lists, which is every one of them and not a sample of them. The other
+     * thirty branches of the switch are fourteen lists that hang off a row and sixteen single row
+     * uris, and two of those are the case after this one.
+     */
+    private static final Uri[] LIST_URIS = new Uri[] {
+            DataContentProvider.CONTENT_CURRENCIES,
+            DataContentProvider.CONTENT_WALLETS,
+            DataContentProvider.CONTENT_TRANSACTIONS,
+            DataContentProvider.CONTENT_TRANSFERS,
+            DataContentProvider.CONTENT_CATEGORIES,
+            DataContentProvider.CONTENT_DEBTS,
+            DataContentProvider.CONTENT_BUDGETS,
+            DataContentProvider.CONTENT_SAVINGS,
+            DataContentProvider.CONTENT_EVENTS,
+            DataContentProvider.CONTENT_RECURRENT_TRANSACTIONS,
+            DataContentProvider.CONTENT_RECURRENT_TRANSFERS,
+            DataContentProvider.CONTENT_TRANSACTION_MODELS,
+            DataContentProvider.CONTENT_TRANSFER_MODELS,
+            DataContentProvider.CONTENT_PLACES,
+            DataContentProvider.CONTENT_PEOPLE,
+            DataContentProvider.CONTENT_ATTACHMENTS
+    };
+
+    /**
+     * Every column the table insists on, so a row built from two ids that are really there cannot
+     * be refused at all.
+     */
+    private ContentValues transactionValues(long walletId, long categoryId) {
+        ContentValues contentValues = new ContentValues();
+        contentValues.put(Contract.Transaction.WALLET_ID, walletId);
+        contentValues.put(Contract.Transaction.CATEGORY_ID, categoryId);
+        contentValues.put(Contract.Transaction.DATE, DateUtils.getSQLDateTimeString(new Date()));
+        contentValues.put(Contract.Transaction.MONEY, 1000L);
+        contentValues.put(Contract.Transaction.DIRECTION, Contract.Direction.EXPENSE);
+        contentValues.put(Contract.Transaction.TYPE, Contract.TransactionType.STANDARD);
+        contentValues.put(Contract.Transaction.CONFIRMED, true);
+        contentValues.put(Contract.Transaction.COUNT_IN_TOTAL, true);
+        return contentValues;
+    }
+
+    private ContentValues categoryValues(String name) {
+        ContentValues contentValues = new ContentValues();
+        contentValues.put(Contract.Category.NAME, name);
+        contentValues.put(Contract.Category.ICON, "encoded-icon");
+        contentValues.put(Contract.Category.TYPE, Contract.CategoryType.EXPENSE.getValue());
+        contentValues.put(Contract.Category.SHOW_REPORT, true);
+        return contentValues;
+    }
+
+    /**
+     * Every query of the currency table filters DELETED = 0, so a row carrying a 1 is one the app
+     * does not serve while its iso still holds the primary key. A backup restored through
+     * SyncContentProvider writes that column straight through, so an installation can hold every
+     * currency and offer none, and the default set written to repair that collided with those rows
+     * and landed nothing.
+     */
+    @Test
+    public void insertCurrencyBringsBackARowThatIsThereAndNotServed() {
+        assertEquals("TST", mDatabase.insertCurrency(currencyValues("TST")));
+        markDeleted("TST");
+        assertEquals("marking the row deleted did not stop it being served, so what follows is "
+                + "not being asked anything", 0, servedCount("TST"));
+
+        assertEquals("TST", mDatabase.insertCurrency(seedValues("TST")));
+
+        assertEquals("the row is still not served, so the default set cannot be written back over "
+                + "a table that holds it and offers nothing", 1, servedCount("TST"));
+    }
+
+    /**
+     * The editor creates a currency through the same method and must not be given the revive. A
+     * row that came from a backup as deleted holds that backup's name, symbol and decimals, so
+     * answering the editor with it would discard everything the user typed and report success.
+     */
+    @Test
+    public void insertCurrencyDoesNotBringBackARowForACallerThatDidNotAsk() {
+        assertEquals("TST", mDatabase.insertCurrency(currencyValues("TST")));
+        markDeleted("TST");
+
+        assertNull("an insert that did not ask for the revive was answered with an existing row",
+                mDatabase.insertCurrency(currencyValues("TST")));
+
+        assertEquals("a caller that did not ask for the revive brought the row back anyway",
+                0, servedCount("TST"));
+    }
+
+    /** The revive is for the iso it was asked about, not for every row that is not served. */
+    @Test
+    public void insertCurrencyBringsBackOnlyTheIsoItWasAskedAbout() {
+        assertEquals("TST", mDatabase.insertCurrency(currencyValues("TST")));
+        assertEquals("TSU", mDatabase.insertCurrency(currencyValues("TSU")));
+        markDeleted("TST");
+        markDeleted("TSU");
+
+        assertEquals("TST", mDatabase.insertCurrency(seedValues("TST")));
+
+        assertEquals(1, servedCount("TST"));
+        assertEquals("reviving one currency brought back another the caller said nothing about",
+                0, servedCount("TSU"));
+    }
+
+    /**
+     * The scale is the reason this writes as little as it does. Money is stored as a long scaled
+     * by the currency's decimals, which is why updateCurrency reads the old value first and sends
+     * every amount held in that currency through fixCurrencyAmounts before it changes them.
+     */
+    @Test
+    public void insertCurrencyLeavesTheScaleOfTheRowItBringsBack() {
+        ContentValues owned = currencyValues("TST");
+        owned.put(Contract.Currency.DECIMALS, 2);
+        assertEquals("TST", mDatabase.insertCurrency(owned));
+        markDeleted("TST");
+        // the default set's own idea of this currency, at a different scale from the owner's
+        ContentValues fromTheAssetFile = seedValues("TST");
+        fromTheAssetFile.put(Contract.Currency.DECIMALS, 0);
+
+        fromTheAssetFile.put(Contract.Currency.NAME, "From the asset file");
+        fromTheAssetFile.put(Contract.Currency.SYMBOL, "A");
+
+        assertEquals("TST", mDatabase.insertCurrency(fromTheAssetFile));
+
+        assertEquals("bringing the row back moved its decimals, so every amount already stored in "
+                        + "that currency now means something else, with nothing rescaled and "
+                        + "nothing said", 2, servedDecimals("TST"));
+        // the same rule one size down. These are the owner's, and the asset file is not entitled
+        // to them either
+        assertEquals("bringing the row back renamed the owner's currency from the asset file",
+                "Currency TST", servedString("TST", Contract.Currency.NAME));
+        assertEquals("bringing the row back took the owner's symbol from the asset file",
+                "T", servedString("TST", Contract.Currency.SYMBOL));
+        // the uuid is the row's identity in the backup it came from, and the column is NOT NULL
+        // UNIQUE, so writing a computed one over it can also collide and raise out of update,
+        // where the insert above would have answered a quiet -1
+        assertEquals("bringing the row back rewrote the uuid it arrived with",
+                "from-the-backup-TST", storedValue("TST", Schema.Currency.UUID));
+        assertEquals("bringing the row back cleared the owner's favourite flag",
+                "1", storedValue("TST", Schema.Currency.FAVOURITE));
+        // and it is a write, so it says when it happened
+        assertFalse("bringing the row back left the timestamp of the backup it came from, so an "
+                        + "export carries the wrong last edit for it",
+                "1".equals(storedValue("TST", Schema.Currency.LAST_EDIT)));
+    }
+
+    /**
+     * The revive is for a row that is not served. Asking for it against one that is has to be
+     * refused, or a caller that meant to insert is told it did and a row nobody edited has its
+     * timestamp moved. The case below covers a caller that did not ask, and returns at the gate
+     * before this clause is reached, so it cannot stand in for this one.
+     */
+    @Test
+    public void insertCurrencyDoesNotBringBackARowThatIsAlreadyServed() {
+        assertEquals("TST", mDatabase.insertCurrency(currencyValues("TST")));
+        String beforeTheSecondInsert = storedValue("TST", Schema.Currency.LAST_EDIT);
+
+        assertNull("an insert that asked for the revive was answered with a row that is already "
+                        + "served, so a collision reads as a success",
+                mDatabase.insertCurrency(seedValues("TST")));
+
+        assertEquals("the refused insert moved the timestamp of a row it did not change",
+                beforeTheSecondInsert, storedValue("TST", Schema.Currency.LAST_EDIT));
+    }
+
+    @Test
+    public void insertCurrencyStillRefusesOneThatIsAlreadyServed() {
+        assertEquals("TST", mDatabase.insertCurrency(currencyValues("TST")));
+
+        assertNull("a second insert of a currency that is already there was accepted, so the "
+                        + "currency editor can take over one that exists",
+                mDatabase.insertCurrency(currencyValues("TST")));
+    }
+
+    /** What the default set sends, which is the only caller that asks for a revive. */
+    private ContentValues seedValues(String iso) {
+        ContentValues contentValues = currencyValues(iso);
+        contentValues.put(Contract.Currency.REVIVE_IF_DELETED, true);
+        return contentValues;
+    }
+
+    private String servedString(String iso, String column) {
+        Cursor cursor = mDatabase.getCurrencies(new String[] {column},
+                Contract.Currency.ISO + " = ?", new String[] {iso}, null);
+        assertNotNull(cursor);
+        try {
+            assertTrue("no served row for " + iso, cursor.moveToFirst());
+            return cursor.getString(cursor.getColumnIndex(column));
+        } finally {
+            cursor.close();
+        }
+    }
+
+    /**
+     * The state a restore leaves, and not merely a deleted row. A row that arrived from a backup
+     * carries that backup's uuid, which is nothing this build would compute, and whatever the
+     * owner had set on it. A ghost built by deleting one of our own inserts holds exactly the
+     * values a fresh insert would write, so it cannot tell a revive that keeps them from one that
+     * writes them again.
+     */
+    private void markDeleted(String iso) {
+        ContentValues values = new ContentValues();
+        values.put(Schema.Currency.DELETED, true);
+        values.put(Schema.Currency.UUID, "from-the-backup-" + iso);
+        values.put(Schema.Currency.FAVOURITE, true);
+        // a timestamp from the backup and not one this run produced. Left as the insert wrote it,
+        // the case below compares two readings of the clock taken a few statements apart and can
+        // fail on a fast run for a defect that is not there
+        values.put(Schema.Currency.LAST_EDIT, 1L);
+        mDatabase.getWritableDatabase().update(Schema.Currency.TABLE, values,
+                Schema.Currency.ISO + " = ?", new String[] {iso});
+    }
+
+    /** Straight off the table, for the columns the served view does not carry. */
+    private String storedValue(String iso, String column) {
+        Cursor cursor = mDatabase.getWritableDatabase().query(Schema.Currency.TABLE,
+                new String[] {column}, Schema.Currency.ISO + " = ?", new String[] {iso},
+                null, null, null);
+        assertNotNull(cursor);
+        try {
+            assertTrue("no row at all for " + iso, cursor.moveToFirst());
+            return cursor.getString(0);
+        } finally {
+            cursor.close();
+        }
+    }
+
+    private int servedCount(String iso) {
+        Cursor cursor = mDatabase.getCurrencies(new String[] {Contract.Currency.ISO},
+                Contract.Currency.ISO + " = ?", new String[] {iso}, null);
+        try {
+            return cursor == null ? 0 : cursor.getCount();
+        } finally {
+            if (cursor != null) {
+                cursor.close();
+            }
+        }
+    }
+
+    private int servedDecimals(String iso) {
+        Cursor cursor = mDatabase.getCurrencies(new String[] {Contract.Currency.DECIMALS},
+                Contract.Currency.ISO + " = ?", new String[] {iso}, null);
+        assertNotNull(cursor);
+        try {
+            assertTrue("no served row for " + iso, cursor.moveToFirst());
+            return cursor.getInt(cursor.getColumnIndex(Contract.Currency.DECIMALS));
+        } finally {
+            cursor.close();
+        }
+    }
+
+    private ContentValues currencyValues(String iso) {
+        ContentValues contentValues = new ContentValues();
+        contentValues.put(Contract.Currency.ISO, iso);
+        contentValues.put(Contract.Currency.NAME, "Currency " + iso);
+        contentValues.put(Contract.Currency.SYMBOL, "T");
+        // the column is NOT NULL with no default, so a currency without it is refused
+        contentValues.put(Contract.Currency.DECIMALS, 2);
+        return contentValues;
+    }
+
+    /**
+     * Watches a cursor the way a CursorLoader does, by registering on the cursor itself. An
+     * observer put on the resolver by hand instead would prove that the framework delivers a
+     * notification and say nothing about the uri the provider registered the cursor on, which is
+     * the whole of what these cases are about.
+     *
+     * It keeps the uris it is told about instead of counting. A case that only counts cannot tell
+     * its own write from any other write in the process, and these run in the live app, where the
+     * recurrence alarm can fire and a widget observer is already registered. That was harmless
+     * while a cursor only heard about the entities it named and is not now.
+     */
+    private BlockingQueue<Uri> watchCursor(Cursor cursor) {
+        final BlockingQueue<Uri> heard = new LinkedBlockingQueue<>();
+        cursor.registerContentObserver(new ContentObserver(new Handler(Looper.getMainLooper())) {
+
+            @Override
+            public void onChange(boolean selfChange, Uri uri) {
+                heard.add(uri != null ? uri : Uri.EMPTY);
+            }
+
+        });
+        return heard;
+    }
+
+    /**
+     * The same, for an observer put on the resolver instead of on a cursor.
+     */
+    private BlockingQueue<Uri> watchUris(ContentResolver contentResolver, Uri uri,
+                                         boolean descendants, ContentObserver[] out) {
+        final BlockingQueue<Uri> heard = new LinkedBlockingQueue<>();
+        ContentObserver observer = new ContentObserver(new Handler(Looper.getMainLooper())) {
+
+            @Override
+            public void onChange(boolean selfChange, Uri changed) {
+                heard.add(changed != null ? changed : Uri.EMPTY);
+            }
+
+        };
+        contentResolver.registerContentObserver(uri, descendants, observer);
+        out[0] = observer;
+        return heard;
+    }
+
+    /**
+     * Two seconds of nothing at all, and not two seconds of anything but one named uri. A write
+     * that announced the bare authority would reach this observer as that uri and not as the row
+     * it wrote, so a case that only refused the row uri would let it through. Call it after
+     * something else has been shown to have heard the write, or it is two seconds of waiting for
+     * a notification that has not been sent yet and it passes whatever the truth is.
+     */
+    private void assertHeardNothing(BlockingQueue<Uri> heard, String message)
+            throws InterruptedException {
+        Uri uri = heard.poll(2000L, TimeUnit.MILLISECONDS);
+        assertNull(message + ", it was told about " + uri, uri);
+    }
+
+    /**
+     * Waits for one named uri and ignores anything else that arrives. Five seconds in total and
+     * not five seconds per uri, so a run of unrelated announcements cannot stretch it.
+     */
+    private void assertHeard(BlockingQueue<Uri> heard, Uri expected, String message)
+            throws InterruptedException {
+        long deadline = SystemClock.uptimeMillis() + 5000L;
+        for (long left = 5000L; left > 0L; left = deadline - SystemClock.uptimeMillis()) {
+            Uri uri = heard.poll(left, TimeUnit.MILLISECONDS);
+            if (uri == null) {
+                break;
+            }
+            if (expected.equals(uri)) {
+                return;
+            }
+        }
+        fail(message);
+    }
+
+    /**
+     * Two writes of two entities, and the second one is what makes this a check. A single write
+     * cannot tell a cursor registered on the whole provider apart from one registered on whatever
+     * that write happens to announce, so a provider that put every cursor on the currency list
+     * would pass a currency only version of this on its own.
+     *
+     * A currency is the first, because it is the entity the fewest queries read. A provider that
+     * registered each cursor on the entities its own query names would leave every cursor here
+     * except the currency one hearing nothing about it.
+     */
+    @Test
+    public void everyListCursorIsToldAboutAWriteToAnyEntity() throws Exception {
+        ContentResolver contentResolver = mContext.getContentResolver();
+        assertEveryListCursorIsToldAbout(contentResolver, DataContentProvider.CONTENT_CURRENCIES,
+                currencyValues("TSA"));
+        assertEveryListCursorIsToldAbout(contentResolver, DataContentProvider.CONTENT_WALLETS,
+                walletValues("Written while every list is open"));
+    }
+
+    /**
+     * Opens its own cursors each time it is called. Watching one cursor twice would not work,
+     * since the wrapper replays what it has already been told to an observer that registers after
+     * it, so the second round would start with its latch already down.
+     */
+    private void assertEveryListCursorIsToldAbout(ContentResolver contentResolver, Uri listUri,
+                                                  ContentValues values) throws Exception {
+        Cursor[] cursors = new Cursor[LIST_URIS.length];
+        List<BlockingQueue<Uri>> heard = new ArrayList<>();
+        try {
+            for (int i = 0; i < LIST_URIS.length; i++) {
+                cursors[i] = contentResolver.query(LIST_URIS[i], null, null, null, null);
+                assertNotNull("the provider answered nothing for " + LIST_URIS[i], cursors[i]);
+                heard.add(watchCursor(cursors[i]));
+            }
+            Uri written = contentResolver.insert(listUri, values);
+            assertNotNull("the provider refused a row that is fine, so nothing was written for "
+                    + "these cursors to hear about", written);
+            for (int i = 0; i < LIST_URIS.length; i++) {
+                assertHeard(heard.get(i), written, "the cursor on " + LIST_URIS[i] + " was not "
+                        + "told about " + written + ", so a screen holding it goes on showing "
+                        + "what was true before that write");
+            }
+        } finally {
+            for (Cursor cursor : cursors) {
+                if (cursor != null) {
+                    cursor.close();
+                }
+            }
+        }
+    }
+
+    /**
+     * The two kinds of branch the case above does not open, a list that hangs off a row and a
+     * single row.
+     *
+     * Two writes on the first, and for the same reason as above. A transaction because that is the
+     * relation this cursor was given a uri for by hand, saving a debt's master transaction writes
+     * the debt's people. A category because nothing about a debt's people reads one, so a provider
+     * registering this cursor on what its own query names would fail there and pass the
+     * transaction on its own. The single row uri takes a currency for the same job, since the debt
+     * row reads a wallet, a category, a transaction, a person and a place and never a currency.
+     */
+    @Test
+    public void aSubListAndASingleRowCursorAreToldAboutAWriteToAnotherEntity() throws Exception {
+        ContentResolver contentResolver = mContext.getContentResolver();
+        long walletId = insertWallet("Wallet the debt is against", "encoded-icon", "EUR", null,
+                true, 0L, false, null);
+        long debtId = insertDebt(Contract.DebtType.DEBT.getValue(), "encoded-icon", "desc",
+                new Date(), null, walletId, null, null, 2000L, false, null, null, false);
+        long categoryId = insertCategory("Category the transaction is in", "encoded-icon",
+                Contract.CategoryType.EXPENSE.getValue(), null, true, null);
+        Uri people = Uri.withAppendedPath(
+                ContentUris.withAppendedId(DataContentProvider.CONTENT_DEBTS, debtId), "people");
+        assertCursorIsToldAbout(contentResolver, people,
+                DataContentProvider.CONTENT_TRANSACTIONS, transactionValues(walletId, categoryId));
+        assertCursorIsToldAbout(contentResolver, people,
+                DataContentProvider.CONTENT_CATEGORIES, categoryValues("Written somewhere else"));
+        assertCursorIsToldAbout(contentResolver,
+                ContentUris.withAppendedId(DataContentProvider.CONTENT_DEBTS, debtId),
+                DataContentProvider.CONTENT_CURRENCIES, currencyValues("TSD"));
+    }
+
+    /**
+     * Its own cursor each time, for the reason the list helper opens its own.
+     */
+    private void assertCursorIsToldAbout(ContentResolver contentResolver, Uri cursorUri,
+                                         Uri listUri, ContentValues values)
+            throws Exception {
+        Cursor cursor = contentResolver.query(cursorUri, null, null, null, null);
+        try {
+            assertNotNull("the provider answered nothing for " + cursorUri, cursor);
+            BlockingQueue<Uri> heard = watchCursor(cursor);
+            Uri written = contentResolver.insert(listUri, values);
+            assertNotNull("the provider refused a row that is fine, so nothing was written for "
+                    + "this cursor to hear about", written);
+            assertHeard(heard, written, "the cursor on " + cursorUri + " was not told about "
+                    + written + ", so the detail screen holding it goes on showing what was true "
+                    + "before that write");
+        } finally {
+            if (cursor != null) {
+                cursor.close();
+            }
+        }
+    }
+
+    /**
+     * The replay, which is the one thing MultiUriCursorWrapper still does that the platform cursor
+     * does not, and the reason it is still wrapped now that there is one uri to register. A loader
+     * registers on its cursor after the query it is loading has returned, and on a real screen the
+     * time between the two is the first window filling. AbstractCursor drops a change that lands
+     * in there.
+     *
+     * Writing and then registering proves nothing on its own, since the announcement is delivered
+     * asynchronously and would reach the second watcher through the ordinary path if it had not
+     * arrived yet. What rules that out is the lock: registerContentObserver takes the one onChange
+     * holds across both its dispatch and its add, so the second registration cannot run until the
+     * change has been stored. Waiting for the first watcher only says the dispatch happened, and
+     * that dispatch is a post the main thread can drain before the add has run.
+     */
+    @Test
+    public void aCursorHandsAChangeItWasAlreadyToldAboutToALateObserver() throws Exception {
+        ContentResolver contentResolver = mContext.getContentResolver();
+        Cursor cursor = contentResolver.query(DataContentProvider.CONTENT_WALLETS, null, null,
+                null, null);
+        try {
+            assertNotNull("the provider answered nothing for the wallet list", cursor);
+            BlockingQueue<Uri> early = watchCursor(cursor);
+            Uri written = contentResolver.insert(DataContentProvider.CONTENT_WALLETS,
+                    walletValues("Written before the late observer"));
+            assertNotNull("the provider refused a wallet that is fine, so nothing was written for "
+                    + "this cursor to be told about", written);
+            assertHeard(early, written, "the cursor was never told about " + written
+                    + ", so this case cannot say anything about what a later observer gets");
+            assertHeard(watchCursor(cursor), written, "a change the cursor had already been told "
+                    + "about was not handed to an observer that registered after it, so a loader "
+                    + "registering after its query would hold what was true before that write");
+        } finally {
+            if (cursor != null) {
+                cursor.close();
+            }
+        }
+    }
+
+    /**
+     * The registration the widget makes, made here rather than by calling the widget, since
+     * nothing can read back what the framework was asked to watch. So this pins the mechanism and
+     * not WalletWidgetObserver's own two lines, which no case reaches.
+     *
+     * The second half is the part worth having. Nothing ever announces CONTENT_ALL itself, so an
+     * observer that did not ask for the uris below it hears none of these writes, and that is what
+     * carries the whole registration.
+     */
+    @Test
+    public void anObserverOnTheWholeProviderIsToldWhicheverUriTheWriteAnnounces() throws Exception {
+        ContentResolver contentResolver = mContext.getContentResolver();
+        Uri[] lists = {DataContentProvider.CONTENT_CURRENCIES, DataContentProvider.CONTENT_WALLETS};
+        ContentValues[] values = {currencyValues("TSB"), walletValues("Watched by the widget")};
+        for (int i = 0; i < lists.length; i++) {
+            ContentObserver[] wide = new ContentObserver[1];
+            ContentObserver[] narrow = new ContentObserver[1];
+            BlockingQueue<Uri> wideHeard =
+                    watchUris(contentResolver, DataContentProvider.CONTENT_ALL, true, wide);
+            BlockingQueue<Uri> narrowHeard =
+                    watchUris(contentResolver, DataContentProvider.CONTENT_ALL, false, narrow);
+            try {
+                Uri written = contentResolver.insert(lists[i], values[i]);
+                assertNotNull("the provider refused a row that is fine, so nothing was written "
+                        + "for this observer to hear about", written);
+                assertHeard(wideHeard, written, "an observer on the whole provider was not told "
+                        + "about " + written + ", which is how the widget would go stale after a "
+                        + "write");
+                assertHeardNothing(narrowHeard, "an observer that did not ask for the uris below "
+                        + "CONTENT_ALL was told about a write. Either the descendants flag is not "
+                        + "what carries this, or something now announces the bare authority");
+            } finally {
+                contentResolver.unregisterContentObserver(wide[0]);
+                contentResolver.unregisterContentObserver(narrow[0]);
+            }
+        }
+    }
+
+    /**
+     * The two importers both throw a checked exception, and the transaction body cannot declare
+     * one, so runInOneTransaction wraps it on the way in and unwraps it on the way out. Every
+     * other case here throws an unchecked one and never reaches that path.
+     */
+    @Test
+    public void aCheckedFailureLeavesTheImportAsItself() throws Exception {
+        ContentResolver contentResolver = mContext.getContentResolver();
+        IOException thrown = new IOException("the backup file ended early");
+        try {
+            DataContentProvider.runInOneTransaction(mContext, () -> {
+                assertNotNull("the provider refused a wallet that is fine, so there is no row for "
+                                + "this case to roll back",
+                        contentResolver.insert(DataContentProvider.CONTENT_WALLETS, walletValues("Rolled back")));
+                throw thrown;
+            });
+            fail("the failure did not leave runInOneTransaction");
+        } catch (IOException expected) {
+            // the same object, not one that merely reads the same. The screen that reports a
+            // failed import branches on what it caught, and a build that rebuilt the failure from
+            // its message would keep the words and lose the type
+            assertSame("the failure was rebuilt on the way out instead of carried out", thrown, expected);
+        }
+        checkCursorSize(mDatabase.getWallets(null, null, null, null), 0);
+    }
+
+    @Test
+    public void aNestedInTransactionCommitsWithTheOuterOne() {
+        long nestedId = mDatabase.inTransaction(() -> {
+            insertWallet("Written before the nested call", "icon", "EUR", "note", true, 0L, false, "tag");
+            return mDatabase.inTransaction(() ->
+                    insertWallet("Nested", "icon", "EUR", "note", true, 0L, false, "tag"));
+        });
+        assertTrue("the nested call did not insert a row", nestedId > 0L);
+        checkCursorSize(mDatabase.getWallets(null, null, null, null), 2);
+    }
+
+    @Test
+    public void aRolledBackWalletDeleteLeavesItsAttachmentFileOnDisk() throws Exception {
+        File file = writeAttachmentFile("path1");
+        long walletId = walletWithAnAttachedTransaction("path1");
+        try {
+            mDatabase.<Integer>inTransaction(() -> {
+                mDatabase.deleteWallet(walletId);
+                throw new IllegalStateException("forced after the delete");
+            });
+            fail("the body's exception did not leave inTransaction");
+        } catch (IllegalStateException expected) {
+            // as above
+        }
+        // the rows came back, so a file deleted here would be one the restored rows still name
+        assertTrue("the attachment file was deleted before the commit", file.exists());
+        checkCursorSize(mDatabase.getWallets(null, null, null, null), 1);
+        assertRowCount(Schema.Attachment.TABLE, null, 1);
+    }
+
+    @Test
+    public void aCommittedWalletDeleteRemovesItsAttachmentFile() throws Exception {
+        File file = writeAttachmentFile("path1");
+        long walletId = walletWithAnAttachedTransaction("path1");
+        mDatabase.inTransaction(() -> mDatabase.deleteWallet(walletId));
+        assertFalse("the attachment file outlived a committed delete", file.exists());
+        checkCursorSize(mDatabase.getWallets(null, null, null, null), 0);
+        assertRowCount(Schema.Attachment.TABLE, null, 0);
+    }
+
+    /**
+     * The attachment names a nested body collects belong to the outer transaction. A nested call
+     * that started a list of its own, or cleared the one already there, would leave this file on
+     * the volume forever with no row naming it, and every count in this case would still be right.
+     */
+    @Test
+    public void aNestedDeleteHandsItsAttachmentFilesToTheOuterCommit() throws Exception {
+        File file = writeAttachmentFile("path1");
+        long walletId = walletWithAnAttachedTransaction("path1");
+        mDatabase.inTransaction(() -> mDatabase.inTransaction(() -> mDatabase.deleteWallet(walletId)));
+        assertFalse("the file removed by the nested body outlived the outer commit", file.exists());
+        assertRowCount(Schema.Attachment.TABLE, null, 0);
+    }
+
+    /**
+     * The rollback half of the case above. A nested body that collected the names into a list of
+     * its own and deleted them itself would pass that one, and would leave this rollback holding
+     * rows that name files already gone from the volume.
+     *
+     * Its own file name, because the attachment folder is not cleaned between cases and another
+     * one deliberately leaves path1 behind, which would make the assertion below pass on its own.
+     */
+    @Test
+    public void aRolledBackNestedDeleteLeavesItsAttachmentFileOnDisk() throws Exception {
+        File file = writeAttachmentFile("pathNestedRollback");
+        long walletId = walletWithAnAttachedTransaction("pathNestedRollback");
+        try {
+            mDatabase.<Integer>inTransaction(() -> {
+                mDatabase.inTransaction(() -> mDatabase.deleteWallet(walletId));
+                throw new ImportStopped();
+            });
+            fail("the body's exception did not leave inTransaction");
+        } catch (ImportStopped expected) {
+            // the delete came back out, so the file the nested body collected has to still be here
+        }
+        assertTrue("the nested body deleted its attachment file before the outer transaction "
+                + "committed, and the rollback has put back rows that name it", file.exists());
+        assertRowCount(Schema.Attachment.TABLE, null, 1);
+    }
+
+    /**
+     * The case the join exists for, and the only one that tells it apart from a real nested pair.
+     * Android rolls the whole transaction back when an inner frame ends unmarked and says nothing,
+     * so under a nested pair the row written after the catch would disappear at the commit while
+     * this method returned as though it had worked.
+     */
+    @Test
+    public void anOuterBodyThatCatchesANestedFailureStillCommits() {
+        mDatabase.inTransaction(() -> {
+            insertWallet("Written before the nested call", "icon", "EUR", "note", true, 0L, false, "tag");
+            try {
+                mDatabase.<Long>inTransaction(() -> {
+                    throw new ImportStopped();
+                });
+                fail("the nested body's exception did not leave inTransaction");
+            } catch (ImportStopped caughtAndCarriedOn) {
+                // exactly what the old refusal made impossible and the join has to survive
+            }
+            return insertWallet("Written after the catch", "icon", "EUR", "note", true, 0L, false, "tag");
+        });
+        checkCursorSize(mDatabase.getWallets(null, null, null, null), 2);
     }
 
     @Test(expected = SQLiteDataException.class)
@@ -1253,6 +3005,382 @@ public class SQLDatabaseTest {
     }
 
     @Test
+    public void debtMasterTransactionTakesTheDebtDate() throws Exception {
+        long walletId = insertWallet("Test wallet 1", "encoded-icon-1", "EUR", "note-wallet-1", true, 2000L, false, "tag-wallet-1");
+        // A past date, so a failure reads as a wrong month, not a wrong time of day. What
+        // actually left the existing insertDebt and updateDebt tests blind to this is that they
+        // never assert the transaction's date at all, only how many rows came back.
+        Date picked = DateUtils.getDateFromSQLDateString("2026-07-01");
+        long debtId = insertDebt(Contract.DebtType.DEBT.getValue(), "encoded-icon-1", "desc-1", picked, null, walletId, "note-1", null, 2000L, false, null, "tag-1", true);
+        assertEquals(DateUtils.getSQLDateTimeString(picked), masterTransactionDate(debtId));
+        // and it follows the debt when the date is edited
+        Date moved = DateUtils.getDateFromSQLDateString("2026-06-15");
+        assertEquals(1, updateDebt(debtId, Contract.DebtType.DEBT.getValue(), "encoded-icon-1", "desc-1", moved, null, walletId, "note-1", null, 2000L, false, null, "tag-1"));
+        assertEquals(DateUtils.getSQLDateTimeString(moved), masterTransactionDate(debtId));
+    }
+
+    private String masterTransactionDate(long debtId) {
+        Cursor cursor = mDatabase.getTransactions(new String[] {Contract.Transaction.DATE},
+                Contract.Transaction.DEBT_ID + " = ?", new String[] {String.valueOf(debtId)}, null);
+        assertNotNull(cursor);
+        assertEquals(1, cursor.getCount());
+        cursor.moveToFirst();
+        String date = cursor.getString(cursor.getColumnIndex(Contract.Transaction.DATE));
+        cursor.close();
+        return date;
+    }
+
+    @Test
+    public void savingADebtKeepsItsMasterTransactionTime() throws Exception {
+        long walletId = insertWallet("Test wallet 1", "encoded-icon-1", "EUR", "note-wallet-1", true, 2000L, false, "tag-wallet-1");
+        long categoryId = getSystemCategory(Contract.CategoryTag.DEBT);
+        Date picked = DateUtils.getDateFromSQLDateString("2026-07-01");
+        long debtId = insertDebt(Contract.DebtType.DEBT.getValue(), "encoded-icon-1", "desc-1", picked, null, walletId, "note-1", null, 2000L, false, null, "tag-1", true);
+        // A master transaction is created at the start of the debt's day, so the time under test
+        // has to be put there the way a user does it, through the transaction editor.
+        Date afternoon = DateUtils.getDateFromSQLDateTimeString("2026-07-01 14:30:45");
+        assertEquals(1, updateTransaction(masterTransactionId(debtId), 2000L, afternoon, "desc-1", categoryId,
+                Contract.Direction.INCOME, Contract.TransactionType.DEBT, walletId, null, "note-1",
+                null, null, debtId, true, true, null, null, "tag-1"));
+        assertEquals("2026-07-01 14:30:45", masterTransactionDate(debtId));
+        // The debt editor sends its date on every save, so this is a save that changed something
+        // else and never opened the date field.
+        assertEquals(1, updateDebt(debtId, Contract.DebtType.DEBT.getValue(), "encoded-icon-1", "desc-edited", picked, null, walletId, "note-1", null, 2000L, false, null, "tag-1"));
+        assertEquals("2026-07-01 14:30:45", masterTransactionDate(debtId));
+        // And a date that did move takes the transaction to the new day at the same time.
+        Date moved = DateUtils.getDateFromSQLDateString("2026-06-15");
+        assertEquals(1, updateDebt(debtId, Contract.DebtType.DEBT.getValue(), "encoded-icon-1", "desc-edited", moved, null, walletId, "note-1", null, 2000L, false, null, "tag-1"));
+        assertEquals("2026-06-15 14:30:45", masterTransactionDate(debtId));
+    }
+
+    @Test
+    public void editingTheMasterTransactionMovesTheDebt() throws Exception {
+        long walletId = insertWallet("Test wallet 1", "encoded-icon-1", "EUR", "note-wallet-1", true, 2000L, false, "tag-wallet-1");
+        long otherWalletId = insertWallet("Test wallet 2", "encoded-icon-2", "EUR", "note-wallet-2", true, 2000L, false, "tag-wallet-2");
+        long placeId = insertPlace("place-1", "encoded-icon-1", "fake-address-1", 7.3467, 8.364, "tag-1");
+        long otherPlaceId = insertPlace("place-2", "encoded-icon-2", "fake-address-2", 9.1234, 3.567, "tag-2");
+        long personId1 = insertPerson("person-1", "encoded-icon-1", "note-1", "tag-1");
+        long personId2 = insertPerson("person-2", "encoded-icon-2", "note-2", "tag-2");
+        long personId3 = insertPerson("person-3", "encoded-icon-3", "note-3", "tag-3");
+        long categoryId = getSystemCategory(Contract.CategoryTag.DEBT);
+        Date date = DateUtils.getDateFromSQLDateString("2026-07-01");
+        Long[] peopleIds = new Long[] {personId1, personId2};
+        long debtId = insertDebt(Contract.DebtType.DEBT.getValue(), "encoded-icon-1", "desc-1", date, null, walletId, "note-1", placeId, 2000L, false, peopleIds, "tag-1", true);
+        long transactionId = masterTransactionId(debtId);
+        // Everything a debt owns, moved at once at the method the transaction editor's save
+        // reaches, which is where Edit on this row in the transaction list ends up. Without
+        // the sync the debt keeps 2000.00, 2026-07-01, the first wallet, the first place, the old
+        // description, the old note and the first two people.
+        Date moved = DateUtils.getDateFromSQLDateTimeString("2026-08-25 14:30:00");
+        Long[] editedPeopleIds = new Long[] {personId2, personId3};
+        assertEquals(1, updateTransaction(transactionId, 3000L, moved, "desc-edited", categoryId,
+                Contract.Direction.INCOME, Contract.TransactionType.DEBT, otherWalletId, otherPlaceId,
+                "note-edited", null, null, debtId, true, true, editedPeopleIds, null, "tag-transaction"));
+        // The expiration date and the archived flag have no column on a transaction, and the
+        // tag has one on both tables and is carried by neither direction, so all three are
+        // asserted at the values the debt was inserted with. The tag asserted here is the debt's
+        // own and the save above sends a different one to the transaction. The icon is asserted
+        // unchanged for its own reason, encoded-icon-1 is not readable json, so renamedDebtIcon
+        // leaves it alone. A debt whose icon does move is pinned by
+        // renamingTheMasterTransactionMovesTheDebtIconLetters below.
+        checkDebtId(debtId, Contract.DebtType.DEBT.getValue(), "encoded-icon-1", "desc-edited", moved, null, otherWalletId, "note-edited", otherPlaceId, 3000L, false, editedPeopleIds, "tag-1");
+        // And the transaction keeps the time of day it was given. The debt carries a day, so
+        // writing the debt's date back onto the transaction would drop it to 00:00:00.
+        assertEquals("2026-08-25 14:30:00", masterTransactionDate(debtId));
+    }
+
+    @Test
+    public void editingADebtPaymentLeavesTheDebtAlone() throws Exception {
+        long walletId = insertWallet("Test wallet 1", "encoded-icon-1", "EUR", "note-wallet-1", true, 2000L, false, "tag-wallet-1");
+        long paidCategoryId = getSystemCategory(Contract.CategoryTag.PAID_DEBT);
+        Date date = DateUtils.getDateFromSQLDateString("2026-07-01");
+        long debtId = insertDebt(Contract.DebtType.DEBT.getValue(), "encoded-icon-1", "desc-1", date, null, walletId, "note-1", null, 2000L, false, null, "tag-1", false);
+        // A payment carries the same type and the same debt id as a master transaction and is
+        // told apart only by its category. Syncing one would drag the debt to the amount and the
+        // day of whichever payment was edited.
+        long paymentId = insertTransaction(500L, date, "payment", paidCategoryId, Contract.Direction.EXPENSE,
+                Contract.TransactionType.DEBT, walletId, null, "payment-note", null, null, debtId, true, true, null, null, "tag-payment");
+        Date moved = DateUtils.getDateFromSQLDateTimeString("2026-08-25 14:30:00");
+        assertEquals(1, updateTransaction(paymentId, 800L, moved, "payment-edited", paidCategoryId,
+                Contract.Direction.EXPENSE, Contract.TransactionType.DEBT, walletId, null, "payment-note-edited",
+                null, null, debtId, true, true, null, null, "tag-payment"));
+        checkDebtId(debtId, Contract.DebtType.DEBT.getValue(), "encoded-icon-1", "desc-1", date, null, walletId, "note-1", null, 2000L, false, null, "tag-1");
+    }
+
+    @Test
+    public void aBlankDescriptionIsNotCarriedToTheDebt() throws Exception {
+        long walletId = insertWallet("Test wallet 1", "encoded-icon-1", "EUR", "note-wallet-1", true, 2000L, false, "tag-wallet-1");
+        long categoryId = getSystemCategory(Contract.CategoryTag.DEBT);
+        Date date = DateUtils.getDateFromSQLDateString("2026-07-01");
+        long debtId = insertDebt(Contract.DebtType.DEBT.getValue(), "encoded-icon-1", "desc-1", date, null, walletId, "note-1", null, 2000L, false, null, "tag-1", true);
+        long transactionId = masterTransactionId(debtId);
+        // The transaction editor has no validator on the description, so it can be blanked there.
+        // Debt.DESCRIPTION is NOT NULL and the debt editor holds it non empty after a trim, so
+        // carrying a blank across would leave a debt that its own editor then refuses to save.
+        // One space and not the empty string, since one space is the blank a length test lets
+        // through and the guard's own trim does not.
+        //
+        // The money moves in the same save and is asserted below at its new amount. Without it
+        // this case passes just as well on a build that never syncs anything, which is the state
+        // it is meant to tell apart from a working guard.
+        assertEquals(1, updateTransaction(transactionId, 3000L, date, " ", categoryId,
+                Contract.Direction.INCOME, Contract.TransactionType.DEBT, walletId, null, "note-1",
+                null, null, debtId, true, true, null, null, "tag-transaction"));
+        checkDebtId(debtId, Contract.DebtType.DEBT.getValue(), "encoded-icon-1", "desc-1", date, null, walletId, "note-1", null, 3000L, false, null, "tag-1");
+    }
+
+    @Test
+    public void renamingTheMasterTransactionMovesTheDebtIconLetters() throws Exception {
+        long walletId = insertWallet("Test wallet 1", "encoded-icon-1", "EUR", "note-wallet-1", true, 2000L, false, "tag-wallet-1");
+        long categoryId = getSystemCategory(Contract.CategoryTag.DEBT);
+        Date date = DateUtils.getDateFromSQLDateString("2026-07-01");
+        // The letters a debt of this name would have been given by its own editor.
+        String storedIcon = new ColorIcon("#FF0000", "RP").toString();
+        long debtId = insertDebt(Contract.DebtType.DEBT.getValue(), storedIcon, "Rent Payment", date, null, walletId, "note-1", null, 2000L, false, null, "tag-1", true);
+        long transactionId = masterTransactionId(debtId);
+        assertEquals(1, updateTransaction(transactionId, 2000L, date, "Car Loan", categoryId,
+                Contract.Direction.INCOME, Contract.TransactionType.DEBT, walletId, null, "note-1",
+                null, null, debtId, true, true, null, null, "tag-transaction"));
+        // Same color, new letters. Without this the list row reads Car Loan beside an RP icon.
+        String renamedIcon = new ColorIcon("#FF0000", "CL").toString();
+        checkDebtId(debtId, Contract.DebtType.DEBT.getValue(), renamedIcon, "Car Loan", date, null, walletId, "note-1", null, 2000L, false, null, "tag-1");
+    }
+
+    @Test
+    public void anEditThatIsNotARenameLeavesTheDebtIconAlone() throws Exception {
+        long walletId = insertWallet("Test wallet 1", "encoded-icon-1", "EUR", "note-wallet-1", true, 2000L, false, "tag-wallet-1");
+        long categoryId = getSystemCategory(Contract.CategoryTag.DEBT);
+        Date date = DateUtils.getDateFromSQLDateString("2026-07-01");
+        // Letters that do not match the description, which IconPicker.restoreColorIcon can write.
+        // A debt whose letters already agree would pass this case whether the rename test is here
+        // or not, since the value written would be the value already stored.
+        String storedIcon = new ColorIcon("#FF0000", "r").toString();
+        long debtId = insertDebt(Contract.DebtType.DEBT.getValue(), storedIcon, "rent payment", date, null, walletId, "note-1", null, 2000L, false, null, "tag-1", true);
+        long transactionId = masterTransactionId(debtId);
+        // Same description, new amount. The editor sends the description on every save, so this
+        // reaches the sync looking exactly like a rename does.
+        assertEquals(1, updateTransaction(transactionId, 5000L, date, "rent payment", categoryId,
+                Contract.Direction.INCOME, Contract.TransactionType.DEBT, walletId, null, "note-1",
+                null, null, debtId, true, true, null, null, "tag-transaction"));
+        checkDebtId(debtId, Contract.DebtType.DEBT.getValue(), storedIcon, "rent payment", date, null, walletId, "note-1", null, 5000L, false, null, "tag-1");
+    }
+
+    /**
+     * A debt is read in the currency of its wallet and what is left to settle is that amount less
+     * its payments, added up with no currency in the sum. The payments stay in the wallet they
+     * were filed against when the debt moves, so the move is refused.
+     */
+    @Test
+    public void movingADebtAwayFromTheCurrencyItsPaymentsAreInIsRefused() throws Exception {
+        long euroWallet = insertWallet("Test wallet 1", "encoded-icon-1", "EUR", "note-wallet-1", true, 2000L, false, "tag-wallet-1");
+        long dollarWallet = insertWallet("Test wallet 2", "encoded-icon-2", "USD", "note-wallet-2", true, 2000L, false, "tag-wallet-2");
+        long paidCategoryId = getSystemCategory(Contract.CategoryTag.PAID_DEBT);
+        Date date = DateUtils.getDateFromSQLDateString("2026-07-01");
+        long debtId = insertDebt(Contract.DebtType.DEBT.getValue(), "encoded-icon-1", "desc-1", date, null, euroWallet, "note-1", null, 2000L, false, null, "tag-1", false);
+        insertTransaction(500L, date, "payment", paidCategoryId, Contract.Direction.EXPENSE,
+                Contract.TransactionType.DEBT, euroWallet, null, "payment-note", null, null, debtId, true, true, null, null, "tag-payment");
+        try {
+            updateDebt(debtId, Contract.DebtType.DEBT.getValue(), "encoded-icon-1", "desc-1", date, null, dollarWallet, "note-1", null, 2000L, false, null, "tag-1");
+            fail("The debt was moved away from the currency its payments are in");
+        } catch (SQLiteDataException e) {
+            assertEquals(Contract.ErrorCode.WALLETS_NOT_CONSISTENT, e.getErrorCode());
+        }
+        checkDebtId(debtId, Contract.DebtType.DEBT.getValue(), "encoded-icon-1", "desc-1", date, null, euroWallet, "note-1", null, 2000L, false, null, "tag-1");
+    }
+
+    /**
+     * And the move back is allowed. A ledger that was moved across currencies before any of this
+     * existed holds a debt in one currency and its payments in another, and the move that puts it
+     * right is the one a check made against the debt's own wallet would refuse hardest. Deleting
+     * the debt would then be the only way out, and that takes the payments with it.
+     */
+    @Test
+    public void movingADebtBackToTheCurrencyItsPaymentsAreInIsAllowed() throws Exception {
+        long euroWallet = insertWallet("Test wallet 1", "encoded-icon-1", "EUR", "note-wallet-1", true, 2000L, false, "tag-wallet-1");
+        long dollarWallet = insertWallet("Test wallet 2", "encoded-icon-2", "USD", "note-wallet-2", true, 2000L, false, "tag-wallet-2");
+        long paidCategoryId = getSystemCategory(Contract.CategoryTag.PAID_DEBT);
+        Date date = DateUtils.getDateFromSQLDateString("2026-07-01");
+        // The debt is held in euro and its payment sits in the dollar wallet.
+        long debtId = insertDebt(Contract.DebtType.DEBT.getValue(), "encoded-icon-1", "desc-1", date, null, euroWallet, "note-1", null, 2000L, false, null, "tag-1", false);
+        insertMismatchedPayment(date, paidCategoryId, euroWallet, dollarWallet, debtId);
+        assertEquals(1, updateDebt(debtId, Contract.DebtType.DEBT.getValue(), "encoded-icon-1", "desc-1", date, null, dollarWallet, "note-1", null, 2000L, false, null, "tag-1"));
+        checkDebtId(debtId, Contract.DebtType.DEBT.getValue(), "encoded-icon-1", "desc-1", date, null, dollarWallet, "note-1", null, 2000L, false, null, "tag-1");
+    }
+
+    /**
+     * A mismatched debt can still be moved between two wallets of the currency it is read in. That
+     * move puts nothing right and takes nothing further wrong, and refusing it would leave a
+     * legacy ledger with one permitted wallet and deletion as the only other way out.
+     */
+    @Test
+    public void movingAMismatchedDebtWithinItsOwnCurrencyIsAllowed() throws Exception {
+        long euroWallet = insertWallet("Test wallet 1", "encoded-icon-1", "EUR", "note-wallet-1", true, 2000L, false, "tag-wallet-1");
+        long otherEuroWallet = insertWallet("Test wallet 2", "encoded-icon-2", "EUR", "note-wallet-2", true, 2000L, false, "tag-wallet-2");
+        long dollarWallet = insertWallet("Test wallet 3", "encoded-icon-3", "USD", "note-wallet-3", true, 2000L, false, "tag-wallet-3");
+        long paidCategoryId = getSystemCategory(Contract.CategoryTag.PAID_DEBT);
+        Date date = DateUtils.getDateFromSQLDateString("2026-07-01");
+        long debtId = insertDebt(Contract.DebtType.DEBT.getValue(), "encoded-icon-1", "desc-1", date, null, euroWallet, "note-1", null, 2000L, false, null, "tag-1", false);
+        insertMismatchedPayment(date, paidCategoryId, euroWallet, dollarWallet, debtId);
+        assertEquals(1, updateDebt(debtId, Contract.DebtType.DEBT.getValue(), "encoded-icon-1", "desc-1", date, null, otherEuroWallet, "note-1", null, 2000L, false, null, "tag-1"));
+        checkDebtId(debtId, Contract.DebtType.DEBT.getValue(), "encoded-icon-1", "desc-1", date, null, otherEuroWallet, "note-1", null, 2000L, false, null, "tag-1");
+    }
+
+    /**
+     * And a third currency is still refused, which is what separates the case above from no check
+     * at all on a mismatched debt.
+     */
+    @Test
+    public void movingAMismatchedDebtToAThirdCurrencyIsRefused() throws Exception {
+        long euroWallet = insertWallet("Test wallet 1", "encoded-icon-1", "EUR", "note-wallet-1", true, 2000L, false, "tag-wallet-1");
+        long dollarWallet = insertWallet("Test wallet 2", "encoded-icon-2", "USD", "note-wallet-2", true, 2000L, false, "tag-wallet-2");
+        long poundWallet = insertWallet("Test wallet 3", "encoded-icon-3", "GBP", "note-wallet-3", true, 2000L, false, "tag-wallet-3");
+        long paidCategoryId = getSystemCategory(Contract.CategoryTag.PAID_DEBT);
+        Date date = DateUtils.getDateFromSQLDateString("2026-07-01");
+        long debtId = insertDebt(Contract.DebtType.DEBT.getValue(), "encoded-icon-1", "desc-1", date, null, euroWallet, "note-1", null, 2000L, false, null, "tag-1", false);
+        insertMismatchedPayment(date, paidCategoryId, euroWallet, dollarWallet, debtId);
+        try {
+            updateDebt(debtId, Contract.DebtType.DEBT.getValue(), "encoded-icon-1", "desc-1", date, null, poundWallet, "note-1", null, 2000L, false, null, "tag-1");
+            fail("The debt was moved to a currency matching neither what it holds nor its payments");
+        } catch (SQLiteDataException e) {
+            assertEquals(Contract.ErrorCode.WALLETS_NOT_CONSISTENT, e.getErrorCode());
+        }
+        checkDebtId(debtId, Contract.DebtType.DEBT.getValue(), "encoded-icon-1", "desc-1", date, null, euroWallet, "note-1", null, 2000L, false, null, "tag-1");
+    }
+
+    /**
+     * A debt whose payments are already spread over two currencies is still held to those two. It
+     * cannot be put fully right by any single wallet, which is a reason to leave both of the
+     * currencies it holds open and not a reason to let it go anywhere at all.
+     */
+    @Test
+    public void movingAMixedDebtToACurrencyItHoldsNoneOfIsRefused() throws Exception {
+        long euroWallet = insertWallet("Test wallet 1", "encoded-icon-1", "EUR", "note-wallet-1", true, 2000L, false, "tag-wallet-1");
+        long dollarWallet = insertWallet("Test wallet 2", "encoded-icon-2", "USD", "note-wallet-2", true, 2000L, false, "tag-wallet-2");
+        long poundWallet = insertWallet("Test wallet 3", "encoded-icon-3", "GBP", "note-wallet-3", true, 2000L, false, "tag-wallet-3");
+        long paidCategoryId = getSystemCategory(Contract.CategoryTag.PAID_DEBT);
+        Date date = DateUtils.getDateFromSQLDateString("2026-07-01");
+        long debtId = insertDebt(Contract.DebtType.DEBT.getValue(), "encoded-icon-1", "desc-1", date, null, euroWallet, "note-1", null, 2000L, false, null, "tag-1", false);
+        insertTransaction(500L, date, "payment", paidCategoryId, Contract.Direction.EXPENSE,
+                Contract.TransactionType.DEBT, euroWallet, null, "payment-note", null, null, debtId, true, true, null, null, "tag-payment");
+        insertMismatchedPayment(date, paidCategoryId, euroWallet, dollarWallet, debtId);
+        try {
+            updateDebt(debtId, Contract.DebtType.DEBT.getValue(), "encoded-icon-1", "desc-1", date, null, poundWallet, "note-1", null, 2000L, false, null, "tag-1");
+            fail("The debt was moved to a currency it holds nothing in");
+        } catch (SQLiteDataException e) {
+            assertEquals(Contract.ErrorCode.WALLETS_NOT_CONSISTENT, e.getErrorCode());
+        }
+        checkDebtId(debtId, Contract.DebtType.DEBT.getValue(), "encoded-icon-1", "desc-1", date, null, euroWallet, "note-1", null, 2000L, false, null, "tag-1");
+    }
+
+    /**
+     * And either of the two currencies it does hold is still open to it.
+     */
+    @Test
+    public void movingAMixedDebtToOneOfItsOwnCurrenciesIsAllowed() throws Exception {
+        long euroWallet = insertWallet("Test wallet 1", "encoded-icon-1", "EUR", "note-wallet-1", true, 2000L, false, "tag-wallet-1");
+        long dollarWallet = insertWallet("Test wallet 2", "encoded-icon-2", "USD", "note-wallet-2", true, 2000L, false, "tag-wallet-2");
+        long paidCategoryId = getSystemCategory(Contract.CategoryTag.PAID_DEBT);
+        Date date = DateUtils.getDateFromSQLDateString("2026-07-01");
+        long debtId = insertDebt(Contract.DebtType.DEBT.getValue(), "encoded-icon-1", "desc-1", date, null, euroWallet, "note-1", null, 2000L, false, null, "tag-1", false);
+        insertTransaction(500L, date, "payment", paidCategoryId, Contract.Direction.EXPENSE,
+                Contract.TransactionType.DEBT, euroWallet, null, "payment-note", null, null, debtId, true, true, null, null, "tag-payment");
+        insertMismatchedPayment(date, paidCategoryId, euroWallet, dollarWallet, debtId);
+        assertEquals(1, updateDebt(debtId, Contract.DebtType.DEBT.getValue(), "encoded-icon-1", "desc-1", date, null, dollarWallet, "note-1", null, 2000L, false, null, "tag-1"));
+        checkDebtId(debtId, Contract.DebtType.DEBT.getValue(), "encoded-icon-1", "desc-1", date, null, dollarWallet, "note-1", null, 2000L, false, null, "tag-1");
+    }
+
+    /**
+     * A debt with nothing filed against it strands nothing, so it can be moved anywhere. A debt
+     * given its master transaction strands nothing either, since updateDebt carries that
+     * transaction to the new wallet with it.
+     */
+    @Test
+    public void movingADebtThatStrandsNothingGoesThrough() throws Exception {
+        long euroWallet = insertWallet("Test wallet 1", "encoded-icon-1", "EUR", "note-wallet-1", true, 2000L, false, "tag-wallet-1");
+        long dollarWallet = insertWallet("Test wallet 2", "encoded-icon-2", "USD", "note-wallet-2", true, 2000L, false, "tag-wallet-2");
+        Date date = DateUtils.getDateFromSQLDateString("2026-07-01");
+        long debtId = insertDebt(Contract.DebtType.DEBT.getValue(), "encoded-icon-1", "desc-1", date, null, euroWallet, "note-1", null, 2000L, false, null, "tag-1", true);
+        assertEquals(1, updateDebt(debtId, Contract.DebtType.DEBT.getValue(), "encoded-icon-1", "desc-1", date, null, dollarWallet, "note-1", null, 2000L, false, null, "tag-1"));
+        checkDebtId(debtId, Contract.DebtType.DEBT.getValue(), "encoded-icon-1", "desc-1", date, null, dollarWallet, "note-1", null, 2000L, false, null, "tag-1");
+        assertEquals(dollarWallet, masterTransactionWallet(debtId));
+    }
+
+    /**
+     * The same move made from the other side. A debt's master transaction still offers its wallet,
+     * and the sync carries that wallet onto the debt, so this reaches the debt without the debt
+     * editor being opened.
+     *
+     * The transaction is asserted back where it started as well as the debt. Nothing here runs
+     * inside a database transaction, so a refusal raised after the row was written would leave the
+     * two in different wallets, which is worse than the move it refused.
+     */
+    @Test
+    public void movingTheMasterTransactionToAnotherCurrencyMovesNothing() throws Exception {
+        long euroWallet = insertWallet("Test wallet 1", "encoded-icon-1", "EUR", "note-wallet-1", true, 2000L, false, "tag-wallet-1");
+        long dollarWallet = insertWallet("Test wallet 2", "encoded-icon-2", "USD", "note-wallet-2", true, 2000L, false, "tag-wallet-2");
+        long categoryId = getSystemCategory(Contract.CategoryTag.DEBT);
+        long paidCategoryId = getSystemCategory(Contract.CategoryTag.PAID_DEBT);
+        Date date = DateUtils.getDateFromSQLDateString("2026-07-01");
+        long debtId = insertDebt(Contract.DebtType.DEBT.getValue(), "encoded-icon-1", "desc-1", date, null, euroWallet, "note-1", null, 2000L, false, null, "tag-1", true);
+        // The payment is what the move would strand. Without one the debt has nothing left behind
+        // and the move is allowed, which movingADebtThatStrandsNothingGoesThrough pins.
+        insertTransaction(500L, date, "payment", paidCategoryId, Contract.Direction.EXPENSE,
+                Contract.TransactionType.DEBT, euroWallet, null, "payment-note", null, null, debtId, true, true, null, null, "tag-payment");
+        long transactionId = masterTransactionId(debtId);
+        try {
+            updateTransaction(transactionId, 2000L, date, "desc-1", categoryId,
+                    Contract.Direction.INCOME, Contract.TransactionType.DEBT, dollarWallet, null,
+                    "note-1", null, null, debtId, true, true, null, null, "tag-transaction");
+            fail("The master transaction was moved to a wallet in another currency");
+        } catch (SQLiteDataException e) {
+            assertEquals(Contract.ErrorCode.WALLETS_NOT_CONSISTENT, e.getErrorCode());
+        }
+        checkDebtId(debtId, Contract.DebtType.DEBT.getValue(), "encoded-icon-1", "desc-1", date, null, euroWallet, "note-1", null, 2000L, false, null, "tag-1");
+        assertEquals(euroWallet, masterTransactionWallet(debtId));
+    }
+
+    /**
+     * A payment in another currency than its debt, the way a ledger from before
+     * checkDebtPaymentWalletCurrency can hold one. insertTransaction refuses that now, so the row
+     * goes in on the debt's own wallet and is then moved straight on the table.
+     */
+    private void insertMismatchedPayment(Date date, long paidCategoryId, long debtWalletId,
+                                         long walletId, long debtId) {
+        long paymentId = insertTransaction(500L, date, "payment", paidCategoryId, Contract.Direction.EXPENSE,
+                Contract.TransactionType.DEBT, debtWalletId, null, "payment-note", null, null, debtId, true, true, null, null, "tag-payment");
+        ContentValues contentValues = new ContentValues();
+        contentValues.put(Schema.Transaction.WALLET, walletId);
+        assertEquals(1, mDatabase.getWritableDatabase().update(Schema.Transaction.TABLE, contentValues,
+                Schema.Transaction.ID + " = ?", new String[] {String.valueOf(paymentId)}));
+    }
+
+    private long masterTransactionWallet(long debtId) {
+        Cursor cursor = mDatabase.getTransaction(masterTransactionId(debtId),
+                new String[] {Contract.Transaction.WALLET_ID});
+        assertNotNull(cursor);
+        assertEquals(1, cursor.getCount());
+        cursor.moveToFirst();
+        long walletId = cursor.getLong(cursor.getColumnIndex(Contract.Transaction.WALLET_ID));
+        cursor.close();
+        return walletId;
+    }
+
+    private long masterTransactionId(long debtId) {
+        // By category, since a debt that also carries a payment has more than one transaction and
+        // only one of them is the master. Every debt here is a debt and not a credit, so the debt
+        // system category is the only one this has to match.
+        Cursor cursor = mDatabase.getTransactions(new String[] {Contract.Transaction.ID},
+                Contract.Transaction.DEBT_ID + " = ? AND " + Contract.Transaction.CATEGORY_ID + " = ?",
+                new String[] {String.valueOf(debtId), String.valueOf(getSystemCategory(Contract.CategoryTag.DEBT))}, null);
+        assertNotNull(cursor);
+        assertEquals(1, cursor.getCount());
+        cursor.moveToFirst();
+        long id = cursor.getLong(cursor.getColumnIndex(Contract.Transaction.ID));
+        cursor.close();
+        return id;
+    }
+
+    @Test
     public void deleteDebt() throws Exception {
         long id1 = insertWallet("Test wallet 1", "encoded-icon-1", "EUR", "note-wallet-1", true, 2000L, false, "tag-wallet-1");
         long id2 = insertPlace("place-2", "encoded-icon-2", "fake-address-2", 7.3467, 8.364, "tag-2");
@@ -1299,6 +3427,89 @@ public class SQLDatabaseTest {
         checkBudgetId(id7, Schema.BudgetType.INCOMES, null, startDate, endDate, 5000L, "EUR", walletIds1, "tag-1", 0L);
         checkBudgetId(id8, Schema.BudgetType.EXPENSES, null, startDate, endDate, 10000L, "EUR", walletIds2, "tag-2", 0L);
         checkBudgetId(id9, Schema.BudgetType.CATEGORY, id6, startDate, endDate, 13000L, "USD", walletIds3, "tag-3", 0L);
+    }
+
+    @Test
+    public void budgetCoveringSeveralCategoriesCountsThemAll() throws Exception {
+        long wallet = insertWallet("Test wallet 1", "encoded-icon-1", "EUR", "note-wallet-1", true, 2000L, false, "tag-wallet-1");
+        long food = insertCategory("Food", "encoded-icon-food", 1, null, true, "tag-food");
+        long rent = insertCategory("Rent", "encoded-icon-rent", 1, null, true, "tag-rent");
+        long petrol = insertCategory("Petrol", "encoded-icon-petrol", 1, null, true, "tag-petrol");
+        Calendar calendar = Calendar.getInstance();
+        calendar.add(Calendar.MONTH, -3);
+        Date startDate = calendar.getTime();
+        calendar.add(Calendar.MONTH, 6);
+        Date endDate = calendar.getTime();
+        Long[] wallets = new Long[] {wallet};
+        long budget = insertBudgetCovering(Schema.BudgetType.CATEGORY, new Long[] {food, rent}, startDate, endDate, 5000L, "EUR", wallets, "tag-1");
+        insertTransaction(100, new Date(), null, food, Contract.Direction.EXPENSE, Contract.TransactionType.STANDARD, wallet, null, null, null, null, null, true, true, null, null, "tag");
+        insertTransaction(250, new Date(), null, rent, Contract.Direction.EXPENSE, Contract.TransactionType.STANDARD, wallet, null, null, null, null, null, true, true, null, null, "tag");
+        // the control: a category the budget does not cover, in the same wallet and the same
+        // period, so a budget that matched on the wallet alone would swallow it
+        insertTransaction(700, new Date(), null, petrol, Contract.Direction.EXPENSE, Contract.TransactionType.STANDARD, wallet, null, null, null, null, null, true, true, null, null, "tag");
+        checkBudgetCategories(budget, new Long[] {food, rent}, "Food, Rent", -350L);
+    }
+
+    @Test
+    public void budgetNamingOneCategoryStillFillsTheJoinTable() throws Exception {
+        // every caller that predates a budget covering more than one category writes the single
+        // column, and the queries read the join table, so the two have to meet
+        long wallet = insertWallet("Test wallet 1", "encoded-icon-1", "EUR", "note-wallet-1", true, 2000L, false, "tag-wallet-1");
+        long food = insertCategory("Food", "encoded-icon-food", 1, null, true, "tag-food");
+        Calendar calendar = Calendar.getInstance();
+        calendar.add(Calendar.MONTH, -3);
+        Date startDate = calendar.getTime();
+        calendar.add(Calendar.MONTH, 6);
+        Date endDate = calendar.getTime();
+        long budget = insertBudget(Schema.BudgetType.CATEGORY, food, startDate, endDate, 5000L, "EUR", new Long[] {wallet}, "tag-1");
+        insertTransaction(100, new Date(), null, food, Contract.Direction.EXPENSE, Contract.TransactionType.STANDARD, wallet, null, null, null, null, null, true, true, null, null, "tag");
+        checkBudgetCategories(budget, new Long[] {food}, "Food", -100L);
+    }
+
+    @Test
+    public void updateBudgetReplacesTheCategoriesItCovers() throws Exception {
+        long wallet = insertWallet("Test wallet 1", "encoded-icon-1", "EUR", "note-wallet-1", true, 2000L, false, "tag-wallet-1");
+        long food = insertCategory("Food", "encoded-icon-food", 1, null, true, "tag-food");
+        long rent = insertCategory("Rent", "encoded-icon-rent", 1, null, true, "tag-rent");
+        long petrol = insertCategory("Petrol", "encoded-icon-petrol", 1, null, true, "tag-petrol");
+        Calendar calendar = Calendar.getInstance();
+        calendar.add(Calendar.MONTH, -3);
+        Date startDate = calendar.getTime();
+        calendar.add(Calendar.MONTH, 6);
+        Date endDate = calendar.getTime();
+        Long[] wallets = new Long[] {wallet};
+        long budget = insertBudgetCovering(Schema.BudgetType.CATEGORY, new Long[] {food, rent}, startDate, endDate, 5000L, "EUR", wallets, "tag-1");
+        insertTransaction(100, new Date(), null, food, Contract.Direction.EXPENSE, Contract.TransactionType.STANDARD, wallet, null, null, null, null, null, true, true, null, null, "tag");
+        insertTransaction(250, new Date(), null, rent, Contract.Direction.EXPENSE, Contract.TransactionType.STANDARD, wallet, null, null, null, null, null, true, true, null, null, "tag");
+        insertTransaction(700, new Date(), null, petrol, Contract.Direction.EXPENSE, Contract.TransactionType.STANDARD, wallet, null, null, null, null, null, true, true, null, null, "tag");
+        checkBudgetCategories(budget, new Long[] {food, rent}, "Food, Rent", -350L);
+        // food is dropped and petrol is added, so the figure follows the new pair, and the row
+        // that the update flagged deleted for rent comes back instead of being written twice
+        updateBudgetCovering(budget, Schema.BudgetType.CATEGORY, new Long[] {rent, petrol}, startDate, endDate, 5000L, "EUR", wallets, "tag-1");
+        checkBudgetCategories(budget, new Long[] {rent, petrol}, "Petrol, Rent", -950L);
+    }
+
+    @Test(expected = SQLiteDataException.class)
+    public void deleteCategoryReachedOnlyThroughTheJoinTable() throws Exception {
+        // the budget row itself names food, so rent is in the join table and nowhere else
+        long wallet = insertWallet("Test wallet 1", "encoded-icon-1", "EUR", "note-wallet-1", true, 2000L, false, "tag-wallet-1");
+        long food = insertCategory("Food", "encoded-icon-food", 1, null, true, "tag-food");
+        long rent = insertCategory("Rent", "encoded-icon-rent", 1, null, true, "tag-rent");
+        insertBudgetCovering(Schema.BudgetType.CATEGORY, new Long[] {food, rent}, new Date(), new Date(), 3000L, "EUR", new Long[] {wallet}, "tag");
+        mDatabase.deleteCategory(rent);
+    }
+
+    @Test
+    public void deleteBudgetTakesItsCategoriesWithIt() throws Exception {
+        long wallet = insertWallet("Test wallet 1", "encoded-icon-1", "EUR", "note-wallet-1", true, 2000L, false, "tag-wallet-1");
+        long food = insertCategory("Food", "encoded-icon-food", 1, null, true, "tag-food");
+        long rent = insertCategory("Rent", "encoded-icon-rent", 1, null, true, "tag-rent");
+        long budget = insertBudgetCovering(Schema.BudgetType.CATEGORY, new Long[] {food, rent}, new Date(), new Date(), 3000L, "EUR", new Long[] {wallet}, "tag");
+        mDatabase.deleteBudget(budget);
+        checkCursorSize(mDatabase.getBudget(budget, null), 0);
+        // with the join rows gone the categories are free again
+        mDatabase.deleteCategory(rent);
+        mDatabase.deleteCategory(food);
     }
 
     @Test(expected = SQLiteDataException.class)
@@ -1653,6 +3864,128 @@ public class SQLDatabaseTest {
         checkSavingId(id3, "desc-2-edited", "encoded-icon-edited", 50L, 73000L, id1, null, false, "note-2-edited", "tag-2-edited");
     }
 
+    /**
+     * A saving is read in the currency of its wallet and its progress is worked out from its
+     * deposits and withdrawals, added up with no currency in the sum. They stay in the wallet they
+     * were filed against when the saving moves, so the move is refused.
+     */
+    @Test
+    public void movingASavingAwayFromTheCurrencyItsDepositsAreInIsRefused() throws Exception {
+        long euroWallet = insertWallet("Test wallet 1", "encoded-icon-1", "EUR", "note-wallet-1", true, 2000L, false, "tag-wallet-1");
+        long dollarWallet = insertWallet("Test wallet 2", "encoded-icon-2", "USD", "note-wallet-2", true, 2000L, false, "tag-wallet-2");
+        long depositCategoryId = getSystemCategory(Contract.CategoryTag.SAVING_DEPOSIT);
+        Date date = DateUtils.getDateFromSQLDateString("2026-07-01");
+        long savingId = insertSaving("desc-1", "encoded-icon", 0L, 10000L, euroWallet, null, false, "note-1", "tag-1");
+        insertTransaction(500L, date, "deposit", depositCategoryId, Contract.Direction.EXPENSE,
+                Contract.TransactionType.SAVING, euroWallet, null, "deposit-note", null, savingId, null, true, true, null, null, "tag-deposit");
+        try {
+            updateSaving(savingId, "desc-1", "encoded-icon", 0L, 10000L, dollarWallet, null, false, "note-1", "tag-1");
+            fail("The saving was moved away from the currency its deposits are in");
+        } catch (SQLiteDataException e) {
+            assertEquals(Contract.ErrorCode.WALLETS_NOT_CONSISTENT, e.getErrorCode());
+        }
+        checkSavingId(savingId, "desc-1", "encoded-icon", 0L, 10000L, euroWallet, null, false, "note-1", "tag-1");
+    }
+
+    /**
+     * And the move back is allowed, for the reason spelled out on the debt half of this,
+     * movingADebtBackToTheCurrencyItsPaymentsAreInIsAllowed.
+     */
+    @Test
+    public void movingASavingBackToTheCurrencyItsDepositsAreInIsAllowed() throws Exception {
+        long euroWallet = insertWallet("Test wallet 1", "encoded-icon-1", "EUR", "note-wallet-1", true, 2000L, false, "tag-wallet-1");
+        long dollarWallet = insertWallet("Test wallet 2", "encoded-icon-2", "USD", "note-wallet-2", true, 2000L, false, "tag-wallet-2");
+        long depositCategoryId = getSystemCategory(Contract.CategoryTag.SAVING_DEPOSIT);
+        Date date = DateUtils.getDateFromSQLDateString("2026-07-01");
+        long savingId = insertSaving("desc-1", "encoded-icon", 0L, 10000L, euroWallet, null, false, "note-1", "tag-1");
+        insertTransaction(500L, date, "deposit", depositCategoryId, Contract.Direction.EXPENSE,
+                Contract.TransactionType.SAVING, dollarWallet, null, "deposit-note", null, savingId, null, true, true, null, null, "tag-deposit");
+        assertEquals(1, updateSaving(savingId, "desc-1", "encoded-icon", 0L, 10000L, dollarWallet, null, false, "note-1", "tag-1"));
+        checkSavingId(savingId, "desc-1", "encoded-icon", 0L, 10000L, dollarWallet, null, false, "note-1", "tag-1");
+    }
+
+    /**
+     * And the wallet is still a field you can change. Without this case a guard that refused every
+     * move, or one that refused every save naming a wallet, passes the refusal above just as well.
+     * The debt half of it is editingTheMasterTransactionMovesTheDebt, which moves a debt between
+     * two wallets that agree.
+     */
+    @Test
+    public void movingASavingToAWalletInTheSameCurrencyGoesThrough() throws Exception {
+        long walletId = insertWallet("Test wallet 1", "encoded-icon-1", "EUR", "note-wallet-1", true, 2000L, false, "tag-wallet-1");
+        long otherWalletId = insertWallet("Test wallet 2", "encoded-icon-2", "EUR", "note-wallet-2", true, 2000L, false, "tag-wallet-2");
+        long depositCategoryId = getSystemCategory(Contract.CategoryTag.SAVING_DEPOSIT);
+        Date date = DateUtils.getDateFromSQLDateString("2026-07-01");
+        long savingId = insertSaving("desc-1", "encoded-icon", 0L, 10000L, walletId, null, false, "note-1", "tag-1");
+        insertTransaction(500L, date, "deposit", depositCategoryId, Contract.Direction.EXPENSE,
+                Contract.TransactionType.SAVING, walletId, null, "deposit-note", null, savingId, null, true, true, null, null, "tag-deposit");
+        assertEquals(1, updateSaving(savingId, "desc-1", "encoded-icon", 0L, 10000L, otherWalletId, null, false, "note-1", "tag-1"));
+        checkSavingId(savingId, "desc-1", "encoded-icon", 0L, 10000L, otherWalletId, null, false, "note-1", "tag-1");
+    }
+
+    /**
+     * A saving with nothing filed against it strands nothing, so it can be moved anywhere. A goal
+     * created against the wrong wallet and corrected straight away is the ordinary case of this.
+     */
+    @Test
+    public void movingASavingThatStrandsNothingGoesThrough() throws Exception {
+        long euroWallet = insertWallet("Test wallet 1", "encoded-icon-1", "EUR", "note-wallet-1", true, 2000L, false, "tag-wallet-1");
+        long dollarWallet = insertWallet("Test wallet 2", "encoded-icon-2", "USD", "note-wallet-2", true, 2000L, false, "tag-wallet-2");
+        long savingId = insertSaving("desc-1", "encoded-icon", 0L, 10000L, euroWallet, null, false, "note-1", "tag-1");
+        assertEquals(1, updateSaving(savingId, "desc-1", "encoded-icon", 0L, 10000L, dollarWallet, null, false, "note-1", "tag-1"));
+        checkSavingId(savingId, "desc-1", "encoded-icon", 0L, 10000L, dollarWallet, null, false, "note-1", "tag-1");
+    }
+
+    /**
+     * A saving's progress counts only the rows that have landed, which is confirmed and dated at
+     * or before this moment, and it is what the savings list adds to its start money to show.
+     *
+     * The saving here carries a row of every kind that rule has to leave out, which separates it
+     * from the rules it is most likely to be rewritten into: dropping the date test, dropping
+     * the confirmed test, narrowing it to deposits, or counting every row the saving has all
+     * give something else. It is those cases and not every rule that could be written, so a
+     * rewrite landing on the same figure for this saving goes through.
+     *
+     * This pins one sum. It says nothing about the ceiling the transaction editor holds a
+     * withdrawal to, which is worked out there over the rows in date order, and the sum here
+     * carries no date order, so it is not a check that the saving stays above zero at every
+     * moment.
+     */
+    @Test
+    public void savingProgressCountsOnlyTheRowsThatHaveLanded() throws Exception {
+        long wallet = insertWallet("Test wallet 1", "encoded-icon-1", "EUR", "note-wallet-1", true, 0L, false, "tag-wallet-1");
+        long saving = insertSaving("desc-1", "encoded-icon", 0L, 10000L, wallet, null, false, "note-1", "tag-1");
+        long deposit = getSystemCategory(Contract.CategoryTag.SAVING_DEPOSIT);
+        long withdraw = getSystemCategory(Contract.CategoryTag.SAVING_WITHDRAW);
+        Calendar calendar = Calendar.getInstance();
+        calendar.add(Calendar.MONTH, 1);
+        Date nextMonth = calendar.getTime();
+        // Landed, so the progress counts them: a confirmed deposit of 1000 and a confirmed
+        // withdrawal of 100, both dated now. The withdrawal is the only landed row counted
+        // negatively, so without it the progress cannot tell a rule that counts every landed row
+        // from one that counts only landed deposits.
+        insertTransaction(1000, new Date(), null, deposit, Contract.Direction.EXPENSE, Contract.TransactionType.SAVING, wallet, null, null, null, saving, null, true, true, null, null, "tag");
+        insertTransaction(100, new Date(), null, withdraw, Contract.Direction.INCOME, Contract.TransactionType.SAVING, wallet, null, null, null, saving, null, true, true, null, null, "tag");
+        // Left out by the date alone, one on each side: a confirmed deposit of 400 and a
+        // confirmed withdrawal of 300, both dated next month. Without them a rule with no date
+        // test at all reads the same as this one.
+        insertTransaction(400, nextMonth, null, deposit, Contract.Direction.EXPENSE, Contract.TransactionType.SAVING, wallet, null, null, null, saving, null, true, true, null, null, "tag");
+        insertTransaction(300, nextMonth, null, withdraw, Contract.Direction.INCOME, Contract.TransactionType.SAVING, wallet, null, null, null, saving, null, true, true, null, null, "tag");
+        // Left out by the confirmed test alone, one on each side: an unconfirmed withdrawal of
+        // 200 and an unconfirmed deposit of 500, both dated now. Without them a rule that counts
+        // every row dated at or before now reads the same as this one.
+        insertTransaction(200, new Date(), null, withdraw, Contract.Direction.INCOME, Contract.TransactionType.SAVING, wallet, null, null, null, saving, null, false, true, null, null, "tag");
+        insertTransaction(500, new Date(), null, deposit, Contract.Direction.EXPENSE, Contract.TransactionType.SAVING, wallet, null, null, null, saving, null, false, true, null, null, "tag");
+        // Left out by both, an unconfirmed withdrawal of 50 dated next month, so a rule that
+        // drops one test still has to drop the other to reach it.
+        insertTransaction(50, nextMonth, null, withdraw, Contract.Direction.INCOME, Contract.TransactionType.SAVING, wallet, null, null, null, saving, null, false, true, null, null, "tag");
+
+        Cursor cursor = mDatabase.getSavings(null, null, null, null);
+        assertEquals(true, cursor.moveToFirst());
+        assertEquals(900L, cursor.getLong(cursor.getColumnIndex(Contract.Saving.PROGRESS)));
+        cursor.close();
+    }
+
     @Test
     public void deleteSaving() throws Exception {
         long id1 = insertWallet("Test wallet 1", "encoded-icon-1", "EUR", "note-wallet-1", true, 2000L, false, "tag-wallet-1");
@@ -1892,6 +4225,28 @@ public class SQLDatabaseTest {
         checkDebtId(id7, Contract.DebtType.DEBT.getValue(), "icon", "desc", date, null, id1, null, null, 10000L, false, new Long[] {id6}, null);
         checkTransactionId(id8, 10, date, "desc", id3, Contract.Direction.INCOME, 0, id1, null, null, null, null, null, true, true, new Long[] {id4}, null);
         checkTransferId(id9, "desc", date, id1, id2, null, 10, 10, 0, null, null, null, true, true, null, null);
+        // Every accessor the checks above read through filters on deleted = 0, so a row flagged
+        // as deleted and a row that is gone look identical through all of them. Ask the tables
+        // for the flag instead. The fixture gave person 5 a row in each of the four tables
+        // asserted below.
+        //
+        // The five deletes in deletePerson used to share one boolean and could only go soft
+        // together. That boolean is gone and nothing couples them now, so any subset of the five
+        // can regress on its own, and this sees only the subsets that include the person delete,
+        // because a real delete of the person row cascades every flagged link row away.
+        //
+        // The person table is asserted last on purpose. Put it first and a maintainer fixing the
+        // person delete brings the cascade back, which hides every link delete still writing a
+        // flag and lets the test go green with four of the five wrong. Last, each fix uncovers
+        // the next failure.
+        //
+        // EventPeople is the one other table deletePerson writes, and it is not asserted here
+        // because the fixture never links person 5 to an event, so the count would come back
+        // zero whichever branch ran.
+        assertRowCount(Schema.DebtPeople.TABLE, Schema.DebtPeople.DELETED + " = 1", 0);
+        assertRowCount(Schema.TransactionPeople.TABLE, Schema.TransactionPeople.DELETED + " = 1", 0);
+        assertRowCount(Schema.TransferPeople.TABLE, Schema.TransferPeople.DELETED + " = 1", 0);
+        assertRowCount(Schema.Person.TABLE, Schema.Person.DELETED + " = 1", 0);
     }
 
     @Test
@@ -1922,6 +4277,28 @@ public class SQLDatabaseTest {
         checkCursorSize(mDatabase.getAttachments(null, null, null, null), 1);
         assertEquals(1, mDatabase.deleteAttachment(id2));
         checkCursorSize(mDatabase.getAttachments(null, null, null, null), 0);
+    }
+
+    @Test
+    public void reportFilterDropsAHiddenCategoryAndAHiddenParent() throws Exception {
+        long wallet = insertWallet("Wallet", "icon", "EUR", null, true, 0L, false, "tag-wallet");
+        long shown = insertCategory("Shown", "icon", 0, null, true, "tag-shown");
+        long hidden = insertCategory("Hidden", "icon", 0, null, false, "tag-hidden");
+        long shownChild = insertCategory("Shown child", "icon", 0, shown, true, "tag-shown-child");
+        long hiddenChild = insertCategory("Hidden child", "icon", 0, shown, false, "tag-hidden-child");
+        long childOfHidden = insertCategory("Child of hidden", "icon", 0, hidden, true, "tag-child-of-hidden");
+        Date date = new Date();
+        insertTransaction(100L, date, "on a shown category", shown, Contract.Direction.EXPENSE, 0, wallet, null, null, null, null, null, true, true, null, null, "tag-1");
+        insertTransaction(100L, date, "on a hidden category", hidden, Contract.Direction.EXPENSE, 0, wallet, null, null, null, null, null, true, true, null, null, "tag-2");
+        insertTransaction(100L, date, "on a shown child", shownChild, Contract.Direction.EXPENSE, 0, wallet, null, null, null, null, null, true, true, null, null, "tag-3");
+        insertTransaction(100L, date, "on a hidden child", hiddenChild, Contract.Direction.EXPENSE, 0, wallet, null, null, null, null, null, true, true, null, null, "tag-4");
+        insertTransaction(100L, date, "on a shown child of a hidden category", childOfHidden, Contract.Direction.EXPENSE, 0, wallet, null, null, null, null, null, true, true, null, null, "tag-5");
+        // the reports keep the two rows whose own category and parent are both shown
+        String[] projection = new String[] {Contract.Transaction.ID, Contract.Transaction.CATEGORY_ID};
+        checkCursorSize(mDatabase.getTransactions(projection, Contract.Transaction.REPORT_FILTER, null, null), 2);
+        // reading the own flag alone keeps the child of a hidden category, which is the third row
+        checkCursorSize(mDatabase.getTransactions(projection, Contract.Transaction.CATEGORY_SHOW_REPORT + " = 1", null, null), 3);
+        checkCursorSize(mDatabase.getTransactions(projection, null, null, null), 5);
     }
 
 }

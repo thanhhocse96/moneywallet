@@ -18,7 +18,7 @@
   -->
 
 <resources>
-    <string name="app_name">MoneyWallet</string>
+    <string name="app_name">Tallybook</string>
 
     <string name="menu_transaction">"معاملات"</string>
     <string name="menu_category">"دسته بندی‌ها"</string>
@@ -33,10 +33,7 @@
     <string name="menu_people">"افراد"</string>
     <string name="menu_converter">"مبدل"</string>
     <string name="menu_calculator">"ماشین حساب"</string>
-    <string name="menu_search_atm">"جستجوی خودپرداز"</string>
-    <string name="menu_search_bank">"جستجوی بانک"</string>
     <string name="menu_setting">"تنظیمات"</string>
-    <string name="menu_support_developer">"پشتیبانی توسعه‌دهنده"</string>
     <string name="menu_about">"درباره"</string>
 
     <!-- Transactions -->
@@ -79,7 +76,6 @@
     <string name="action_new">"جدید"</string>
     <string name="action_edit">"ویرایش"</string>
     <string name="action_search">"جستجو"</string>
-    <string name="action_filter">"فیلتر"</string>
     <string name="action_remove">"حذف"</string>
     <string name="action_open">"باز"</string>
     <string name="action_undo">"لغو"</string>
@@ -123,6 +119,7 @@
     <string name="hint_type">"نوع"</string>
     <string name="hint_incomes">"درآمدها"</string>
     <string name="hint_expenses">"هزینه‌ها"</string>
+    <string name="hint_transfers">"نقل و انتقالات"</string>
     <string name="hint_net_incomes">"درآمدهای خالص"</string>
     <string name="hint_summary">"خلاصه"</string>
     <string name="hint_address">"آدرس"</string>
@@ -132,8 +129,6 @@
     <string name="hint_directory">"دایرکتوری"</string>
     <string name="hint_navigate_up">"حرکت به بالا"</string>
     <string name="hint_password">"گذرواژه"</string>
-    <string name="hint_atm_name">"خودپرداز نام"</string>
-    <string name="hint_bank_name">"نام بانک"</string>
     <string name="hint_attachments">"پیوست‌ها"</string>
     <string name="hint_operation_in_progress">"در جریان …"</string>
     <string name="hint_search_something">"چیزی را جستجو کنید"</string>
@@ -149,7 +144,6 @@
     <string name="hint_auto_backup_only_if_data_changed">"فقط اگر داده تغییر کند"</string>
     <string name="hint_auto_backup_every_n_hours">"هر %d ساعت"</string>
     <string name="hint_auto_backup_folder">"پوشه"</string>
-    <string name="hint_auto_backup_root_folder">"ریشه"</string>
 
     <string name="total_wallet_name">"جمع کل"</string>
 
@@ -187,10 +181,7 @@
     <string name="title_activity_search_transaction">"جستجو"</string>
     <string name="title_activity_calendar">"تقویم"</string>
     <string name="title_activity_map">"نقشه"</string>
-    <string name="title_activity_backend_explorer">"کاوش در backend"</string>
-    <string name="title_activity_backend_file_picker">"یک فایل انتخاب کنید"</string>
     <string name="title_activity_backend_folder_picker">"یک پوشه را انتخاب کنید"</string>
-    <string name="title_activity_support_developer">"پشتیبانی از توسعه دهنده"</string>
 
     <string name="title_fragment_item_wallet">"کیف پول"</string>
     <string name="title_fragment_item_transaction">"تراکنش"</string>
@@ -221,9 +212,6 @@
     <string name="menu_action_service_auto_backup">"پشتیبان گیری خودکار"</string>
     <string name="menu_action_select_folder">"پوشه را انتخاب کنید"</string>
 
-    <string name="bottom_sheet_icon_picker_title">"آیکون را شخصی کنید"</string>
-    <string name="bottom_sheet_icon_picker_action_select_icon">"یک آیکون را انتخاب کنید"</string>
-    <string name="bottom_sheet_icon_picker_action_change_icon">"آیکون را تغییر دهید"</string>
     <string name="bottom_sheet_icon_picker_action_remove_icon">"حذف آیکون"</string>
     <string name="bottom_sheet_icon_picker_action_change_bg_color">"تغییر رنک پس‌زمینه"</string>
 
@@ -235,7 +223,6 @@
     <string name="dialog_budget_type_picker_title">"انواع بودجه"</string>
     <string name="dialog_place_picker_title">"مکان‌ها"</string>
     <string name="dialog_people_picker_title">"شخص"</string>
-    <string name="dialog_filter_search_title">"فیلتر"</string>
     <string name="dialog_change_log_title">"گزارش تغییرات"</string>
     <string name="dialog_overview_setting_title">"تنظیمات پیشرفته"</string>
     <string name="dialog_recurrence_title">"تکرار"</string>
@@ -313,11 +300,7 @@
     <string name="message_error_backend_recoverable">"مشکل اتصال ،دوباره سعی کنید."</string>
 
     <string name="cover_message_backup_external_memory_title">"این برنامه می تواند پشتیبان گیری را مستقیما از ذخیره خارجی دستگاه ایجاد و بازگرداند"</string>
-    <string name="cover_message_backup_dropbox_title">"این برنامه می تواند پشتیبان گیری از حساب شخصی Dropbox خود ایجاد و بازگرداند"</string>
-    <string name="cover_message_backup_google_drive_title">"این برنامه می تواند پشتیبان گیری را از حساب شخصی Google Drive شما ایجاد و بازگرداند"</string>
     <string name="cover_message_backup_external_memory_button">"ادامه هید"</string>
-    <string name="cover_message_backup_dropbox_button">"ورود"</string>
-    <string name="cover_message_backup_google_drive_button">"ورود"</string>
 
     <string name="empty_message_secondary_panel">"یکی از عناصر را از پانل سمت چپ انتخاب کنید تا جزئیات را مشاهده کنید"</string>
     <string name="empty_message_backup_cover">"سرویس مورد نظر برای ذخیره و بازیابی پشتیبان شخصی خود را انتخاب کنید"</string>
@@ -332,8 +315,6 @@
     <string name="title_success">"موفقیت"</string>
     <string name="title_failed">"ناموفق"</string>
     <string name="title_error">"خطا"</string>
-    <string name="title_atm_search">"جستجو خودپرداز"</string>
-    <string name="title_bank_search">"جستجو بانک"</string>
     <string name="title_changelog">"تغییرات"</string>
     <string name="title_licenses">"مجوزها"</string>
     <string name="title_debt_insert_master_transaction">"آفرین"</string>
@@ -353,8 +334,6 @@
     <string name="message_backup_restoring_success">"پشتیبان به درستی برگردانده شد."</string>
     <string name="message_backup_creation_failed">"شکست در هنگام ایجاد پشتیبان. پیام: %s"</string>
     <string name="message_backup_restoring_failed">"شکست در هنگام بازگرداندن پشتیبان. پیام: %s"</string>
-    <string name="message_backup_service_dropbox_disconnect">"آیا مطمئن هستید که می خواهید حساب Dropbox خود را قطع کنید؟"</string>
-    <string name="message_backup_service_google_drive_disconnect">"آیا مطمئن هستید که میخواهید حساب Google Drive خود را قطع کنید؟"</string>
     <string name="message_action_archive_wallet">"آیا مطمئن هستید که میخواهید این کیف پول را بایگانی کنید؟ این دیگر در منو قابل مشاهده نخواهد بود."</string>
     <string name="message_action_unarchive_wallet">"آیا مطمئن هستید که میخواهید این کیف پول را از بایگانی خارج کنید؟ این دوباره در منو قابل مشاهده خواهد بود."</string>
     <string name="message_action_archive_debt">"آیا مطمئن هستید که می خواهید این بدهی را بایگانی کنید؟"</string>
@@ -408,8 +387,6 @@
     <string name="spinner_item_start_date">"از:   %s"</string>
     <string name="spinner_item_end_date">"تا:   %s"</string>
 
-    <string name="service_backup_drop_box">"DropBox"</string>
-    <string name="service_backup_google_drive">"Google Drive"</string>
     <string name="service_backup_external_memory">"حافظه خارجی"</string>
 
     <string name="setting_title_user_interface">"رابط کاربری"</string>
@@ -429,13 +406,12 @@
     <string name="setting_title_ui_group_type">"گروه بندی"</string>
     <string name="setting_title_ui_theme_color_primary">"رنگ اصلی"</string>
     <string name="setting_title_ui_theme_color_accent">" شدت رنگ"</string>
-    <string name="setting_title_ui_theme_type">"نوع"</string>
 
     <string name="setting_category_utility_notification">"اطلاع"</string>
     <string name="setting_category_utility_security">"امنیت"</string>
     <string name="setting_category_utility_exchange_rates">"نرخ‌های تبدیل"</string>
     <string name="setting_title_daily_reminder">"یادآوری روزانه"</string>
-    <string name="setting_summary_daily_reminder">"هر روز در: %02d:00"</string>
+    <string name="setting_summary_daily_reminder">"هر روز در: %1$s"</string>
     <string name="setting_title_security">"حفاظت از دسترسی"</string>
     <string name="setting_title_security_change_pin">"تغییر کد پین"</string>
     <string name="setting_title_security_change_sequence">"تغییر توالی باز کردن"</string>
@@ -493,7 +469,6 @@
 
     <string name="about_hint_version">"نسخه ساخت"</string>
     <string name="about_hint_changelog">"تغییرات"</string>
-    <string name="about_hint_support">"پشتیبانی از توسعه"</string>
     <string name="about_hint_rate_app">"امتیاز دهی به این برنامه"</string>
     <string name="about_hint_open_source_libraries">"کتابخانه های منبع باز"</string>
     <string name="about_hint_report_bug">"گزارش یک اشکال"</string>
@@ -510,20 +485,15 @@
     <string name="about_hint_translators">"مترجمان"</string>
 
     <string name="activity_launcher_legacy_edition_upgrade_title">"ارتقاء …"</string>
-    <string name="activity_launcher_first_start_title">"به MoneyWallet خوش آمدید"</string>
-    <string name="activity_launcher_first_start_content">"آیا اولین بار است که شما از این برنامه استفاده می کنید یا میخواهید پشتیبان قبلی را بازگردانید؟"</string>
+    <string name="activity_launcher_first_start_title">"به Tallybook خوش آمدید"</string>
     <string name="activity_launcher_first_start_button_first_time">"بار اول"</string>
     <string name="activity_launcher_first_start_button_restore_backup">"بازگرداندن پشتیبان"</string>
 
     <string name="activity_intro_title_slide_1">"دیگر غافلگیری کافیست"</string>
     <string name="activity_intro_title_slide_2">"کشف و برنامه ریزی کنید"</string>
     <string name="activity_intro_title_slide_3">"متن باز"</string>
-    <string name="activity_intro_title_slide_4">"پشتیبان گیری ابر"</string>
     <string name="activity_intro_title_slide_5">"آفرین"</string>
-    <string name="activity_intro_description_slide_1">"این کمک خواهد کرد که تمام هزینه های خود را ردیابی کنید"</string>
     <string name="activity_intro_description_slide_2">"شما می توانید تجزیه و تحلیل کنید بجای اینکه شما زمان زیادی صرف و تنظیم بودجه کنید"</string>
-    <string name="activity_intro_description_slide_3">"این پروژه در حال حاضر منبع باز است و هر کس می تواند کمک کند"</string>
-    <string name="activity_intro_description_slide_4">"  از بیشتر سرویس‌های معمول ابری پشتیبانی می کند تا به شما کمک کند هرگز اطلاعات خود را از دست ندهید"</string>
     <string name="activity_intro_description_slide_5">"شما اکنون برای ایجاد اولین کیف پول خود هدایت می شوید"</string>
 
     <string name="help_create_new_pin_code">"یک کد پین جدید ایجاد کنید"</string>
@@ -630,23 +600,80 @@
     <string name="notification_channel_name_reminder">"یادآور"</string>
     <string name="notification_channel_name_exchange_rate">"نرخ تبدیل"</string>
     <string name="notification_channel_name_error">"خطا"</string>
+    <string name="search_match_all">"همه"</string>
+    <string name="search_match_any">"هر کدام"</string>
+    <string name="search_match_all_description">"مطابقت با همه شرط‌ها، برای هر کدام ضربه بزنید"</string>
+    <string name="search_match_any_description">"مطابقت با هر یک از شرط‌ها، برای همه ضربه بزنید"</string>
+    <string name="search_type_text">"متن"</string>
+    <string name="search_value_text">"«%1$s»"</string>
+    <string name="search_close_editor">"بستن ویرایشگر"</string>
+    <string name="search_clear">"پاک کردن"</string>
+    <string name="hint_search_text">"متن مورد جستجو"</string>
+    <string name="search_text_fields">"در شرح، یادداشت، رخداد و مکان جستجو می‌کند"</string>
+    <plurals name="search_result_count">
+        <item quantity="one">"%d نتیجه"</item>
+        <item quantity="other">"%d نتیجه"</item>
+    </plurals>
+    <string name="search_type_people">"افراد"</string>
+    <string name="search_type_status">"وضعیت"</string>
+    <string name="search_type_wallet">"کیف پول"</string>
+    <string name="search_value_unconfirmed">"تایید نشده"</string>
+    <string name="search_value_confirmed">"تایید شده"</string>
+    <string name="search_value_transfers">"نقل و انتقالات"</string>
+    <string name="search_value_wallet_transfers">"%1$s (نقل و انتقالات)"</string>
+    <string name="search_transfers_only">"فقط نقل و انتقالات"</string>
+    <plurals name="search_person_description">
+        <item quantity="one">"%1$s، %2$d تراکنش"</item>
+        <item quantity="other">"%1$s، %2$d تراکنش"</item>
+    </plurals>
+    <string name="search_type_category">"دسته‌بندی"</string>
+    <plurals name="search_category_description">
+        <item quantity="one">"%1$s، %2$d تراکنش"</item>
+        <item quantity="other">"%1$s، %2$d تراکنش"</item>
+    </plurals>
+    <string name="search_partly_checked">"تا حدی انتخاب شده"</string>
+    <string name="search_show_subcategories">"نمایش زیردسته‌های %1$s"</string>
+    <string name="search_hide_subcategories">"پنهان کردن زیردسته‌های %1$s"</string>
+    <string name="search_type_amount">"مبلغ"</string>
+    <string name="search_amount_exactly">"دقیقاً"</string>
+    <string name="search_amount_at_least">"حداقل"</string>
+    <string name="search_amount_at_most">"حداکثر"</string>
+    <string name="search_amount_between">"بین (شامل هر دو)"</string>
+    <string name="search_amount_between_short">"بین"</string>
+    <string name="search_amount_op_description">"شرط مبلغ، %1$s"</string>
+    <string name="search_amount_either">"هر دو"</string>
+    <string name="search_amount_out">"خروجی"</string>
+    <string name="search_amount_in">"ورودی"</string>
+    <string name="search_amount_and">"و"</string>
+    <string name="hint_search_amount">"مبلغ"</string>
+    <string name="hint_search_amount_to">"مبلغ دیگر"</string>
+    <string name="search_value_amount_between">"%1$s تا %2$s"</string>
+    <string name="search_value_amount_out">"خروجی %1$s"</string>
+    <string name="search_value_amount_in">"ورودی %1$s"</string>
+    <string name="search_type_date">"تاریخ"</string>
+    <string name="search_date_on_or_after">"از این تاریخ به بعد"</string>
+    <string name="search_date_on_or_before">"تا این تاریخ"</string>
+    <string name="search_date_between">"بین"</string>
+    <string name="search_date_this_month">"این ماه"</string>
+    <string name="search_date_last_month">"ماه گذشته"</string>
+    <string name="search_date_last_30_days">"۳۰ روز گذشته"</string>
+    <string name="search_date_this_year">"امسال"</string>
+    <string name="search_date_from">"از"</string>
+    <string name="search_date_to">"تا"</string>
+    <string name="hint_search_date">"انتخاب تاریخ"</string>
+    <string name="search_date_previous_month">"ماه قبل"</string>
+    <string name="search_date_next_month">"ماه بعد"</string>
+    <string name="search_date_pick_year">"%1$s، انتخاب سال"</string>
+    <string name="search_done">"انجام شد"</string>
+    <string name="search_value_date_after">"از %1$s به بعد"</string>
+    <string name="search_value_date_before">"تا %1$s"</string>
+    <string name="search_value_date_between">"%1$s تا %2$s"</string>
+    <string name="search_sort_newest">"جدیدترین"</string>
+    <string name="search_sort_oldest">"قدیمی‌ترین"</string>
+    <string name="search_sort_category">"دسته‌بندی از الف تا ی"</string>
+    <string name="search_sort_largest">"بیشترین مبلغ"</string>
+    <string name="search_sort_smallest">"کمترین مبلغ"</string>
+    <string name="search_sort_description">"مرتب‌سازی، %1$s"</string>
 
-    <string name="activity_donation_first_title">"متشکرم!"</string>
-    <string name="activity_donation_first_content">"اگر شما این نرم افزار را دوست دارید و آن را مفید می دانید، یک آبجو خریداری کنید. این پروژه را پشتیبانی می کند و من را تشویق می کند تا آن را در حال توسعه نگه دارد."</string>
-    <string name="activity_donation_second_title">"چرا من؟"</string>
-    <string name="activity_donation_second_content">"کسی ممکن است بگوید بهترین چیزها در زندگی آزاد هستند و من با آن موافق هستم. شما نمی توانید دوستی، عشق و یا خاطره ای از یک طلوع خورشید زیبا را خریداری کنید. به همین دلیل تصمیم گرفتم که کد منبع این برنامه را به صورت رایگان به اشتراک بگذارم. اما متأسفانه زندگی رایگان نیست. شما فقط 24 ساعت در هر روز از زمان کمیاب دارید و باید تصمیمی بگیرید که چگونه آنها را صرف حمایت از خود کنید. اگر این پروژه را دوست دارید و می خواهید آن را در آینده در حال پیشرفت ببینید، فکر می کنم در حمایت از کار من به من اجازه می دهد زمان بیشتری را به آن اختصاص دهم. هر مشارکت یک تفاوت بزرگ ایجاد می کند."</string>
-    <string name="activity_donation_third_title">"نمیتوانید نقدی کمک کنید? هیچ مشکلی وجود ندارد، شما هنوز هم می توانید کمک زیادی کنید!"</string>
-    <string name="activity_donation_crypto_address_copied">"آدرس کپی شده است"</string>
-    <string name="activity_donation_action_share_title">"اشتراک گذاری"</string>
-    <string name="activity_donation_action_share_content">"کلمه را در میان دوستانتان پخش کنید"</string>
-    <string name="activity_donation_action_share_message">"سلام این رو ببین: %s"</string>
-    <string name="activity_donation_action_share_using">"اشتراک به وسیله"</string>
-    <string name="activity_donation_action_rate_title">"رتبه دهی"</string>
-    <string name="activity_donation_action_rate_content">" یک ۵ ستاره در بررسی آغازین بنویسید و به ما بگویید که چه چیزی در مورد آن فکر می کنید"</string>
-    <string name="activity_donation_action_translate_title">"ترجمه"</string>
-    <string name="activity_donation_action_translate_content">"رشته ها را به زبان خود ترجمه کنید"</string>
-    <string name="activity_donation_action_contribute_title">"مشارکت"</string>
-    <string name="activity_donation_action_contribute_content">"کد منبع عمومی است و همه می توانند همکاری کنند"</string>
-    <string name="activity_donation_final_content">"هر مشارکت ، پولی یا غیر پولی، برابر است و برای من بسیار با ارزش است.امیدوارم از آن لذت ببرید و دوباره با تشکر از انتخاب این نرم افزار"</string>
 
 </resources>

@@ -130,20 +130,27 @@
 
         </LinearLayout>
 
+        <!--
+          ~ The one button in the app that is centered instead of anchored to the bottom of the
+          ~ window, so it must not move for the navigation bar. It sits on the divider between the
+          ~ two currency rows and an inset would lift it off.
+          -->
         <com.oriondev.moneywallet.ui.view.theme.ThemedFloatingActionButton
             android:id="@+id/floating_action_button"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_centerInParent="true"
+            app:systemBarInsetBottom="false"
+            android:contentDescription="@string/description_swap_currencies"
             android:src="@drawable/ic_swap_vert_black_24dp" />
 
     </RelativeLayout>
 
-    <LinearLayout
+    <com.oriondev.moneywallet.ui.view.theme.ThemedLinearLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="0.25"
-        android:background="?attr/colorPrimary" >
+        app:theme_backgroundColor="colorPrimary" >
 
         <com.oriondev.moneywallet.ui.view.theme.ThemedKeypadButton
             android:id="@+id/keyboard_button_7"
@@ -178,13 +185,13 @@
             app:theme_backgroundColor="colorPrimary"
             style="?android:attr/borderlessButtonStyle" />
 
-    </LinearLayout>
+    </com.oriondev.moneywallet.ui.view.theme.ThemedLinearLayout>
 
-    <LinearLayout
+    <com.oriondev.moneywallet.ui.view.theme.ThemedLinearLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="0.25"
-        android:background="?attr/colorPrimary" >
+        app:theme_backgroundColor="colorPrimary" >
 
         <com.oriondev.moneywallet.ui.view.theme.ThemedKeypadButton
             android:id="@+id/keyboard_button_4"
@@ -219,13 +226,13 @@
             app:theme_backgroundColor="colorPrimary"
             style="?android:attr/borderlessButtonStyle" />
 
-    </LinearLayout>
+    </com.oriondev.moneywallet.ui.view.theme.ThemedLinearLayout>
 
-    <LinearLayout
+    <com.oriondev.moneywallet.ui.view.theme.ThemedLinearLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="0.25"
-        android:background="?attr/colorPrimary" >
+        app:theme_backgroundColor="colorPrimary" >
 
         <com.oriondev.moneywallet.ui.view.theme.ThemedKeypadButton
             android:id="@+id/keyboard_button_1"
@@ -260,13 +267,14 @@
             app:theme_backgroundColor="colorPrimary"
             style="?android:attr/borderlessButtonStyle" />
 
-    </LinearLayout>
+    </com.oriondev.moneywallet.ui.view.theme.ThemedLinearLayout>
 
-    <LinearLayout
+    <com.oriondev.moneywallet.ui.view.theme.ThemedLinearLayout
+        android:id="@+id/keypad_last_row"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="0.25"
-        android:background="?attr/colorPrimary" >
+        app:theme_backgroundColor="colorPrimary" >
 
         <com.oriondev.moneywallet.ui.view.theme.ThemedKeypadButton
             android:id="@+id/keyboard_button_point"
@@ -302,6 +310,6 @@
             app:theme_backgroundColor="colorPrimary"
             style="?android:attr/borderlessButtonStyle" />
 
-    </LinearLayout>
+    </com.oriondev.moneywallet.ui.view.theme.ThemedLinearLayout>
 
 </LinearLayout>

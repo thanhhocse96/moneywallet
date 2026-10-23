@@ -66,6 +66,7 @@ package com.oriondev.moneywallet.storage.database;
         /*package-local*/ static final String ARCHIVED = "wallet_archived";
         /*package-local*/ static final String TAG = "wallet_tag";
         /*package-local*/ static final String INDEX = "wallet_index";
+        /*package-local*/ static final String GROUP = "wallet_group";
     }
 
     /*package-local*/ static final class Category extends BaseTable {
@@ -78,6 +79,14 @@ package com.oriondev.moneywallet.storage.database;
         /*package-local*/ static final String TAG = "category_tag";
         /*package-local*/ static final String SHOW_REPORT = "category_show_report";
         /*package-local*/ static final String INDEX = "category_index";
+    }
+
+    /*package-local*/ static final class CategoryRule extends BaseTable {
+        /*package-local*/ static final String TABLE = "category_rules";
+        /*package-local*/ static final String ID = "rule_id";
+        /*package-local*/ static final String PATTERN = "rule_pattern";
+        /*package-local*/ static final String CATEGORY = "rule_category";
+        /*package-local*/ static final String INDEX = "rule_index";
     }
 
     /*package-local*/ static final class Event extends BaseTable {
@@ -148,6 +157,8 @@ package com.oriondev.moneywallet.storage.database;
         /*package-local*/ static final String END_DATE = "budget_end_date";
         /*package-local*/ static final String MONEY = "budget_money";
         /*package-local*/ static final String CURRENCY = "budget_currency";
+        /*package-local*/ static final String RULE = "budget_rule";
+        /*package-local*/ static final String RULE_START = "budget_rule_start";
         /*package-local*/ static final String TAG = "budget_tag";
     }
 
@@ -155,6 +166,12 @@ package com.oriondev.moneywallet.storage.database;
         /*package-local*/ static final String TABLE = "budget_wallets";
         /*package-local*/ static final String BUDGET = "_budget";
         /*package-local*/ static final String WALLET = "_wallet";
+    }
+
+    /*package-local*/ static final class BudgetCategory extends BaseTable {
+        /*package-local*/ static final String TABLE = "budget_categories";
+        /*package-local*/ static final String BUDGET = "_budget";
+        /*package-local*/ static final String CATEGORY = "_category";
     }
 
     /*package-local*/ static final class Saving extends BaseTable {
@@ -196,6 +213,15 @@ package com.oriondev.moneywallet.storage.database;
         /*package-local*/ static final String TABLE = "transaction_people";
         /*package-local*/ static final String TRANSACTION = "_transaction";
         /*package-local*/ static final String PERSON = "_person";
+    }
+
+    /*package-local*/ static final class TransactionSplit extends BaseTable {
+        /*package-local*/ static final String TABLE = "transaction_splits";
+        /*package-local*/ static final String ID = "split_id";
+        /*package-local*/ static final String TRANSACTION = "_transaction";
+        /*package-local*/ static final String CATEGORY = "split_category";
+        /*package-local*/ static final String MONEY = "split_money";
+        /*package-local*/ static final String NOTE = "split_note";
     }
 
     /*package-local*/ static final class Transfer extends BaseTable {
@@ -368,6 +394,7 @@ package com.oriondev.moneywallet.storage.database;
             Wallet.ARCHIVED + " INTEGER NOT NULL DEFAULT 0, " +
             Wallet.INDEX + " INTEGER NOT NULL DEFAULT 0, " +
             Wallet.TAG + " TEXT, " +
+            Wallet.GROUP + " TEXT, " +
             Wallet.UUID + " TEXT NOT NULL UNIQUE, " +
             Wallet.LAST_EDIT + " INTEGER NOT NULL, " +
             Wallet.DELETED + " INTEGER NOT NULL DEFAULT 0" +
@@ -386,6 +413,29 @@ package com.oriondev.moneywallet.storage.database;
             Category.LAST_EDIT + " INTEGER NOT NULL, " +
             Category.DELETED + " INTEGER NOT NULL DEFAULT 0, " +
             "FOREIGN KEY (" + Category.PARENT + ") REFERENCES " + Category.TABLE +
+            "(" + Category.ID + ") ON UPDATE NO ACTION ON DELETE CASCADE " +
+            ")";
+
+    /**
+     * The rules that name a category from what a transaction description holds. IF NOT EXISTS
+     * because the upgrade that adds the table runs again after an older release is installed
+     * over this database and then upgraded, which leaves the table in place and stamps the
+     * version back.
+     *
+     * The category carries ON DELETE CASCADE, so deleting a category takes the rules that name
+     * it with it. A rule holds no ledger figure, and nothing else reads it, so keeping one that
+     * points at a category that is gone would only block the deletion.
+     */
+    /*package-local*/ static final String CREATE_TABLE_CATEGORY_RULE = "CREATE TABLE IF NOT EXISTS " +
+            CategoryRule.TABLE + " (" +
+            CategoryRule.ID + " INTEGER PRIMARY KEY AUTOINCREMENT, " +
+            CategoryRule.PATTERN + " TEXT NOT NULL, " +
+            CategoryRule.CATEGORY + " INTEGER NOT NULL, " +
+            CategoryRule.INDEX + " INTEGER NOT NULL, " +
+            CategoryRule.UUID + " TEXT NOT NULL UNIQUE, " +
+            CategoryRule.LAST_EDIT + " INTEGER NOT NULL, " +
+            CategoryRule.DELETED + " INTEGER NOT NULL DEFAULT 0, " +
+            "FOREIGN KEY (" + CategoryRule.CATEGORY + ") REFERENCES " + Category.TABLE +
             "(" + Category.ID + ") ON UPDATE NO ACTION ON DELETE CASCADE " +
             ")";
 
@@ -482,6 +532,8 @@ package com.oriondev.moneywallet.storage.database;
             Budget.END_DATE + " DATETIME NOT NULL, " +
             Budget.MONEY + " INTEGER NOT NULL, " +
             Budget.CURRENCY + " TEXT NOT NULL, " +
+            Budget.RULE + " TEXT, " +
+            Budget.RULE_START + " DATETIME, " +
             Budget.TAG + " TEXT, " +
             Budget.UUID + " TEXT NOT NULL UNIQUE, " +
             Budget.LAST_EDIT + " INTEGER NOT NULL, " +
@@ -501,6 +553,20 @@ package com.oriondev.moneywallet.storage.database;
             "(" + Budget.ID + ") ON UPDATE NO ACTION ON DELETE CASCADE, " +
             "FOREIGN KEY (" + BudgetWallet.WALLET + ") REFERENCES " + Wallet.TABLE +
             "(" + Wallet.ID + ") ON UPDATE NO ACTION ON DELETE CASCADE " +
+            ")";
+
+    /*package-local*/ static final String CREATE_TABLE_BUDGET_CATEGORY = "CREATE TABLE IF NOT EXISTS " +
+            BudgetCategory.TABLE + " (" +
+            BudgetCategory.BUDGET + " INTEGER NOT NULL, " +
+            BudgetCategory.CATEGORY + " INTEGER NOT NULL, " +
+            BudgetCategory.UUID + " TEXT NOT NULL UNIQUE, " +
+            BudgetCategory.LAST_EDIT + " INTEGER NOT NULL, " +
+            BudgetCategory.DELETED + " INTEGER NOT NULL DEFAULT 0, " +
+            "PRIMARY KEY (" + BudgetCategory.BUDGET + ", " + BudgetCategory.CATEGORY + ")," +
+            "FOREIGN KEY (" + BudgetCategory.BUDGET + ") REFERENCES " + Budget.TABLE +
+            "(" + Budget.ID + ") ON UPDATE NO ACTION ON DELETE CASCADE, " +
+            "FOREIGN KEY (" + BudgetCategory.CATEGORY + ") REFERENCES " + Category.TABLE +
+            "(" + Category.ID + ") ON UPDATE NO ACTION ON DELETE CASCADE " +
             ")";
 
     /*package-local*/ static final String CREATE_TABLE_SAVING = "CREATE TABLE " + Saving.TABLE + " (" +
@@ -569,6 +635,28 @@ package com.oriondev.moneywallet.storage.database;
             "(" + Transaction.ID + ") ON UPDATE NO ACTION ON DELETE CASCADE, " +
             "FOREIGN KEY (" + TransactionPeople.PERSON + ") REFERENCES " + Person.TABLE +
             "(" + Person.ID + ") ON UPDATE NO ACTION ON DELETE CASCADE " +
+            ")";
+
+    /**
+     * The category key cascades on purpose. A release that predates this table deletes a category
+     * no live transaction names without looking here, and a part that refused the delete would
+     * make that release throw. Losing the part instead puts its money back under the main
+     * category of its transaction.
+     */
+    /*package-local*/ static final String CREATE_TABLE_TRANSACTION_SPLIT = "CREATE TABLE IF NOT EXISTS " +
+            TransactionSplit.TABLE + " (" +
+            TransactionSplit.ID + " INTEGER PRIMARY KEY AUTOINCREMENT, " +
+            TransactionSplit.TRANSACTION + " INTEGER NOT NULL, " +
+            TransactionSplit.CATEGORY + " INTEGER NOT NULL, " +
+            TransactionSplit.MONEY + " INTEGER NOT NULL, " +
+            TransactionSplit.NOTE + " TEXT, " +
+            TransactionSplit.UUID + " TEXT NOT NULL UNIQUE, " +
+            TransactionSplit.LAST_EDIT + " INTEGER NOT NULL, " +
+            TransactionSplit.DELETED + " INTEGER NOT NULL DEFAULT 0, " +
+            "FOREIGN KEY (" + TransactionSplit.TRANSACTION + ") REFERENCES " + Transaction.TABLE +
+            "(" + Transaction.ID + ") ON UPDATE NO ACTION ON DELETE CASCADE, " +
+            "FOREIGN KEY (" + TransactionSplit.CATEGORY + ") REFERENCES " + Category.TABLE +
+            "(" + Category.ID + ") ON UPDATE NO ACTION ON DELETE CASCADE " +
             ")";
 
     /*package-local*/ static final String CREATE_TABLE_TRANSFER = "CREATE TABLE " + Transfer.TABLE + " (" +
@@ -772,4 +860,76 @@ package com.oriondev.moneywallet.storage.database;
 
     /*package-local*/ static final String CREATE_WALLET_INDEX_COLUMN = "ALTER TABLE " +
             Wallet.TABLE + " ADD COLUMN " + Wallet.INDEX + " INTEGER NOT NULL DEFAULT 0";
+
+    /*package-local*/ static final String CREATE_WALLET_GROUP_COLUMN = "ALTER TABLE " +
+            Wallet.TABLE + " ADD COLUMN " + Wallet.GROUP + " TEXT";
+
+    /*package-local*/ static final String CREATE_BUDGET_RULE_COLUMN = "ALTER TABLE " +
+            Budget.TABLE + " ADD COLUMN " + Budget.RULE + " TEXT";
+
+    /*package-local*/ static final String CREATE_BUDGET_RULE_START_COLUMN = "ALTER TABLE " +
+            Budget.TABLE + " ADD COLUMN " + Budget.RULE_START + " DATETIME";
+
+    /**
+     * Fills the join table from the single category a budget used to carry. It covers only the
+     * budgets that have no live row yet, which is what makes it safe to run a second time, a
+     * budget that already covers categories keeps them instead of gaining whatever the column
+     * happens to say now. See the upgrade in SQLDatabase for when that second run happens.
+     *
+     * REPLACE and not IGNORE because a budget can hold a row for this very category that is
+     * flagged deleted, which is what changing a budget away from covering categories and back
+     * leaves behind. IGNORE would drop the insert on the composite key and leave the budget with
+     * a column and no live category at all.
+     */
+    /*package-local*/ static final String FILL_BUDGET_CATEGORY_FROM_COLUMN = "INSERT OR REPLACE INTO " +
+            BudgetCategory.TABLE + " (" + BudgetCategory.BUDGET + ", " + BudgetCategory.CATEGORY +
+            ", " + BudgetCategory.UUID + ", " + BudgetCategory.LAST_EDIT + ", " +
+            BudgetCategory.DELETED + ") SELECT b." + Budget.ID + ", b." + Budget.CATEGORY +
+            ", b." + Budget.UUID + " || '-category-' || b." + Budget.CATEGORY +
+            ", strftime('%s','now') * 1000, 0 FROM " + Budget.TABLE + " AS b WHERE b." +
+            Budget.CATEGORY + " IS NOT NULL AND b." + Budget.DELETED + " = 0 AND b." + Budget.ID +
+            " NOT IN (SELECT " + BudgetCategory.BUDGET + " FROM " + BudgetCategory.TABLE +
+            " WHERE " + BudgetCategory.DELETED + " = 0)";
+
+    /**
+     * Points the single column at the first of the categories a budget covers, once the join
+     * table is filled. It corrects a column, and never gives one to a budget that has none:
+     * a budget carrying no category has had its type changed away from covering them, and
+     * writing one back would leave a row saying it covers a category it does not.
+     *
+     * What it corrects is a release that predates the table writing the column while the table
+     * kept the real set. Leaving that would put a category no screen shows behind the budget,
+     * chosen for its icon and refusing to be deleted, with nothing to say why.
+     */
+    /*package-local*/ static final String ALIGN_BUDGET_CATEGORY_COLUMN = "UPDATE " + Budget.TABLE +
+            " SET " + Budget.CATEGORY + " = (SELECT MIN(" + BudgetCategory.CATEGORY + ") FROM " +
+            BudgetCategory.TABLE + " WHERE " + BudgetCategory.BUDGET + " = " + Budget.TABLE + "." +
+            Budget.ID + " AND " + BudgetCategory.DELETED + " = 0) WHERE " + Budget.CATEGORY +
+            " IS NOT NULL AND " + Budget.ID + " IN (SELECT " + BudgetCategory.BUDGET + " FROM " +
+            BudgetCategory.TABLE + " WHERE " + BudgetCategory.DELETED + " = 0)";
+
+    /**
+     * Flags the join rows of any budget that no longer covers categories at all. A release that
+     * predates the table can change a budget's type without seeing them, and rows left live
+     * there hold their categories against deletion while no screen shows the budget covering
+     * anything. Flagged and not deleted, which is what an ordinary edit does to the same rows.
+     * Nothing brings them back on its own, a budget turned back into one that covers categories
+     * is saved through an editor that asks the user to pick them again.
+     */
+    /*package-local*/ static final String CLEAR_BUDGET_CATEGORY_OF_OTHER_TYPES = "UPDATE " +
+            BudgetCategory.TABLE + " SET " + BudgetCategory.DELETED + " = 1, " +
+            BudgetCategory.LAST_EDIT + " = strftime('%s','now') * 1000 WHERE " +
+            BudgetCategory.DELETED + " = 0 AND " + BudgetCategory.BUDGET + " IN (SELECT " +
+            Budget.ID + " FROM " + Budget.TABLE + " WHERE " + Budget.TYPE + " != " +
+            BudgetType.CATEGORY + ")";
+
+    /**
+     * Takes the single column off any budget that no longer covers categories, for the same
+     * reason its rows are flagged. The column carries ON DELETE CASCADE, so one left behind on a
+     * budget of another type both refuses its category deletion and puts that budget behind a
+     * cascade it does not claim.
+     */
+    /*package-local*/ static final String CLEAR_BUDGET_COLUMN_OF_OTHER_TYPES = "UPDATE " +
+            Budget.TABLE + " SET " + Budget.CATEGORY + " = NULL WHERE " + Budget.CATEGORY +
+            " IS NOT NULL AND " + Budget.TYPE + " != " + BudgetType.CATEGORY;
 }

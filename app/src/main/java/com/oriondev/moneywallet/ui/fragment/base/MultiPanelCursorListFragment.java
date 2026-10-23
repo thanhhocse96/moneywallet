@@ -23,6 +23,7 @@ import android.database.Cursor;
 import android.os.Bundle;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.StringRes;
 import androidx.loader.app.LoaderManager;
 import androidx.loader.content.Loader;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
@@ -53,11 +54,21 @@ public abstract class MultiPanelCursorListFragment extends MultiPanelFragment im
         mAbstractCursorAdapter = onCreateAdapter();
         mAdvancedRecyclerView.setAdapter(mAbstractCursorAdapter);
         mAdvancedRecyclerView.setOnRefreshListener(this);
-        getLoaderManager().initLoader(DEFAULT_LOADER_ID, null, this);
+        LoaderManager.getInstance(this).initLoader(DEFAULT_LOADER_ID, null, this);
         mAdvancedRecyclerView.setState(AdvancedRecyclerView.State.LOADING);
     }
 
     protected abstract void onPrepareRecyclerView(AdvancedRecyclerView recyclerView);
+
+    /**
+     * Replace the message shown when the list has nothing in it. Available after the primary
+     * panel has been created, which is where the recycler view is inflated.
+     */
+    protected void setEmptyText(@StringRes int resId) {
+        if (mAdvancedRecyclerView != null) {
+            mAdvancedRecyclerView.setEmptyText(resId);
+        }
+    }
 
     protected abstract AbstractCursorAdapter onCreateAdapter();
 
@@ -78,12 +89,20 @@ public abstract class MultiPanelCursorListFragment extends MultiPanelFragment im
 
     @Override
     public void onRefresh() {
-        getLoaderManager().restartLoader(DEFAULT_LOADER_ID, null, this);
+        LoaderManager.getInstance(this).restartLoader(DEFAULT_LOADER_ID, null, this);
         mAdvancedRecyclerView.setState(AdvancedRecyclerView.State.REFRESHING);
     }
 
     protected void recreateLoader() {
-        getLoaderManager().restartLoader(DEFAULT_LOADER_ID, null, this);
+        LoaderManager.getInstance(this).restartLoader(DEFAULT_LOADER_ID, null, this);
         mAdvancedRecyclerView.setState(AdvancedRecyclerView.State.LOADING);
+    }
+
+    /**
+     * Restarts the loader and keeps the list on screen until the new cursor lands, for a query
+     * that changes on every tap or keystroke.
+     */
+    protected void restartLoader() {
+        LoaderManager.getInstance(this).restartLoader(DEFAULT_LOADER_ID, null, this);
     }
 }

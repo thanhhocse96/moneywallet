@@ -44,7 +44,6 @@ import com.oriondev.moneywallet.ui.fragment.base.MultiPanelViewPagerMultiItemFra
 import com.oriondev.moneywallet.ui.fragment.base.SecondaryPanelFragment;
 import com.oriondev.moneywallet.ui.fragment.secondary.TransactionModelItemFragment;
 import com.oriondev.moneywallet.ui.fragment.secondary.TransferModelItemFragment;
-import com.oriondev.moneywallet.ui.view.theme.ThemeEngine;
 
 /**
  * Created by andrea on 02/03/18.
@@ -65,6 +64,11 @@ public class ModelMultiPanelViewPagerFragment extends MultiPanelViewPagerMultiIt
     @Override
     protected int getTitleRes() {
         return R.string.menu_models;
+    }
+
+    @Override
+    protected boolean showsCurrentWallet() {
+        return true;
     }
 
     @Override
@@ -152,7 +156,6 @@ public class ModelMultiPanelViewPagerFragment extends MultiPanelViewPagerMultiIt
     private void showItemAddedSnackBar(int additionText, int undoText, Uri uri) {
         View view = getPrimaryPanel();
         Snackbar snackbar = Snackbar.make(view, additionText, Snackbar.LENGTH_LONG);
-        snackbar.setActionTextColor(ThemeEngine.getTheme().getColorAccent());
         snackbar.setAction(R.string.action_undo, new UndoModelItemInsert(view, undoText, uri));
         snackbar.show();
     }

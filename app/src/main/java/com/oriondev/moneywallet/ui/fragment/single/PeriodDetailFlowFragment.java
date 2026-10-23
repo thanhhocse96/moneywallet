@@ -36,7 +36,6 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
 
-import com.itsronald.widget.ViewPagerIndicator;
 import com.oriondev.moneywallet.R;
 import com.oriondev.moneywallet.background.PeriodDetailFlowLoader;
 import com.oriondev.moneywallet.model.Money;
@@ -61,6 +60,8 @@ public class PeriodDetailFlowFragment extends Fragment implements PeriodDetailFl
     private static final String ARG_END_DATE = "PeriodDetailFlowFragment::Arguments::EndDate";
     private static final String ARG_INCOMES = "PeriodDetailFlowFragment::Arguments::Incomes";
 
+    private static final String STATE_EXPANDED = "PeriodDetailFlowFragment::State::Expanded";
+
     public static PeriodDetailFlowFragment newInstance(Date start, Date end, boolean incomes) {
         Bundle arguments = new Bundle();
         arguments.putSerializable(ARG_START_DATE, start);
@@ -76,7 +77,7 @@ public class PeriodDetailFlowFragment extends Fragment implements PeriodDetailFl
     private RecyclerView mRecyclerView;
 
     private PieChartViewPagerAdapter mPieChartViewPagerAdapter;
-    private ViewPagerIndicator mPieChartViewPagerIndicator;
+    private View mPieChartViewPagerIndicator;
     private PeriodDetailFlowAdapter mRecyclerViewAdapter;
 
     private Date mStartDate;
@@ -123,14 +124,29 @@ public class PeriodDetailFlowFragment extends Fragment implements PeriodDetailFl
         mRecyclerView.setLayoutManager(new LinearLayoutManager(getActivity()));
         mRecyclerView.setNestedScrollingEnabled(false);
         mRecyclerView.setAdapter(mRecyclerViewAdapter);
+        // A recreate builds a new adapter, so what the user had open comes back from saved state.
+        if (savedInstanceState != null) {
+            long[] expanded = savedInstanceState.getLongArray(STATE_EXPANDED);
+            if (expanded != null) {
+                mRecyclerViewAdapter.setExpandedCategories(expanded);
+            }
+        }
         // return the view
         return view;
     }
 
     @Override
+    public void onSaveInstanceState(@NonNull Bundle outState) {
+        super.onSaveInstanceState(outState);
+        if (mRecyclerViewAdapter != null) {
+            outState.putLongArray(STATE_EXPANDED, mRecyclerViewAdapter.getExpandedCategories());
+        }
+    }
+
+    @Override
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         mHeaderLeftTextView.setText(mIncomes ? R.string.hint_incomes : R.string.hint_expenses);
-        getLoaderManager().restartLoader(LOADER_FRAGMENT_DATA, null, this);
+        LoaderManager.getInstance(this).restartLoader(LOADER_FRAGMENT_DATA, null, this);
     }
 
     @Override
@@ -175,6 +191,6 @@ public class PeriodDetailFlowFragment extends Fragment implements PeriodDetailFl
 
     @Override
     public void onCurrentWalletChanged(long walletId) {
-        getLoaderManager().restartLoader(LOADER_FRAGMENT_DATA, null, this);
+        LoaderManager.getInstance(this).restartLoader(LOADER_FRAGMENT_DATA, null, this);
     }
 }

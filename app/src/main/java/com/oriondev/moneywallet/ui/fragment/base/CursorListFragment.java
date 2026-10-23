@@ -25,6 +25,7 @@ import android.database.Cursor;
 import android.os.Bundle;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.StringRes;
 import androidx.fragment.app.Fragment;
 import androidx.loader.app.LoaderManager;
 import androidx.loader.content.Loader;
@@ -36,7 +37,9 @@ import android.view.ViewGroup;
 import com.oriondev.moneywallet.storage.preference.CurrentWalletController;
 import com.oriondev.moneywallet.storage.preference.PreferenceManager;
 import com.oriondev.moneywallet.ui.adapter.recycler.AbstractCursorAdapter;
+import com.oriondev.moneywallet.R;
 import com.oriondev.moneywallet.ui.view.AdvancedRecyclerView;
+import com.oriondev.moneywallet.utils.SystemBars;
 
 /**
  * Created by andrea on 11/02/18.
@@ -65,6 +68,11 @@ public abstract class CursorListFragment extends Fragment implements SwipeRefres
     @Nullable
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
         mAdvancedRecyclerView = new AdvancedRecyclerView(getActivity());
+        // Built here and not inflated, so the layout attribute that asks for the navigation bar
+        // clearance never reaches it. These are the pager pages behind most of the drawer, so
+        // without this the last row of the app's main lists cannot be scrolled clear of the bar.
+        SystemBars.pad(mAdvancedRecyclerView.getRecyclerView(),
+                false, getResources().getBoolean(R.bool.panel_fills_window), true);
         onPrepareRecyclerView(mAdvancedRecyclerView);
         mAbstractCursorAdapter = onCreateAdapter();
         mAdvancedRecyclerView.setAdapter(mAbstractCursorAdapter);
@@ -79,13 +87,21 @@ public abstract class CursorListFragment extends Fragment implements SwipeRefres
 
     @Override
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
-        getLoaderManager().restartLoader(DEFAULT_LOADER_ID, null, this);
+        LoaderManager.getInstance(this).restartLoader(DEFAULT_LOADER_ID, null, this);
     }
 
     @Override
     public void onLoadFinished(@NonNull Loader<Cursor> loader, Cursor cursor) {
         mAbstractCursorAdapter.changeCursor(cursor);
-        if (cursor != null && cursor.getCount() > 0) {
+        showListState();
+    }
+
+    /**
+     * Put the list into READY or EMPTY by what the adapter shows, which can be fewer rows than
+     * the cursor holds.
+     */
+    protected void showListState() {
+        if (mAbstractCursorAdapter.getItemCount() > 0) {
             mAdvancedRecyclerView.setState(AdvancedRecyclerView.State.READY);
         } else {
             mAdvancedRecyclerView.setState(AdvancedRecyclerView.State.EMPTY);
@@ -99,8 +115,30 @@ public abstract class CursorListFragment extends Fragment implements SwipeRefres
 
     @Override
     public void onRefresh() {
-        getLoaderManager().restartLoader(DEFAULT_LOADER_ID, null, this);
+        LoaderManager.getInstance(this).restartLoader(DEFAULT_LOADER_ID, null, this);
         mAdvancedRecyclerView.setState(AdvancedRecyclerView.State.REFRESHING);
+    }
+
+    /**
+     * Change the text shown when the list comes back with nothing in it. The view takes it at
+     * once, so this reaches an empty list that is already on screen as well as the next one.
+     */
+    protected void setEmptyText(@StringRes int stringRes) {
+        if (mAdvancedRecyclerView != null) {
+            mAdvancedRecyclerView.setEmptyText(stringRes);
+        }
+    }
+
+    /**
+     * Run the query behind this list again, for when something outside the list changes what it
+     * should hold. Does nothing before the view exists, since the query is run from
+     * {@link #onViewCreated} anyway once it does.
+     */
+    public void reloadList() {
+        if (mAdvancedRecyclerView != null) {
+            LoaderManager.getInstance(this).restartLoader(DEFAULT_LOADER_ID, null, this);
+            mAdvancedRecyclerView.setState(AdvancedRecyclerView.State.LOADING);
+        }
     }
 
     protected boolean shouldRefreshOnCurrentWalletChange() {
@@ -110,7 +148,7 @@ public abstract class CursorListFragment extends Fragment implements SwipeRefres
     @Override
     public void onCurrentWalletChanged(long walletId) {
         if (shouldRefreshOnCurrentWalletChange()) {
-            getLoaderManager().restartLoader(DEFAULT_LOADER_ID, null, this);
+            LoaderManager.getInstance(this).restartLoader(DEFAULT_LOADER_ID, null, this);
             mAdvancedRecyclerView.setState(AdvancedRecyclerView.State.LOADING);
         }
     }

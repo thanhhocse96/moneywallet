@@ -45,6 +45,16 @@
     </com.oriondev.moneywallet.ui.preference.ThemedPreferenceCategory>
 
     <com.oriondev.moneywallet.ui.preference.ThemedPreferenceCategory
+        android:key="map_category"
+        android:title="@string/setting_category_utility_map" >
+
+        <com.oriondev.moneywallet.ui.preference.ThemedInputPreference
+            android:key="map_tile_server"
+            android:title="@string/setting_title_map_tile_server"/>
+
+    </com.oriondev.moneywallet.ui.preference.ThemedPreferenceCategory>
+
+    <com.oriondev.moneywallet.ui.preference.ThemedPreferenceCategory
         android:title="@string/setting_category_utility_exchange_rates" >
 
         <com.oriondev.moneywallet.ui.preference.ThemedListPreference
@@ -64,6 +74,25 @@
             android:key="currency_management"
             android:title="@string/setting_title_currency_management"
             android:summary="@string/setting_summary_currency_management"/>
+
+        <com.oriondev.moneywallet.ui.preference.ThemedPreference
+            android:key="category_rules"
+            android:title="@string/setting_title_category_rules"
+            android:summary="@string/setting_summary_category_rules"/>
+
+    </com.oriondev.moneywallet.ui.preference.ThemedPreferenceCategory>
+
+    <com.oriondev.moneywallet.ui.preference.ThemedPreferenceCategory
+        android:title="@string/setting_category_utility_automation" >
+
+        <com.oriondev.moneywallet.ui.preference.ThemedSwitchPreference
+            android:key="automation_save"
+            android:title="@string/setting_title_automation_save"
+            android:persistent="false" />
+
+        <com.oriondev.moneywallet.ui.preference.ThemedPreference
+            android:key="automation_code"
+            android:title="@string/setting_title_automation_code"/>
 
     </com.oriondev.moneywallet.ui.preference.ThemedPreferenceCategory>
 

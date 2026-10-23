@@ -23,10 +23,12 @@ import android.app.Activity;
 import android.content.ContentResolver;
 import android.content.ContentUris;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
+import android.text.TextUtils;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.loader.app.LoaderManager;
@@ -42,8 +44,6 @@ import android.widget.RadioButton;
 import android.widget.RadioGroup;
 import android.widget.TextView;
 
-import com.afollestad.materialdialogs.DialogAction;
-import com.afollestad.materialdialogs.MaterialDialog;
 import com.oriondev.moneywallet.R;
 import com.oriondev.moneywallet.model.Icon;
 import com.oriondev.moneywallet.storage.database.Contract;
@@ -54,7 +54,11 @@ import com.oriondev.moneywallet.ui.activity.NewEditItemActivity;
 import com.oriondev.moneywallet.ui.activity.TransactionListActivity;
 import com.oriondev.moneywallet.ui.fragment.base.SecondaryPanelFragment;
 import com.oriondev.moneywallet.ui.view.theme.ThemedDialog;
+import com.oriondev.moneywallet.utils.CurrencyManager;
+import com.oriondev.moneywallet.utils.DateFormatter;
+import com.oriondev.moneywallet.utils.DateUtils;
 import com.oriondev.moneywallet.utils.IconLoader;
+import com.oriondev.moneywallet.utils.MoneyFormatter;
 
 /**
  * Created by andrea on 01/04/18.
@@ -105,35 +109,30 @@ public class CategoryItemFragment extends SecondaryPanelFragment implements Load
 
     @Override
     public boolean onMenuItemClick(MenuItem item) {
-        switch (item.getItemId()) {
-            case R.id.action_show_transaction_list:
-                Intent intent = new Intent(getActivity(), TransactionListActivity.class);
-                intent.putExtra(TransactionListActivity.CATEGORY_ID, getItemId());
-                startActivity(intent);
-                break;
-            case R.id.action_edit_item:
-                intent = new Intent(getActivity(), NewEditCategoryActivity.class);
-                intent.putExtra(NewEditItemActivity.MODE, NewEditItemActivity.Mode.EDIT_ITEM);
-                intent.putExtra(NewEditItemActivity.ID, getItemId());
-                startActivity(intent);
-                break;
-            case R.id.action_delete_item:
-                showDeleteDialog(getActivity());
-                break;
+        int itemId = item.getItemId();
+        if (itemId == R.id.action_show_transaction_list) {
+            Intent intent = new Intent(getActivity(), TransactionListActivity.class);
+            intent.putExtra(TransactionListActivity.CATEGORY_ID, getItemId());
+            startActivity(intent);
+        } else if (itemId == R.id.action_edit_item) {
+            Intent intent = new Intent(getActivity(), NewEditCategoryActivity.class);
+            intent.putExtra(NewEditItemActivity.MODE, NewEditItemActivity.Mode.EDIT_ITEM);
+            intent.putExtra(NewEditItemActivity.ID, getItemId());
+            startActivity(intent);
+        } else if (itemId == R.id.action_delete_item) {
+            showDeleteDialog(getActivity());
         }
         return false;
     }
 
     private void showDeleteDialog(Context context) {
         ThemedDialog.buildMaterialDialog(context)
-                .title(R.string.title_warning)
-                .content(R.string.message_delete_category)
-                .positiveText(android.R.string.ok)
-                .negativeText(android.R.string.cancel)
-                .onPositive(new MaterialDialog.SingleButtonCallback() {
+                .setTitle(R.string.title_warning)
+                .setMessage(R.string.message_delete_category)
+                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
 
                     @Override
-                    public void onClick(@NonNull MaterialDialog dialog, @NonNull DialogAction which) {
+                    public void onClick(DialogInterface dialog, int which) {
                         Activity activity = getActivity();
                         if (activity != null) {
                             try {
@@ -143,6 +142,14 @@ public class CategoryItemFragment extends SecondaryPanelFragment implements Load
                                 navigateBackSafely();
                                 showItemId(0L);
                             } catch (SQLiteDataException e) {
+                                if (e.getErrorCode() == Contract.ErrorCode.CATEGORY_IN_SPLIT) {
+                                    ThemedDialog.buildMaterialDialog(activity)
+                                            .setTitle(R.string.title_error)
+                                            .setMessage(describeSplitRefusal(activity, e.getItemIds()))
+                                            .setPositiveButton(android.R.string.ok, null)
+                                            .show();
+                                    return;
+                                }
                                 int contentRes = 0;
                                 switch (e.getErrorCode()) {
                                     case Contract.ErrorCode.CATEGORY_HAS_CHILDREN:
@@ -157,9 +164,9 @@ public class CategoryItemFragment extends SecondaryPanelFragment implements Load
                                 }
                                 if (contentRes != 0) {
                                     ThemedDialog.buildMaterialDialog(activity)
-                                            .title(R.string.title_error)
-                                            .content(contentRes)
-                                            .positiveText(android.R.string.ok)
+                                            .setTitle(R.string.title_error)
+                                            .setMessage(contentRes)
+                                            .setPositiveButton(android.R.string.ok, null)
                                             .show();
                                 }
                             }
@@ -167,13 +174,51 @@ public class CategoryItemFragment extends SecondaryPanelFragment implements Load
                     }
 
                 })
+                .setNegativeButton(android.R.string.cancel, null)
                 .show();
+    }
+
+    /**
+     * Names the newest of the split transactions holding a part in this category by its date and
+     * its description, or its amount when it has none, and counts the others.
+     */
+    /*package-local*/ static String describeSplitRefusal(Context context, long[] transactionIds) {
+        String name = "?";
+        String date = "?";
+        if (transactionIds.length > 0) {
+            Uri uri = ContentUris.withAppendedId(DataContentProvider.CONTENT_TRANSACTIONS, transactionIds[0]);
+            String[] projection = new String[] {
+                    Contract.Transaction.DATE,
+                    Contract.Transaction.DESCRIPTION,
+                    Contract.Transaction.MONEY,
+                    Contract.Transaction.WALLET_CURRENCY
+            };
+            try (Cursor cursor = context.getContentResolver().query(uri, projection, null, null, null)) {
+                if (cursor != null && cursor.moveToFirst()) {
+                    date = DateFormatter.getFormattedDate(DateUtils.getDateFromSQLDateTimeString(
+                            cursor.getString(cursor.getColumnIndexOrThrow(Contract.Transaction.DATE))));
+                    name = cursor.getString(cursor.getColumnIndexOrThrow(Contract.Transaction.DESCRIPTION));
+                    if (TextUtils.isEmpty(name)) {
+                        name = MoneyFormatter.getInstance().getNotTintedString(CurrencyManager.getCurrency(
+                                cursor.getString(cursor.getColumnIndexOrThrow(Contract.Transaction.WALLET_CURRENCY))),
+                                cursor.getLong(cursor.getColumnIndexOrThrow(Contract.Transaction.MONEY)));
+                    }
+                }
+            }
+        }
+        String message = context.getString(R.string.message_error_delete_category_in_split, name, date);
+        int more = transactionIds.length - 1;
+        if (more > 0) {
+            message += " " + context.getResources().getQuantityString(
+                    R.plurals.message_error_delete_category_in_more_splits, more, more);
+        }
+        return message;
     }
 
     @Override
     protected void onShowItemId(long itemId) {
         setLoadingScreen(true);
-        getLoaderManager().restartLoader(CATEGORY_LOADER_ID, null, this);
+        LoaderManager.getInstance(this).restartLoader(CATEGORY_LOADER_ID, null, this);
     }
 
     private void setLoadingScreen(boolean loading) {
@@ -199,7 +244,8 @@ public class CategoryItemFragment extends SecondaryPanelFragment implements Load
                     Contract.Category.PARENT,
                     Contract.Category.PARENT_NAME,
                     Contract.Category.TYPE,
-                    Contract.Category.SHOW_REPORT
+                    Contract.Category.SHOW_REPORT,
+                    Contract.Category.PARENT_SHOW_REPORT
             };
             return new CursorLoader(getActivity(), uri, projection, null, null, null);
         }
@@ -238,7 +284,18 @@ public class CategoryItemFragment extends SecondaryPanelFragment implements Load
             }
             if (cursor.getInt(cursor.getColumnIndex(Contract.Category.SHOW_REPORT)) == 1) {
                 mShowReportCheckBox.setChecked(true);
-                mShowReportCheckBox.setText(R.string.hint_show_category_report_on);
+                // the reports keep a transaction only when its category and its parent are both
+                // included, so a subcategory under a hidden parent is out however its own box
+                // reads. A top level category joins no parent row, and the null that leaves here
+                // means included, which is how the report filter reads it too.
+                int parentShowReport = cursor.getColumnIndex(Contract.Category.PARENT_SHOW_REPORT);
+                int parentName = cursor.getColumnIndex(Contract.Category.PARENT_NAME);
+                if (!cursor.isNull(parentShowReport) && cursor.getInt(parentShowReport) == 0) {
+                    mShowReportCheckBox.setText(getString(R.string.hint_show_category_report_off_parent,
+                            cursor.getString(parentName)));
+                } else {
+                    mShowReportCheckBox.setText(R.string.hint_show_category_report_on);
+                }
             } else {
                 mShowReportCheckBox.setChecked(false);
                 mShowReportCheckBox.setText(R.string.hint_show_category_report_off);

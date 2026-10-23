@@ -29,26 +29,22 @@ import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentManager;
 import android.text.Editable;
-import android.text.TextUtils;
 import android.text.TextWatcher;
-import android.view.MenuItem;
 import android.widget.EditText;
 
-import com.afollestad.materialdialogs.color.ColorChooserDialog;
-import com.github.rubensousa.bottomsheetbuilder.BottomSheetBuilder;
-import com.github.rubensousa.bottomsheetbuilder.adapter.BottomSheetItemClickListener;
 import com.oriondev.moneywallet.R;
 import com.oriondev.moneywallet.model.ColorIcon;
 import com.oriondev.moneywallet.model.Icon;
 import com.oriondev.moneywallet.model.VectorIcon;
 import com.oriondev.moneywallet.ui.activity.IconListActivity;
-import com.oriondev.moneywallet.ui.view.theme.ThemedDialog;
+import com.oriondev.moneywallet.ui.fragment.dialog.ColorChooserDialog;
+import com.oriondev.moneywallet.utils.IconLoader;
 import com.oriondev.moneywallet.utils.Utils;
 
 /**
  * Created by andrea on 01/02/18.
  */
-public class IconPicker extends Fragment implements ColorChooserDialog.ColorCallback {
+public class IconPicker extends Fragment implements ColorChooserDialog.Callback {
 
     private static final String SS_CURRENT_ICON = "IconPicker::SavedState::CurrentIcon";
     private static final String SS_LAST_BG_COLOR = "IconPicker::SavedState::LastBackgroundColor";
@@ -57,6 +53,8 @@ public class IconPicker extends Fragment implements ColorChooserDialog.ColorCall
     private static final int REQUEST_ICON_PICKER = 57;
 
     private static final String DEFAULT_BACKGROUND_COLOR = "#000000";
+
+    private static final String TAG_COLOR_CHOOSER = "IconPicker::Tag::ColorChooserDialog";
 
     private Controller mController;
 
@@ -147,7 +145,7 @@ public class IconPicker extends Fragment implements ColorChooserDialog.ColorCall
             @Override
             public void onTextChanged(CharSequence sequence, int i, int i1, int i2) {
                 if (mCurrentIcon instanceof ColorIcon) {
-                    String text = getColorIconString(sequence.toString());
+                    String text = IconLoader.getColorIconString(sequence.toString());
                     mCurrentIcon = new ColorIcon((ColorIcon) mCurrentIcon, text);
                     fireCallbackSafely();
                 }
@@ -161,20 +159,6 @@ public class IconPicker extends Fragment implements ColorChooserDialog.ColorCall
         });
     }
 
-    public static String getColorIconString(String source) {
-        String trimmed = source != null ? source.trim().replaceAll(" +", " ") : null;
-        if (!TextUtils.isEmpty(trimmed)) {
-            String[] parts = trimmed.split(" ");
-            if (parts.length >= 2 && !parts[0].isEmpty() && !parts[1].isEmpty()) {
-                String builder = String.valueOf(parts[0].charAt(0)) + parts[1].charAt(0);
-                return builder.toUpperCase();
-            } else {
-                return trimmed.substring(0, 1).toUpperCase();
-            }
-        }
-        return "?";
-    }
-
     public Icon getCurrentIcon() {
         return mCurrentIcon;
     }
@@ -185,78 +169,30 @@ public class IconPicker extends Fragment implements ColorChooserDialog.ColorCall
     }
 
     /**
-     * This method is responsible to analyze the current icon and detect the possible actions that
-     * the user can make on it.
-     * In details, if the current icon is an instance of:
-     * - {@link ColorIcon} the user can select an icon instead or modify the background color.
-     * - {@link VectorIcon} the user can change the icon or simply remove it.
+     * Opens the icon list. Its menu offers to change the background color of a {@link ColorIcon}
+     * or to remove a {@link VectorIcon}.
      */
     public void showPicker() {
         Activity activity = getActivity();
         if (activity != null) {
-            if (mCurrentIcon instanceof ColorIcon) {
-                ThemedDialog.buildBottomSheet(activity)
-                        .setMode(BottomSheetBuilder.MODE_LIST)
-                        .addTitleItem(R.string.bottom_sheet_icon_picker_title)
-                        .addItem(1, R.string.bottom_sheet_icon_picker_action_select_icon, R.drawable.ic_add_24dp)
-                        .addItem(2, R.string.bottom_sheet_icon_picker_action_change_bg_color, R.drawable.ic_format_color_fill_black_24dp)
-                        .setItemClickListener(new BottomSheetItemClickListener() {
-
-                            @Override
-                            public void onBottomSheetItemClick(MenuItem item) {
-                                switch (item.getItemId()) {
-                                    case 1:
-                                        startIconPickerActivity();
-                                        break;
-                                    case 2:
-                                        openColorPicker();
-                                        break;
-                                }
-                            }
-
-                        })
-                        .createDialog()
-                        .show();
-            } else if (mCurrentIcon instanceof VectorIcon) {
-                ThemedDialog.buildBottomSheet(activity)
-                        .setMode(BottomSheetBuilder.MODE_LIST)
-                        .addTitleItem(R.string.bottom_sheet_icon_picker_title)
-                        .addItem(1, R.string.bottom_sheet_icon_picker_action_change_icon, R.drawable.ic_add_24dp)
-                        .addItem(2, R.string.bottom_sheet_icon_picker_action_remove_icon, R.drawable.ic_format_color_fill_black_24dp)
-                        .setItemClickListener(new BottomSheetItemClickListener() {
-
-                            @Override
-                            public void onBottomSheetItemClick(MenuItem item) {
-                                switch (item.getItemId()) {
-                                    case 1:
-                                        startIconPickerActivity();
-                                        break;
-                                    case 2:
-                                        restoreColorIcon();
-                                        break;
-                                }
-                            }
-
-                        })
-                        .createDialog()
-                        .show();
+            Intent intent = new Intent(activity, IconListActivity.class);
+            if (mCurrentIcon != null) {
+                intent.putExtra(IconListActivity.CURRENT_ICON_TYPE, mCurrentIcon.getType());
             }
+            startActivityForResult(intent, REQUEST_ICON_PICKER);
         }
     }
 
-    private void startIconPickerActivity() {
-        Intent intent = new Intent(getActivity(), IconListActivity.class);
-        startActivityForResult(intent, REQUEST_ICON_PICKER);
-    }
-
     private void openColorPicker() {
-        Activity activity = getActivity();
-        if (activity != null) {
-            ThemedDialog.buildColorChooserDialog(activity, R.string.dialog_color_picker_title_icon_picker_background_color)
-                    .accentMode(true)
-                    .preselect(Color.parseColor(mLastBackgroundColor))
-                    .dynamicButtonColor(false)
-                    .show(getChildFragmentManager());
+        if (!isAdded()) {
+            return;
+        }
+        FragmentManager fragmentManager = getChildFragmentManager();
+        // showNow adds the dialog before it returns, so a second tap in the same frame finds it.
+        if (fragmentManager.findFragmentByTag(TAG_COLOR_CHOOSER) == null) {
+            ColorChooserDialog.newInstance(R.string.dialog_color_picker_title_icon_picker_background_color,
+                            true, Color.parseColor(mLastBackgroundColor))
+                    .showNow(fragmentManager, TAG_COLOR_CHOOSER);
         }
     }
 
@@ -276,17 +212,17 @@ public class IconPicker extends Fragment implements ColorChooserDialog.ColorCall
     }
 
     @Override
-    public void onColorSelection(@NonNull ColorChooserDialog dialog, int selectedColor) {
+    public void onColorSelection(ColorChooserDialog dialog, int selectedColor) {
         mLastBackgroundColor = Utils.getHexColor(selectedColor);
         if (mCurrentIcon instanceof ColorIcon) {
-            String text = getColorIconString(mBindEditText != null ? mBindEditText.getText().toString() : null);
+            String text = IconLoader.getColorIconString(mBindEditText != null ? mBindEditText.getText().toString() : null);
             mCurrentIcon = new ColorIcon(mLastBackgroundColor, text);
             fireCallbackSafely();
         }
     }
 
     @Override
-    public void onColorChooserDismissed(@NonNull ColorChooserDialog dialog) {
+    public void onColorChooserDismissed(ColorChooserDialog dialog) {
         // do nothing here: if the user dismiss the picker, it means that he don't want to change
         // the color at the moment.
     }
@@ -294,9 +230,17 @@ public class IconPicker extends Fragment implements ColorChooserDialog.ColorCall
     @Override
     public void onActivityResult(int requestCode, int resultCode, Intent intent) {
         if (requestCode == REQUEST_ICON_PICKER) {
-            if (resultCode == Activity.RESULT_OK) {
-                mCurrentIcon = intent.getParcelableExtra(IconListActivity.RESULT_ICON);
-                fireCallbackSafely();
+            if (resultCode == Activity.RESULT_OK && intent != null) {
+                String action = intent.getStringExtra(IconListActivity.RESULT_ACTION);
+                if (IconListActivity.ACTION_CHANGE_BG_COLOR.equals(action)) {
+                    // The dialog lives here because it calls back the fragment that hosts it.
+                    openColorPicker();
+                } else if (IconListActivity.ACTION_REMOVE_ICON.equals(action)) {
+                    restoreColorIcon();
+                } else {
+                    mCurrentIcon = intent.getParcelableExtra(IconListActivity.RESULT_ICON);
+                    fireCallbackSafely();
+                }
             }
         } else {
             super.onActivityResult(requestCode, resultCode, intent);

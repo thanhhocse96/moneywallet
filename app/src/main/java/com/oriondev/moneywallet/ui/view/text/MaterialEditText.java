@@ -28,15 +28,19 @@ import android.graphics.Paint;
 import android.graphics.PorterDuff;
 import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
+import android.os.Build;
 import androidx.annotation.DrawableRes;
 import androidx.annotation.NonNull;
 import androidx.annotation.StringRes;
 import androidx.core.view.ViewCompat;
 import android.text.Editable;
+import android.text.TextPaint;
+import android.text.TextUtils;
 import android.text.TextWatcher;
 import android.util.AttributeSet;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.accessibility.AccessibilityNodeInfo;
 
 import com.oriondev.moneywallet.R;
 import com.oriondev.moneywallet.storage.cache.TypefaceCache;
@@ -85,7 +89,7 @@ public class MaterialEditText extends androidx.appcompat.widget.AppCompatEditTex
 
     private CancelButtonListener mCancelButtonListener;
 
-    private Paint mFloatingLabelPaint;
+    private TextPaint mFloatingLabelPaint;
     private Paint mErrorTextPaint;
     private Paint mBottomLinePaint;
 
@@ -108,7 +112,7 @@ public class MaterialEditText extends androidx.appcompat.widget.AppCompatEditTex
 
     private void initialize(Context context, AttributeSet attrs, int defStyleAttr) {
         // initialize paints
-        mFloatingLabelPaint = new Paint();
+        mFloatingLabelPaint = new TextPaint();
         mFloatingLabelPaint.setAntiAlias(true);
         mErrorTextPaint = new Paint();
         mErrorTextPaint.setAntiAlias(true);
@@ -117,7 +121,7 @@ public class MaterialEditText extends androidx.appcompat.widget.AppCompatEditTex
         mMeter = new Rect();
         mLabelVisible = false;
         // disable background
-        Utils.setBackgroundCompat(this, null);
+        setBackground(null);
         // parse attributes from xml
         TypedArray typedArray = context.obtainStyledAttributes(attrs, R.styleable.MaterialEditText, defStyleAttr, 0);
         try {
@@ -213,11 +217,14 @@ public class MaterialEditText extends androidx.appcompat.widget.AppCompatEditTex
         paddingTop += getPixels(16);
         if (mMode == Mode.FLOATING_LABEL && mHint != null) {
             // append floating label text size
-            mFloatingLabelPaint.getTextBounds(mHint, 0, mHint.length(), mMeter);
-            paddingTop += mMeter.height();
+            paddingTop += getFloatingLabelHeight();
         }
         // apply padding
         setPadding(paddingLeft, paddingTop, paddingRight, paddingBottom);
+    }
+
+    private int getFloatingLabelHeight() {
+        return -mFloatingLabelPaint.getFontMetricsInt().ascent;
     }
 
     private boolean isRtl() {
@@ -262,13 +269,13 @@ public class MaterialEditText extends androidx.appcompat.widget.AppCompatEditTex
     protected void onDrawFloatingLabel(Canvas canvas) {
         if (mMode == Mode.FLOATING_LABEL && mHint != null) {
             mFloatingLabelPaint.setColor(hasFocus() ? mFloatingLabelColorFocused : mFloatingLabelColorNormal);
-            mFloatingLabelPaint.getTextBounds(mHint, 0, mHint.length(), mMeter);
-            int startY = getPaddingTop() + mMeter.height();
+            String label = TextUtils.ellipsize(mHint, mFloatingLabelPaint, getMeasuredWidth() - getPaddingLeft() - getPaddingRight() + (mShowCancelButton ? getPixels(CANCEL_BUTTON_PADDING_DP) : 0), TextUtils.TruncateAt.END).toString();
+            int startY = getPaddingTop() + getFloatingLabelHeight();
             int endY = getPaddingTop() - getPixels(8);
-            int startX = getScrollX() + (isRtl() ? (getMeasuredWidth() - getPaddingRight() - mMeter.width()) : getPaddingLeft());
+            int startX = getScrollX() + (isRtl() ? (getMeasuredWidth() - getPaddingRight() - (int) mFloatingLabelPaint.measureText(label)) : getPaddingLeft());
             int textY = startY - ((int) ((startY - endY) * getAnimatedY()));
             if (textY < startY) {
-                canvas.drawText(mHint, startX, textY, mFloatingLabelPaint);
+                canvas.drawText(label, startX, textY, mFloatingLabelPaint);
             }
         }
     }
@@ -283,7 +290,9 @@ public class MaterialEditText extends androidx.appcompat.widget.AppCompatEditTex
         }
         int lineHeight = hasFocus() ? mFocusedBottomLineSize : mDefaultBottomLineSize;
         int top = getMeasuredHeight() - getPaddingBottom() + getPixels(BOTTOM_LINE_PADDING_DP) - lineHeight;
-        int left = getPaddingLeft() + getScrollX() + (mShowCancelButton && isRtl() ? getPixels(CANCEL_BUTTON_PADDING_DP) : 0);
+        // the cancel button reserves CANCEL_BUTTON_PADDING_DP inside the padding on the side it is
+        // drawn, and the line reaches back over that to keep the width it has with no button shown
+        int left = getPaddingLeft() + getScrollX() - (mShowCancelButton && isRtl() ? getPixels(CANCEL_BUTTON_PADDING_DP) : 0);
         int right = getScrollX() + getMeasuredWidth() - getPaddingRight() + (mShowCancelButton  && !isRtl()? getPixels(CANCEL_BUTTON_PADDING_DP) : 0);
         canvas.drawRect(
                 left,
@@ -352,6 +361,19 @@ public class MaterialEditText extends androidx.appcompat.widget.AppCompatEditTex
 
     public Mode getMode() {
         return mMode;
+    }
+
+    /**
+     * Sets the label drawn above the text. TextView.setHint cannot do it, since it is final and
+     * the label is read from the hint only once, when the view is inflated.
+     */
+    public void setFloatingLabelText(String label) {
+        mHint = label;
+        calculatePadding();
+    }
+
+    public String getFloatingLabelText() {
+        return mHint;
     }
 
     public void setFloatingLabelColorNormal(int floatingLabelColorNormal) {
@@ -514,6 +536,18 @@ public class MaterialEditText extends androidx.appcompat.widget.AppCompatEditTex
         }
         if (shouldInvalidate) {
             calculatePadding();
+        }
+    }
+
+    /**
+     * Exposes the label as the hint to accessibility services, since a real hint would size the
+     * field to fit it even while it is not shown.
+     */
+    @Override
+    public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info) {
+        super.onInitializeAccessibilityNodeInfo(info);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && getHint() == null && mHint != null) {
+            info.setHintText(mHint);
         }
     }
 

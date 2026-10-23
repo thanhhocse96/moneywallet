@@ -20,54 +20,89 @@
 apply plugin: 'com.android.application'
 
 android {
-    compileSdkVersion 29
+    namespace "com.oriondev.moneywallet"
+    compileSdk 36
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    androidResources {
+        generateLocaleConfig true
+    }
+
     defaultConfig {
-        applicationId "com.oriondev.moneywallet"
-        minSdkVersion 21
-        targetSdkVersion 29
-        versionCode 75
-        versionName "4.0.5.10"
+        applicationId "io.github.herrerad85.tallybook"
+        minSdk 24
+        targetSdk 35
+        versionCode 92
+        versionName "1.14.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-        testInstrumentationRunnerArguments clearPackageData: 'true'
-        multiDexEnabled true
-        manifestPlaceholders = [
-                DropBoxApiKey: ApiKey_Dropbox.replaceAll('"', ''),
-                GoogleApiKey : ApiKey_Google
-        ]
-        buildConfigField('String', 'API_KEY_DROPBOX', ApiKey_Dropbox)
         buildConfigField('String', 'API_KEY_OPEN_EXCHANGE_RATES', ApiKey_OpenExchangeRates)
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
     }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            vcsInfo {
+                include false
+            }
         }
         debug {
             applicationIdSuffix ".dev"
             debuggable true
         }
     }
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
+    }
+    // One flavor per dimension. The F-Droid recipe builds with gradle: [floss, osm] and copies
+    // that list into every new version's build block, so both names stay.
     flavorDimensions "version", "map"
     productFlavors {
-        // version
-        proprietary {
-            dimension "version"
-        }
         floss {
             dimension "version"
-        }
-        // map
-        gmap {
-            dimension "map"
         }
         osm {
             dimension "map"
         }
     }
-    // test libraries
-    useLibrary 'android.test.runner'
-    useLibrary 'android.test.base'
-    useLibrary 'android.test.mock'
+    lint {
+        baseline = file("lint-baseline.xml")
+        abortOnError true
+        // A baseline entry matches on the message text, and a MissingTranslation
+        // message lists the locales a string is still missing from. Translating one
+        // string rewrites that list, so the entry stops matching and the string is
+        // reported fresh. At error severity that turns a translation contribution
+        // into a red build, so this check reports without failing anything.
+        warning "MissingTranslation"
+        // These four ask a Google hosted index whether a dependency is flagged, so
+        // their answer can change with no commit here. At error severity that means
+        // a build that passed this morning can fail this afternoon on untouched code.
+        // The last one is registered but never reported by this version of lint, and
+        // is named so that a plugin bump cannot quietly put it back on the wire.
+        warning "PlaySdkIndexVulnerability", "PlaySdkIndexNonCompliant",
+                "PlaySdkIndexDeprecated", "PlaySdkIndexGenericIssues"
+        // These three only report that a newer version exists. Each looks that up
+        // over the network on every run and writes the answer into its message, so a
+        // baseline entry for one stops matching as soon as that project ships.
+        // AndroidGradlePluginVersion also sits on the root gradle wrapper, outside
+        // this module, which is the one location a baseline cannot record portably.
+        disable "AndroidGradlePluginVersion", "NewerVersionAvailable", "GradleDependency"
+    }
+    testOptions {
+        unitTests {
+            includeAndroidResources = true
+            all {
+                maxHeapSize = '1g'
+            }
+        }
+    }
 }
 
 configurations {
@@ -77,62 +112,56 @@ configurations {
 }
 
 dependencies {
-    // common dependencies
-    implementation supportDependencies.appcompat
-    implementation supportDependencies.constraintlayout
-    implementation supportDependencies.recyclerview
-    implementation supportDependencies.cardview
-    implementation supportDependencies.annotations
-    implementation supportDependencies.design
-    implementation supportDependencies.preference
-    implementation 'com.afollestad.material-dialogs:core:0.9.6.0'
-    implementation 'com.afollestad.material-dialogs:commons:0.9.6.0'
-    implementation('com.mikepenz:materialdrawer:6.0.8@aar') {
-        transitive = true
+    implementation libs.androidx.activity
+    implementation libs.androidx.annotation
+    implementation libs.androidx.appcompat
+    implementation libs.androidx.biometric
+    implementation libs.androidx.cardview
+    implementation libs.androidx.collection
+    implementation libs.androidx.constraintlayout
+    implementation libs.androidx.coordinatorlayout
+    implementation libs.androidx.core
+    implementation libs.androidx.documentfile
+    implementation libs.androidx.drawerlayout
+    implementation libs.androidx.fragment
+    implementation libs.androidx.loader
+    implementation libs.androidx.localbroadcastmanager
+    implementation libs.androidx.preference
+    implementation libs.androidx.recyclerview
+    implementation libs.androidx.swiperefreshlayout
+    implementation libs.androidx.viewpager
+    implementation libs.appintro
+    implementation libs.commons.io
+    implementation libs.glide
+    implementation libs.itextpdf
+    implementation libs.jxl
+    implementation libs.lib.recur
+    implementation libs.material
+    implementation libs.material.about.library
+    implementation libs.mpandroidchart
+    implementation libs.okhttp
+    implementation(libs.opencsv) {
+        // Nothing on the path of the classes this app uses names either artifact. Those are
+        // CSVReaderHeaderAware, CSVReader built through CSVReaderBuilder and
+        // CSVParserBuilder, CSVParser, and CSVWriter, and the unit tests drive each of them
+        // with the two artifacts left out, since the test classpath inherits these
+        // exclusions. Taking the two artifacts out
+        // drops about 480 KB from the release APK, which is not minified, so nothing else
+        // would.
+        exclude group: 'commons-beanutils'
+        exclude group: 'org.apache.commons', module: 'commons-collections4'
     }
-    implementation 'com.pnikosis:materialish-progress:1.7'
-    implementation 'com.github.rubensousa:bottomsheetbuilder:1.6.1'
-    implementation('com.philliphsu:bottomsheetpickers:2.4.1') {
-        exclude group: 'com.android.support', module: 'appcompat-v7'
-        exclude group: 'com.android.support', module: 'design'
-    }
-    implementation 'com.github.florent37:expansionpanel:1.1.1'
-    implementation 'commons-io:commons-io:2.6'
-    implementation 'androidx.multidex:multidex:2.0.1'
-    implementation 'androidx.activity:activity:1.2.0-alpha08'
-    implementation 'androidx.fragment:fragment:1.3.0-alpha08'
-    implementation 'net.lingala.zip4j:zip4j:1.3.2'
-    implementation 'com.github.daniel-stoneuk:material-about-library:2.2.4'
-    implementation 'com.github.apl-devs:appintro:v4.2.3'
-    implementation 'com.andrognito.pinlockview:pinlockview:2.1.0'
-    implementation 'com.andrognito.patternlockview:patternlockview:1.0.0'
-    implementation 'com.multidots:fingerprint-auth:1.0.1'
-    implementation 'com.github.PhilJay:MPAndroidChart:v3.0.3'
-    implementation 'com.github.ronaldsmartin:Material-ViewPagerIndicator:1.0.4'
-    implementation 'com.jaredrummler:material-spinner:1.2.5'
-    implementation 'org.dmfs:lib-recur:0.11.1'
-    implementation 'com.opencsv:opencsv:4.4'
-    implementation 'net.sourceforge.jexcelapi:jxl:2.6.12'
-    implementation 'com.itextpdf:itextpdf:5.5.13'
-    implementation 'me.weishu:free_reflection:2.2.0'
-    implementation 'com.github.bumptech.glide:glide:4.8.0'
-    annotationProcessor 'com.github.bumptech.glide:compiler:4.8.0'
-    // google play dependencies
-    proprietaryImplementation('com.dropbox.core:dropbox-core-sdk:3.0.8')
-    proprietaryImplementation googlePlayServices.auth
-    proprietaryImplementation googlePlayServices.signin
-    proprietaryImplementation googlePlayServices.drive
-    // google-map dependencies
-    gmapImplementation googlePlayServices.places
-    // floss dependencies
-    osmImplementation 'org.osmdroid:osmdroid-android:6.1.1'
+    implementation libs.patternlockview
+    implementation libs.pinlockview
+    implementation libs.zip4j
+    // osm flavor
+    osmImplementation libs.osmdroid
     // test dependencies (local tests)
-    testImplementation 'junit:junit:4.12'
-    testImplementation 'org.mockito:mockito-core:3.6.28'
+    testImplementation libs.junit
+    testImplementation libs.mockito.core
+    testImplementation libs.robolectric
+    testImplementation libs.androidx.test.core
     // android test dependencies (on-device tests)
-    androidTestImplementation 'junit:junit:4.12'
-    androidTestImplementation 'androidx.test:core:1.2.0'
-    androidTestImplementation 'androidx.test:runner:1.2.0'
-    androidTestImplementation 'androidx.test:rules:1.2.0'
-    androidTestUtil "androidx.test:orchestrator:1.2.0"
+    androidTestImplementation libs.junit
+    androidTestImplementation libs.androidx.test.runner
 }

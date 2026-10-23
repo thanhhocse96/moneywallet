@@ -20,6 +20,7 @@
 package com.oriondev.moneywallet.ui.view;
 
 import android.content.Context;
+import android.content.res.TypedArray;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.StringRes;
@@ -30,7 +31,7 @@ import android.view.View;
 import android.widget.TextView;
 
 import com.oriondev.moneywallet.R;
-import com.pnikosis.materialishprogress.ProgressWheel;
+import com.oriondev.moneywallet.utils.SystemBars;
 
 /**
  * Created by andrea on 26/01/18.
@@ -38,7 +39,7 @@ import com.pnikosis.materialishprogress.ProgressWheel;
 public class AdvancedRecyclerView extends SwipeRefreshLayout {
 
     private RecyclerView mRecyclerView;
-    private ProgressWheel mProgressWheel;
+    private View mProgressWheel;
     private TextView mEmptyTextView;
 
     private int mEmptyTextRes;
@@ -47,27 +48,41 @@ public class AdvancedRecyclerView extends SwipeRefreshLayout {
 
     public AdvancedRecyclerView(Context context) {
         super(context);
-        initialize(context);
+        initialize(context, null);
     }
 
     public AdvancedRecyclerView(@NonNull Context context, @Nullable AttributeSet attrs) {
         super(context, attrs);
-        initialize(context);
+        initialize(context, attrs);
     }
 
-    private void initialize(@NonNull Context context) {
+    /**
+     * The navigation bar inset is asked for here and not in view_advanced_recycler, because every
+     * instance in the app inflates that one file, an attribute set there would turn the inset on
+     * for all of them at once, and some of these lists are inside a secondary panel or a pager
+     * page where it does not belong.
+     */
+    private void initialize(@NonNull Context context, @Nullable AttributeSet attrs) {
         inflate(context, R.layout.view_advanced_recycler, this);
         mRecyclerView = findViewById(R.id.recycler_view);
         mProgressWheel = findViewById(R.id.progress_wheel);
         mEmptyTextView = findViewById(R.id.empty_text_view);
+        TypedArray typedArray = context.obtainStyledAttributes(attrs, R.styleable.AdvancedRecyclerView, 0, 0);
+        boolean insetSides;
+        boolean insetBottom;
+        try {
+            insetSides = typedArray.getBoolean(R.styleable.AdvancedRecyclerView_systemBarInsetSides, true);
+            insetBottom = typedArray.getBoolean(R.styleable.AdvancedRecyclerView_systemBarInsetBottom, false);
+        } finally {
+            typedArray.recycle();
+        }
+        if (insetBottom) {
+            SystemBars.pad(mRecyclerView, false, insetSides, true);
+        }
     }
 
     public RecyclerView getRecyclerView() {
         return mRecyclerView;
-    }
-
-    public ProgressWheel getProgressWheel() {
-        return mProgressWheel;
     }
 
     public TextView getTextView() {
@@ -82,8 +97,14 @@ public class AdvancedRecyclerView extends SwipeRefreshLayout {
         mRecyclerView.setAdapter(adapter);
     }
 
+    /**
+     * The text is also written by {@link #setState(State)}. Setting it on the view here as well
+     * is what lets a caller refine the message after the empty view is already on screen, with
+     * no further state change to carry it there.
+     */
     public void setEmptyText(@StringRes int resId) {
         mEmptyTextRes = resId;
+        mEmptyTextView.setText(resId);
     }
 
     public void setErrorText(@StringRes int resId) {

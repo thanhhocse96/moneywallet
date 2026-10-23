@@ -20,8 +20,6 @@
 package com.oriondev.moneywallet.ui.behavior;
 
 import android.content.Context;
-import android.content.res.TypedArray;
-import com.google.android.material.appbar.AppBarLayout;
 import androidx.coordinatorlayout.widget.CoordinatorLayout;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import com.google.android.material.snackbar.Snackbar;
@@ -30,55 +28,37 @@ import android.view.View;
 
 import com.oriondev.moneywallet.R;
 
-import java.util.List;
-
 /**
- * This class implements a custom behavior of the Floating Action Button when attached to a
- * CoordinatorLayout: it allows to show and hide the fab when a nested view is scrolled.
+ * A custom behavior for the Floating Action Button when it is attached to a CoordinatorLayout. It
+ * hides the button while a snackbar covers it and shows it again once the snackbar is gone.
  */
 public class ScrollingFloatingActionButtonBehavior extends CoordinatorLayout.Behavior<FloatingActionButton> {
 
-    private int mToolbarHeight;
+    private boolean mHiddenForSnackbar;
 
     public ScrollingFloatingActionButtonBehavior(Context context, AttributeSet attrs) {
         super(context, attrs);
-        TypedArray styledAttributes = context.getTheme().obtainStyledAttributes(new int[]{R.attr.actionBarSize});
-        mToolbarHeight = (int) styledAttributes.getDimension(0, 0);
-        styledAttributes.recycle();
     }
 
     @Override
     public boolean layoutDependsOn(CoordinatorLayout parent, FloatingActionButton fab, View dependency) {
-        return dependency instanceof AppBarLayout || dependency instanceof Snackbar.SnackbarLayout;
+        return dependency instanceof Snackbar.SnackbarLayout;
     }
 
     @Override
     public boolean onDependentViewChanged(CoordinatorLayout parent, FloatingActionButton fab, View dependency) {
-        if (dependency instanceof AppBarLayout) {
-            CoordinatorLayout.LayoutParams lp = (CoordinatorLayout.LayoutParams) fab.getLayoutParams();
-            int fabBottomMargin = lp.bottomMargin;
-            int distanceToScroll = fab.getHeight() + fabBottomMargin;
-            float ratio = dependency.getY() / (float) mToolbarHeight;
-            fab.setTranslationY(distanceToScroll * ratio * -1);
-        } else if (dependency instanceof Snackbar.SnackbarLayout) {
-            float translationY = getFabTranslationYForSnackBar(parent, fab);
-            float percentComplete = -translationY / dependency.getHeight();
-            float scaleFactor = 1 - percentComplete;
-            fab.setScaleX(scaleFactor);
-            fab.setScaleY(scaleFactor);
+        if (fab.getVisibility() == View.VISIBLE && parent.doViewsOverlap(fab, dependency)) {
+            mHiddenForSnackbar = true;
+            fab.hide();
         }
-        return true;
+        return false;
     }
 
-    private float getFabTranslationYForSnackBar(CoordinatorLayout parent, FloatingActionButton fab) {
-        float minOffset = 0;
-        final List<View> dependencies = parent.getDependencies(fab);
-        for (int i = 0, z = dependencies.size(); i < z; i++) {
-            final View view = dependencies.get(i);
-            if (view instanceof Snackbar.SnackbarLayout && parent.doViewsOverlap(fab, view)) {
-                minOffset = Math.min(minOffset, view.getTranslationY() - view.getHeight());
-            }
+    @Override
+    public void onDependentViewRemoved(CoordinatorLayout parent, FloatingActionButton fab, View dependency) {
+        if (mHiddenForSnackbar) {
+            mHiddenForSnackbar = false;
+            fab.show();
         }
-        return minOffset;
     }
 }

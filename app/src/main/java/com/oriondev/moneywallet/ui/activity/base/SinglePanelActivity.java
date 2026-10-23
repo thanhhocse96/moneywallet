@@ -32,6 +32,7 @@ import android.view.View;
 import android.view.ViewGroup;
 
 import com.oriondev.moneywallet.R;
+import com.oriondev.moneywallet.utils.SystemBars;
 import com.oriondev.moneywallet.utils.Utils;
 
 /**
@@ -46,6 +47,9 @@ public abstract class SinglePanelActivity extends BaseActivity implements Toolba
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         onInflateRootLayout();
+        // Only the width qualified copies of these layouts carry one.
+        SystemBars.keepGuidelineBelowToolbar(findViewById(R.id.toolbar_delimiter_horizontal_guideline),
+                findViewById(R.id.primary_toolbar));
         onSetupRootLayout();
         onConfigureRootLayout(savedInstanceState);
         onSetupFloatingActionButton(mFloatingActionButton);
@@ -70,6 +74,7 @@ public abstract class SinglePanelActivity extends BaseActivity implements Toolba
         int iconRes = getNavigationIcon();
         if (iconRes > 0) {
             mToolbar.setNavigationIcon(getNavigationIcon());
+            mToolbar.setNavigationContentDescription(R.string.hint_navigate_up);
             mToolbar.setNavigationOnClickListener(new View.OnClickListener() {
 
                 @Override

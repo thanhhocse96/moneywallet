@@ -41,12 +41,15 @@ import com.oriondev.moneywallet.R;
 import com.oriondev.moneywallet.broadcast.LocalAction;
 import com.oriondev.moneywallet.model.CurrencyUnit;
 import com.oriondev.moneywallet.model.ExchangeRate;
+import com.oriondev.moneywallet.model.MoneyScale;
 import com.oriondev.moneywallet.picker.CurrencyPicker;
 import com.oriondev.moneywallet.service.AbstractCurrencyRateDownloadIntentService;
 import com.oriondev.moneywallet.storage.preference.PreferenceManager;
 import com.oriondev.moneywallet.ui.activity.base.SinglePanelActivity;
+import com.oriondev.moneywallet.ui.view.theme.ITheme;
 import com.oriondev.moneywallet.utils.CurrencyManager;
 import com.oriondev.moneywallet.utils.MoneyFormatter;
+import com.oriondev.moneywallet.utils.SystemBars;
 
 import java.math.BigDecimal;
 
@@ -90,17 +93,30 @@ public class CurrencyConverterActivity extends SinglePanelActivity implements Vi
 
     @Override
     public boolean onMenuItemClick(MenuItem item) {
-        switch (item.getItemId()) {
-            case R.id.refresh_rate:
-                startService(AbstractCurrencyRateDownloadIntentService.buildIntent(this));
-                break;
+        int itemId = item.getItemId();
+        if (itemId == R.id.refresh_rate) {
+            startService(AbstractCurrencyRateDownloadIntentService.buildIntent(this));
         }
         return false;
+    }
+
+    /**
+     * The keypad fills the bottom of this screen and carries the primary background, so that is what is
+     * behind the navigation bar here, not the list background the base class assumes.
+     */
+    @Override
+    protected int getColorBehindNavigationBar(ITheme theme) {
+        return theme.getColorPrimaryBackground();
     }
 
     @Override
     protected void onCreatePanelView(LayoutInflater inflater, ViewGroup parent, Bundle savedInstanceState) {
         View view = inflater.inflate(R.layout.layout_panel_currency_converter, parent, true);
+        // The bottom row of keys reaches the bottom of the window and cannot be scrolled out of the
+        // way of the navigation bar. It carries the primary color, so the color keeps running under
+        // the bar and only the keys move up.
+        SystemBars.pad(view.findViewById(R.id.keypad_last_row),
+                false, getResources().getBoolean(R.bool.panel_fills_window), true);
         mImageCurrencyFrom = view.findViewById(R.id.image_currency_from);
         mImageCurrencyTo = view.findViewById(R.id.image_currency_to);
         mTextCurrencyFrom = view.findViewById(R.id.text_currency_from);
@@ -219,7 +235,7 @@ public class CurrencyConverterActivity extends SinglePanelActivity implements Vi
     private CurrencyUnit getDefaultCurrencyUnit(boolean primary) {
         CurrencyUnit currencyUnit = CurrencyManager.getDefaultCurrency();
         if (!primary) {
-            return currencyUnit.getIso().equals(EUR) ?
+            return currencyUnit != null && EUR.equals(currencyUnit.getIso()) ?
                     CurrencyManager.getCurrency(USD) : CurrencyManager.getCurrency(EUR);
         }
         return currencyUnit;
@@ -242,10 +258,9 @@ public class CurrencyConverterActivity extends SinglePanelActivity implements Vi
         );
         if (exchangeRate != null) {
             CurrencyUnit currencyUnit = mCurrencyToPicker.getCurrentCurrency();
-            long money = new BigDecimal(text)
-                    .multiply(BigDecimal.valueOf(exchangeRate.getRate()))
-                    .movePointRight(currencyUnit.getDecimals())
-                    .longValue();
+            long money = MoneyScale.toMinorUnits(
+                    new BigDecimal(text).multiply(BigDecimal.valueOf(exchangeRate.getRate())),
+                    currencyUnit.getDecimals());
             mTextMoneyTo.setText(mMoneyFormatter.getNotTintedString(currencyUnit, money, MoneyFormatter.CurrencyMode.ALWAYS_HIDDEN));
         } else {
             mTextMoneyTo.setText(R.string.hint_unknown);
@@ -271,6 +286,19 @@ public class CurrencyConverterActivity extends SinglePanelActivity implements Vi
 
     @Override
     public void onCurrencyChanged(String tag, CurrencyUnit currency) {
+        if (currency == null) {
+            // nothing is selected, which CurrencyPicker allows and this screen did not
+            if (TAG_CURRENCY_FROM_PICKER.equals(tag)) {
+                clearCurrencyRow(mImageCurrencyFrom, mTextCurrencyFrom);
+            } else if (TAG_CURRENCY_TO_PICKER.equals(tag)) {
+                clearCurrencyRow(mImageCurrencyTo, mTextCurrencyTo);
+            }
+            // either side missing makes the result unconvertible, so say so for both
+            mTextMoneyTo.setText(R.string.hint_unknown);
+            // the last used preference is deliberately left pointing at the last real choice,
+            // so reopening the screen offers that rather than nothing
+            return;
+        }
         switch (tag) {
             case TAG_CURRENCY_FROM_PICKER:
                 loadCurrencyFlag(mImageCurrencyFrom, currency.getIso());
@@ -288,6 +316,17 @@ public class CurrencyConverterActivity extends SinglePanelActivity implements Vi
         }
     }
 
+    /**
+     * Empty one of the two currency rows. Both calls are needed: clear cancels a flag load that
+     * has not landed yet, and only loadCurrencyFlag's Glide branch tags a request for it to find,
+     * while the branch for a currency with no flag drawable leaves the drawable set by hand.
+     */
+    private void clearCurrencyRow(ImageView imageView, TextView textView) {
+        Glide.with(this).clear(imageView);
+        imageView.setImageDrawable(null);
+        textView.setText(null);
+    }
+
     private void loadCurrencyFlag(ImageView imageView, String iso) {
         int flag = CurrencyUnit.getCurrencyFlag(this, iso);
         if (flag > 0) {
@@ -296,6 +335,8 @@ public class CurrencyConverterActivity extends SinglePanelActivity implements Vi
                     .load(flag)
                     .into(imageView);
         } else {
+            // into() cancels a pending load for us on the branch above, this branch has to ask
+            Glide.with(this).clear(imageView);
             imageView.setImageDrawable(CurrencyUnit.getCurrencyDrawable(iso));
         }
     }

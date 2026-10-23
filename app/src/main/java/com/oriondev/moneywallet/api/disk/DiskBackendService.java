@@ -21,10 +21,10 @@ package com.oriondev.moneywallet.api.disk;
 
 import android.Manifest;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.pm.PackageManager;
+import android.os.Build;
 
-import com.afollestad.materialdialogs.DialogAction;
-import com.afollestad.materialdialogs.MaterialDialog;
 import com.oriondev.moneywallet.R;
 import com.oriondev.moneywallet.api.AbstractBackendServiceDelegate;
 import com.oriondev.moneywallet.api.BackendException;
@@ -38,11 +38,14 @@ import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+import androidx.fragment.app.Fragment;
 
 /**
  * Created by andrea on 21/11/18.
  */
 public class DiskBackendService extends AbstractBackendServiceDelegate {
+
+    private ActivityResultLauncher<String> mPermissionLauncher;
 
     public DiskBackendService(BackendServiceStatusListener listener) {
         super(listener);
@@ -68,47 +71,65 @@ public class DiskBackendService extends AbstractBackendServiceDelegate {
         return R.string.cover_message_backup_external_memory_button;
     }
 
+    /**
+     * From Android 13 the platform denies WRITE_EXTERNAL_STORAGE to an app targeting 33 or
+     * higher without showing any dialog, so gating on it there leaves the cover screen up
+     * forever and {@link #setup} can never clear it.
+     */
     @Override
     public boolean isServiceEnabled(Context context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            return true;
+        }
         String permission = Manifest.permission.WRITE_EXTERNAL_STORAGE;
         int result = ContextCompat.checkSelfPermission(context, permission);
         return result == PackageManager.PERMISSION_GRANTED;
     }
 
     @Override
-    public void setup(final ComponentActivity activity) throws BackendException {
-        final ActivityResultLauncher<String> launcher = activity.registerForActivityResult(
+    public boolean isDisconnectable() {
+        // The local external-memory backend cannot be disconnected: there is no remote session
+        // or persisted grant to revoke, only a runtime storage permission.
+        return false;
+    }
+
+    @Override
+    public void registerLaunchers(@NonNull final Fragment fragment) {
+        mPermissionLauncher = fragment.registerForActivityResult(
                 new ActivityResultContracts.RequestPermission(),
                 new ActivityResultCallback<Boolean>() {
                     @Override
                     public void onActivityResult(Boolean isGranted) {
                         setBackendServiceEnabled(isGranted);
                         if (!isGranted) {
-                            setBackendServiceEnabled(false);
-                            ThemedDialog.buildMaterialDialog(activity)
-                                    .title(R.string.title_warning)
-                                    .content(R.string.message_permission_required_not_granted)
+                            ThemedDialog.buildMaterialDialog(fragment.requireActivity())
+                                    .setTitle(R.string.title_warning)
+                                    .setMessage(R.string.message_permission_required_not_granted)
                                     .show();
                         }
                     }
                 }
         );
+    }
+
+    @Override
+    public void setup(final ComponentActivity activity) throws BackendException {
         if (ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
             ThemedDialog.buildMaterialDialog(activity)
-                    .title(R.string.title_request_permission)
-                    .content(R.string.message_permission_required_external_storage)
-                    .positiveText(android.R.string.ok)
-                    .negativeText(android.R.string.cancel)
-                    .onPositive(new MaterialDialog.SingleButtonCallback() {
+                    .setTitle(R.string.title_request_permission)
+                    .setMessage(R.string.message_permission_required_external_storage)
+                    .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
 
                         @Override
-                        public void onClick(@NonNull MaterialDialog dialog, @NonNull DialogAction which) {
-                            launcher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE);
+                        public void onClick(DialogInterface dialog, int which) {
+                            mPermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE);
                         }
 
-                    }).show();
+                    })
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show();
         } else {
-            launcher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE);
+            mPermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE);
         }
     }
 
